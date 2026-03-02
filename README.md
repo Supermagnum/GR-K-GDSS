@@ -420,18 +420,45 @@ and cryptographic properties at the top.
 
 ---
 
-## 8. The Nitrokey and Emergency Disposal
+## 8. The Nitrokey, PIN Protection, and Emergency Disposal
 
 The private key for the GnuPG key exchange is stored on a Nitrokey
-hardware security device. This has a specific and important property
-in high-risk operational contexts:
+hardware security device. This section covers all protection layers
+the Nitrokey provides.
 
-**Physical disposal of the Nitrokey destroys the private key.**
+### PIN Protection
 
-Because the private key never leaves the device, and because Nitrokey
-devices are small physical objects, the device can be physically
-destroyed in an emergency situation — breaking, crushing, burning, or
-discarding it — which immediately and permanently eliminates the
+The Nitrokey requires a PIN before it will perform any cryptographic
+operation. The recommended minimum PIN length is 5 alphanumeric
+characters. This has two important consequences:
+
+- A locked device that falls into an adversary's hands is immediately
+  useless — they cannot use it to derive session keys or decrypt
+  captured traffic without the PIN
+- After a configurable number of incorrect PIN attempts (default: 3
+  user PIN attempts, followed by a limited number of admin PIN
+  attempts), the device permanently bricks itself and destroys the
+  key material automatically
+
+This means physical seizure of a locked, inactive Nitrokey is a dead
+end for an adversary without any action required from the operator.
+The auto-brick behaviour converts a wrong-PIN attack into permanent
+key destruction.
+
+**What the PIN does not protect against:**
+
+When the device is inserted, unlocked, and actively in use, the PIN
+is not in play. During an active session, session keys are held in the
+Linux kernel keyring (not in user-space memory), but a sophisticated
+adversary with physical access to a running, unlocked computer could
+potentially extract session key material from memory. The PIN
+protects the device at rest, not during active operation.
+
+### Physical Disposal
+
+Because the private key never leaves the device, the Nitrokey can be
+physically destroyed in an emergency — breaking, crushing, burning,
+or discarding it — which immediately and permanently eliminates the
 private key.
 
 Without the private key, an adversary cannot:
@@ -439,23 +466,75 @@ Without the private key, an adversary cannot:
 - Strip the GDSS masking from any captured IQ recordings
 - Decrypt any captured payload data
 
-This is a meaningful operational property. It provides a last-resort
-means of cryptographic sanitisation that does not require access to
-software, passwords, or network connectivity. The action is immediate,
-irreversible, and requires no technical knowledge to execute.
+This provides a last-resort means of cryptographic sanitisation that
+requires no software access, no network connectivity, and no technical
+knowledge to execute. The action is immediate and irreversible.
 
-**Important notes:**
+### Layered Key Compromise Resistance
 
-- Disposal of the Nitrokey does not decrypt or expose any previously
-  transmitted data — it only prevents future sessions and eliminates
-  the key material from the physical device
-- Any copies of the private key stored elsewhere (backups, other
-  devices) are not affected by disposing of one Nitrokey
-- For full cryptographic sanitisation, all copies of the key must be
-  destroyed or revoked
+| Scenario | Protection | Outcome for adversary |
+|----------|-----------|----------------------|
+| Device seized while locked | PIN + auto-brick after failed attempts | Key inaccessible, no action needed from operator |
+| Device seized while unlocked/active | PIN not in play; session keys in kernel keyring | Potential exposure of active session only |
+| Device seized; operator compelled to reveal PIN | Physical disposal before surrender | Key permanently destroyed |
+| Device destroyed before seizure | Key gone with device | All past sessions unrecoverable |
+
+**Important notes on disposal:**
+
+- Disposing of one Nitrokey does not affect copies of the private key
+  stored elsewhere. For full cryptographic sanitisation, all copies
+  must be destroyed or revoked.
 - A GnuPG revocation certificate should be uploaded to key servers
   after disposal if circumstances allow, to prevent the public key
-  from being used to impersonate the operator in future
+  being used to impersonate the operator in future.
+
+### Forward Secrecy — A Known Limitation
+
+The GnuPG keys used for ECDH in this design are static long-term keys.
+This means the design does **not** provide cryptographic forward
+secrecy in the formal sense.
+
+**What this means in practice:**
+
+True forward secrecy (as implemented in TLS 1.3) generates a fresh
+ephemeral keypair for every session, derives the session key, and
+then immediately and permanently destroys the ephemeral private key.
+Even if the long-term identity key is later compromised, past session
+keys cannot be reconstructed and past sessions cannot be decrypted.
+
+This design does not do that. If an adversary:
+
+1. Records all radio traffic over an extended period, and
+2. Later obtains the long-term GnuPG private key
+
+They could retroactively derive all historical session keys and decrypt
+all recorded sessions.
+
+**However**, because key exchange in this design is entirely off-air
+(public keys are exchanged in person through the GnuPG web of trust,
+never over the radio channel), there is nothing to intercept on-air.
+The harvest-now-decrypt-later threat therefore reduces to a single
+question: *can the adversary obtain the long-term private key?*
+
+The PIN protection, auto-brick behaviour, and physical disposal option
+all address this directly. Nitrokey destruction before key seizure
+renders all recorded historical sessions permanently unrecoverable —
+which is the closest this design achieves to forward secrecy, through
+operational means rather than cryptographic means.
+
+**A formal forward secrecy modification would be:**
+
+Use the long-term GnuPG keys only to authenticate an additional
+ephemeral ECDH exchange. Both sides generate a fresh ephemeral
+keypair at session start, exchange ephemeral public keys (signed with
+their long-term keys to prevent impersonation), derive the session
+key from the ephemeral shared secret, and immediately destroy the
+ephemeral private key. Compromise of the long-term key would then
+allow impersonation of future sessions but not decryption of past
+ones. This modification has not been implemented in the current
+design and is noted here as a recommended improvement for a future
+revision.
+
 
 ---
 
@@ -464,6 +543,16 @@ irreversible, and requires no technical knowledge to execute.
 The following questions have not been answered by expert review and
 represent areas where the theoretical reasoning may be incomplete or
 incorrect:
+
+**Forward secrecy:**
+This design uses static long-term GnuPG keys and does not implement
+cryptographic forward secrecy. An adversary who records all radio
+traffic and later obtains the long-term private key could retroactively
+decrypt all historical sessions. Because key exchange is entirely
+off-air, the practical risk is bounded by the security of the
+Nitrokey and its PIN — but the architectural limitation remains. A
+future revision should implement ephemeral ECDH authenticated by the
+long-term keys, as described in Section 8.
 
 **Box-Muller statistical properties:**
 ChaCha20 produces uniformly distributed output. Box-Muller converts
