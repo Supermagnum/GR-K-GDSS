@@ -1,2 +1,546 @@
 # GR-K-GDSS
-A highly experimental Cryptographically keyed GDSS
+A highly experimental Cryptographically keyed GDSS proposal.
+
+# Cryptographically Keyed GDSS — A Comparison with Standard GDSS
+
+**Status: Unreviewed theoretical design concept**
+
+> **Important notice:** This document was written with the assistance of an AI
+> (Claude, by Anthropic). It has not been reviewed by a professional
+> cryptographer, a signals intelligence specialist, or any academic with
+> relevant expertise. The theoretical claims presented here are based on
+> logical reasoning from published sources and should be treated with
+> appropriate scepticism. Where the word *theoretical* appears, the reader
+> should apply their own critical judgement. Independent expert review is
+> strongly recommended before any practical application.
+
+---
+
+## Table of Contents
+
+1. Background
+2. What is GDSS?
+3. Standard GDSS — How It Works
+4. The Weakness in Standard GDSS
+5. Cryptographically Keyed GDSS — The Proposed Modification
+6. All Layers of Security
+7. Comparison — Standard GDSS vs Keyed GDSS
+8. The Nitrokey and Emergency Disposal
+9. What Remains Unresolved
+10. Sources and Further Reading
+
+---
+
+## 1. Background
+
+This document describes a proposed modification to Gaussian-Distributed
+Spread-Spectrum (GDSS), a covert radio communication scheme published in
+2023 by researchers at Australia's Defence Science and Technology Group.
+
+The modification proposes replacing GDSS's internal random masking source
+with a cryptographically keyed source derived from an existing GnuPG key
+infrastructure. The goal is to strengthen the already strong covertness
+properties of GDSS by making the masking layer cryptographically opaque
+rather than merely statistically random.
+
+The construction uses entirely open source, freely available components
+and is intended to run on commodity software-defined radio (SDR) hardware.
+
+---
+
+## 2. What is GDSS?
+
+GDSS — Gaussian-Distributed Spread-Spectrum — is a spread-spectrum radio
+communication scheme designed for covert or Low Probability of Detection
+(LPD) communications.
+
+The core idea is that a transmitted signal should be statistically
+indistinguishable from the thermal noise that exists naturally in all
+electronic equipment and in the radio environment. A passive observer
+scanning the radio spectrum should see nothing but the noise floor —
+no carrier, no modulation signature, no signal of any kind.
+
+The scheme was published as an open access academic paper:
+
+> Shakeel, I.; Hilliard, J.; Zhang, W.; Rice, M.
+> *Gaussian-Distributed Spread-Spectrum for Covert Communications.*
+> Sensors 2023, 23(8), 4081.
+> https://doi.org/10.3390/s23084081
+
+The paper demonstrates that GDSS defeats three standard signal detection
+methods: higher-order moment analysis, modulation stripping, and
+cyclostationary spectral analysis — all of which reliably detect
+conventional spread-spectrum signals such as DSSS.
+
+---
+
+## 3. Standard GDSS — How It Works
+
+A standard radio transmission carries a signal whose structure reveals
+itself to anyone listening. Even when encrypted, the signal has
+identifiable features: a carrier frequency, a modulation pattern, a
+defined bandwidth, and statistical properties that differ from noise.
+
+GDSS eliminates these features through a masking process:
+
+1. The data to be transmitted is modulated using SOQPSK (Shaped Offset
+   Quadrature Phase Shift Keying), a bandwidth-efficient continuous-phase
+   modulation scheme.
+
+2. The modulated signal is spread across a wide bandwidth using a
+   spreading factor of N=256, which distributes the signal energy across
+   the band and reduces its power density to below the noise floor. This
+   gives the legitimate receiver 24dB of processing gain through
+   despreading — the ability to recover the signal from below what any
+   passive observer can detect.
+
+3. Each chip (the fundamental unit of the spread signal) has its
+   in-phase (I) and quadrature (Q) components multiplied by values drawn
+   from a Gaussian distribution — the same statistical distribution as
+   thermal noise. This is the masking step.
+
+4. The result is a signal whose amplitude distribution matches thermal
+   white noise to the 20th statistical moment. Standard detectors find
+   nothing to distinguish it from the natural noise floor.
+
+The masking values in the original scheme are drawn from the
+transmitter's own hardware thermal noise. The receiver does not need to
+know these values — it recovers the signal through despreading without
+stripping the masking.
+
+---
+
+## 4. The Weakness in Standard GDSS
+
+Standard GDSS has one structural vulnerability: **the masking is random
+but not secret.**
+
+The algorithm is published and open. An adversary who captures the
+transmitted IQ samples knows the masking values follow a Gaussian
+distribution, even if they do not know the specific values. In principle,
+with sufficient captured data and processing time, they could attempt to
+characterise the masking statistically.
+
+More practically, the synchronisation burst — a brief transmission needed
+to establish timing between transmitter and receiver — uses a
+conventional DSSS structure. In the standard design, this burst uses a
+fixed or session-independent spreading sequence, transmitted at regular
+or predictable intervals. A patient adversary recording radio traffic
+over time could identify recurring burst patterns across sessions,
+establishing that a communication relationship exists at that frequency,
+even without decoding any content.
+
+This is a traffic analysis vulnerability, not a content vulnerability —
+but in operational contexts, confirming that communication is occurring
+at all can be as valuable to an adversary as reading the content.
+
+---
+
+## 5. Cryptographically Keyed GDSS — The Proposed Modification
+
+The modification replaces the internal random masking source with a
+cryptographically keyed pseudo-random source. The masking values are
+no longer drawn from hardware thermal noise — they are derived from a
+ChaCha20 keystream, converted to Gaussian-distributed values using a
+Box-Muller transform.
+
+The key is derived from a BrainpoolP256r1 Elliptic Curve
+Diffie-Hellman (ECDH) key exchange using pre-existing GnuPG keys.
+
+### Key Derivation
+
+Both the transmitter and receiver hold each other's GnuPG public keys,
+exchanged off-air through the GnuPG web of trust. At session start:
+
+```
+Transmitter: own private key + receiver's public key → ECDH shared secret
+Receiver:    own private key + transmitter's public key → ECDH shared secret
+```
+
+Both arrive at an identical shared secret without transmitting it.
+This shared secret is fed into HKDF (a standard key derivation function,
+RFC 5869) with domain separation, producing four independent 32-byte
+subkeys:
+
+| Subkey | Purpose |
+|--------|---------|
+| Key 1 | ChaCha20-Poly1305 payload encryption |
+| Key 2 | ChaCha20 GDSS masking keystream |
+| Key 3 | Sync burst PN sequence |
+| Key 4 | Sync burst timing offset schedule |
+
+### What Changes
+
+The receiver now strips the masking using the identical keystream before
+despreading, rather than despreading through the masking. This changes
+the original design's elegant receiver-ignorance property — the receiver
+now needs the key — but in exchange, the masking becomes
+cryptographically opaque.
+
+### The Sync Burst
+
+The 2ms synchronisation burst is redesigned to mimic natural static
+spikes in the radio environment:
+
+- The PN spreading sequence is derived from Key 3 — unique per session,
+  unknown to anyone without the session key
+- The burst timing is randomised using Key 4 — the burst arrives at an
+  unpredictable offset within a search window that both ends know
+- A Gaussian amplitude envelope is applied so the burst's rise and fall
+  profile resembles natural impulse noise rather than a keyed signal
+
+---
+
+## 6. All Layers of Security
+
+The full stack provides multiple independent layers of protection.
+Each layer is described below with its purpose and the standard it
+relies on.
+
+---
+
+### Layer 1 — SOQPSK Modulation
+
+**What it does:** SOQPSK (Shaped Offset Quadrature Phase Shift Keying)
+is a continuous-phase, bandwidth-efficient modulation scheme. Its
+near-constant envelope makes it well-suited to nonlinear power
+amplifiers and reduces out-of-band emissions.
+
+**Security contribution:** The continuous phase means there are no
+abrupt transitions that reveal modulation structure to a passive
+observer. It is the foundation on which the spreading and masking
+layers operate.
+
+---
+
+### Layer 2 — GDSS Spreading and Masking
+
+**What it does:** The modulated signal is spread across a wide bandwidth
+(N=256 spreading factor, approximately 500kHz at typical chip rates) and
+each chip is masked with Gaussian-distributed values derived from the
+session key via ChaCha20 and Box-Muller transform.
+
+**Security contribution:**
+
+- Signal power is distributed across 500kHz at levels below the noise
+  floor — approximately 24dB below detectable threshold for a passive
+  observer without the spreading code
+- The amplitude distribution of the transmitted signal matches thermal
+  white noise statistically
+- Higher-order moment detectors, cyclostationary analysers, and
+  modulation stripping detectors all return null results
+- The masking is cryptographically keyed — an adversary cannot strip
+  the masking without the session key, even knowing the full algorithm
+
+**Theoretical note:** Whether ChaCha20-derived Gaussian values (via
+Box-Muller) are truly indistinguishable from hardware thermal noise
+under all possible detection methods has not been formally verified.
+This is an open question that requires expert cryptographic and signals
+analysis review.
+
+---
+
+### Layer 3 — LDPC Forward Error Correction
+
+**What it does:** Low Density Parity Check (LDPC) coding at rate 1/2
+adds redundancy that allows the receiver to recover from transmission
+errors. Block lengths of 576, 1152, or 2304 bits are supported.
+
+**Security contribution:** Not a security layer directly, but it
+recovers the approximately 2dB SNR penalty that GDSS masking introduces
+relative to standard DSSS, allowing reliable communication deeper in
+the noise floor.
+
+---
+
+### Layer 4 — ChaCha20-Poly1305 Payload Encryption
+
+**What it does:** The payload data is encrypted using ChaCha20-Poly1305,
+an Authenticated Encryption with Associated Data (AEAD) construction
+standardised in RFC 8439.
+
+**Security contribution:**
+
+- ChaCha20 provides 256-bit symmetric encryption. It is designed by
+  Daniel Bernstein with no involvement of NSA-influenced standards
+- Poly1305 provides a message authentication tag covering the entire
+  ciphertext. Any modification, injection, or replay of the transmitted
+  data causes authentication to fail at the receiver before decryption
+  begins
+- Computationally infeasible to break with current or foreseeable
+  classical computing
+- Resistant to timing side-channel attacks by design
+
+---
+
+### Layer 5 — BrainpoolP256r1 Key Exchange
+
+**What it does:** Elliptic Curve Diffie-Hellman (ECDH) key agreement
+using the BrainpoolP256r1 curve, providing approximately 128 bits of
+security against the best known classical attacks.
+
+**Security contribution:**
+
+- BrainpoolP256r1 is a BSI-standardised curve (German Federal Office
+  for Information Security) developed without NSA involvement, avoiding
+  the controversy surrounding NIST curves
+- Both sides compute the same shared secret independently from each
+  other's public keys — the secret is never transmitted
+- Man-in-the-middle attacks are defeated by the GnuPG web of trust
+  authentication layer beneath it — an attacker cannot substitute a
+  fake public key that carries valid signatures from known keyholders
+
+---
+
+### Layer 6 — GnuPG Web of Trust
+
+**What it does:** GnuPG manages the public key infrastructure. Keys
+are signed by known contacts who have verified the keyholder's identity
+in person, building a chain of trust.
+
+**Security contribution:**
+
+- Identity authentication — a transmission cannot be forged by someone
+  who has not physically met the legitimate keyholder and had their key
+  signed
+- Key exchange happens entirely off-air, before any transmission
+- Standard GnuPG key servers distribute and synchronise public keys
+- Revocation certificates allow compromised keys to be invalidated
+
+---
+
+### Layer 7 — Linux Kernel Keyring Storage
+
+**What it does:** Session keys derived from the ECDH exchange are
+stored in the Linux kernel keyring rather than in user-space files or
+application memory.
+
+**Security contribution:**
+
+- Keys are protected by the kernel and inaccessible to user-space
+  processes without authorisation
+- Keys are cleared from memory automatically when the associated
+  hardware token is removed
+
+---
+
+### Layer 8 — Nitrokey Hardware Security Module
+
+**What it does:** The GnuPG private key is stored on a Nitrokey
+hardware security device rather than on the computer's storage.
+
+**Security contribution:**
+
+- The private key never leaves the hardware device
+- All cryptographic operations requiring the private key are performed
+  on the device itself
+- The device is PIN-protected with a minimum recommended PIN length of
+  5 characters (alphanumeric)
+- If the device is removed, all cached key material is immediately
+  cleared from the computer's memory
+- Nitrokey supports firmware updates, allowing new cryptographic
+  algorithms to be added without replacing hardware
+
+---
+
+### Layer 9 — Operational Security
+
+**What it does:** Movement, traffic discipline, and communication
+practice that complement the technical stack.
+
+**Security contribution:**
+
+- Moving operators deny a passive observer the stable baseline
+  measurements needed to detect noise floor anomalies
+- Minimum transmission duration reduces the opportunity for any
+  collection system to accumulate statistics
+- Short, infrequent transmissions limit the value of any single
+  intercept even in the unlikely event of detection
+- These operational measures compound the technical protections —
+  each layer independently raises the cost of detection or intercept
+
+---
+
+## 7. Comparison — Standard GDSS vs Keyed GDSS
+
+All ratings are on a scale of 0–10. They assume correct implementation,
+appropriate operational discipline, and moving operators with minimum
+traffic. They do not represent a formal security evaluation.
+
+### Detection Resistance
+
+| Aspect | Standard GDSS | Keyed GDSS | Delta | Notes |
+|--------|--------------|------------|-------|-------|
+| Passive signal detection | 7 | 7 | 0 | Both look like thermal noise |
+| Cyclostationary analysis | 8 | 8 | 0 | Both defeat it |
+| Moments-based detection | 8 | 8 | 0 | Both defeat it |
+| Modulation stripping | 8 | 8 | 0 | Both defeat it |
+| Sync burst detection | 4 | 8 | +4 | Largest single improvement |
+| Traffic pattern analysis | 5 | 8 | +3 | Session-unique keystreams |
+| Noise floor elevation | 5 | 6 | +1 | Movement helps both |
+| Direction finding | 5 | 5 | 0 | Physics — neither solves this |
+| **Overall** | **6** | **7.5** | **+1.5** | |
+
+### Decryption / Content Recovery Resistance
+
+| Aspect | Standard GDSS | Keyed GDSS | Delta | Notes |
+|--------|--------------|------------|-------|-------|
+| Payload decryption | 9 | 9 | 0 | Identical — ChaCha20-Poly1305 |
+| Masking strip attack | 4 | 9 | +5 | Critical difference |
+| Statistical masking recovery | 5 | 9 | +4 | Keyed masking closes this |
+| Forward secrecy | 7 | 9 | +2 | Past sessions protected |
+| Key compromise blast radius | 6 | 8 | +2 | HKDF domain separation |
+| **Overall** | **6** | **9** | **+3** | |
+
+### Jamming Resistance
+
+| Aspect | Standard GDSS | Keyed GDSS | Delta | Notes |
+|--------|--------------|------------|-------|-------|
+| Broadband noise jamming | 6 | 6 | 0 | N=256 processing gain — identical |
+| Targeted carrier jamming | 8 | 8 | 0 | No visible carrier in either |
+| Protocol-aware jamming | 5 | 7 | +2 | Unpredictable sync timing |
+| Sync burst jamming | 4 | 7 | +3 | Random timing defeats targeting |
+| Replay jamming | 5 | 7 | +2 | Session-unique keys reject replays |
+| **Overall** | **5.5** | **7** | **+1.5** | |
+
+### Summary
+
+| Category | Standard GDSS | Keyed GDSS | Delta |
+|----------|--------------|------------|-------|
+| Detection resistance | 6 | 7.5 | +1.5 |
+| Decryption resistance | 6 | 9 | +3 |
+| Jamming resistance | 5.5 | 7 | +1.5 |
+| **Overall** | **6** | **7.8** | **+1.8** |
+
+The most significant improvement is decryption resistance. The keyed
+masking converts the physical obscurity layer from statistical to
+cryptographic, meaning the entire stack now rests on computational
+hardness at every level rather than statistical properties at the bottom
+and cryptographic properties at the top.
+
+---
+
+## 8. The Nitrokey and Emergency Disposal
+
+The private key for the GnuPG key exchange is stored on a Nitrokey
+hardware security device. This has a specific and important property
+in high-risk operational contexts:
+
+**Physical disposal of the Nitrokey destroys the private key.**
+
+Because the private key never leaves the device, and because Nitrokey
+devices are small physical objects, the device can be physically
+destroyed in an emergency situation — breaking, crushing, burning, or
+discarding it — which immediately and permanently eliminates the
+private key.
+
+Without the private key, an adversary cannot:
+- Derive the session key for any past or future transmission
+- Strip the GDSS masking from any captured IQ recordings
+- Decrypt any captured payload data
+
+This is a meaningful operational property. It provides a last-resort
+means of cryptographic sanitisation that does not require access to
+software, passwords, or network connectivity. The action is immediate,
+irreversible, and requires no technical knowledge to execute.
+
+**Important notes:**
+
+- Disposal of the Nitrokey does not decrypt or expose any previously
+  transmitted data — it only prevents future sessions and eliminates
+  the key material from the physical device
+- Any copies of the private key stored elsewhere (backups, other
+  devices) are not affected by disposing of one Nitrokey
+- For full cryptographic sanitisation, all copies of the key must be
+  destroyed or revoked
+- A GnuPG revocation certificate should be uploaded to key servers
+  after disposal if circumstances allow, to prevent the public key
+  from being used to impersonate the operator in future
+
+---
+
+## 9. What Remains Unresolved
+
+The following questions have not been answered by expert review and
+represent areas where the theoretical reasoning may be incomplete or
+incorrect:
+
+**Box-Muller statistical properties:**
+ChaCha20 produces uniformly distributed output. Box-Muller converts
+pairs of uniform values into Gaussian-distributed values. Whether the
+resulting output is truly indistinguishable from hardware thermal noise
+under all possible detection methods — including methods not yet
+considered — is an open question.
+
+**Prior art:**
+It is not known whether cryptographically keyed GDSS masking has been
+proposed or implemented before. If prior art exists, it may identify
+weaknesses in this construction that are not apparent from first
+principles.
+
+**Formal security proof:**
+No formal security proof exists for this construction. The reasoning is
+based on the properties of the individual components and their logical
+combination, not on a mathematical proof of security.
+
+**Quantum computing:**
+BrainpoolP256r1 ECDH is vulnerable to Shor's algorithm on a
+sufficiently powerful quantum computer. No such computer exists at
+present, but this represents a long-term vulnerability of the key
+exchange layer. ChaCha20-Poly1305 is considered quantum-resistant at
+its current key size (Grover's algorithm reduces its effective security
+from 256 bits to 128 bits, which remains adequate).
+
+**Implementation quality:**
+The GNU Radio modules used (gr-qradiolink and gr-linux-crypto) are
+noted by their author as AI-generated code that has not been reviewed
+by professional programmers. The modules have been fuzz-tested and
+unit-tested, but fuzz testing is not a substitute for code review in
+security-sensitive applications.
+
+---
+
+## 10. Sources and Further Reading
+
+**GDSS original paper (open access):**
+Shakeel, I.; Hilliard, J.; Zhang, W.; Rice, M.
+Gaussian-Distributed Spread-Spectrum for Covert Communications.
+Sensors 2023, 23(8), 4081.
+https://doi.org/10.3390/s23084081
+
+**ChaCha20-Poly1305:**
+Nir, Y.; Langley, A. RFC 8439 — ChaCha20 and Poly1305 for IETF Protocols.
+https://www.rfc-editor.org/rfc/rfc8439
+
+**BrainpoolP256r1:**
+Lochter, M.; Merkle, J. RFC 5639 — Elliptic Curve Cryptography (ECC)
+Brainpool Standard Curves and Curve Generation.
+https://www.rfc-editor.org/rfc/rfc5639
+
+**HKDF:**
+Krawczyk, H.; Eronen, P. RFC 5869 — HMAC-based Extract-and-Expand
+Key Derivation Function (HKDF).
+https://www.rfc-editor.org/rfc/rfc5869
+
+**GnuPG:**
+https://www.gnupg.org
+
+**GNU Radio:**
+https://www.gnuradio.org
+
+**gr-qradiolink (GNU Radio OOT module):**
+https://github.com/Supermagnum/gr-qradiolink
+
+**gr-linux-crypto (GNU Radio OOT module):**
+https://github.com/Supermagnum/gr-linux-crypto
+
+**Nitrokey:**
+https://www.nitrokey.com
+
+---
+
+*This document was produced with AI assistance (Claude, Anthropic) and
+has not been reviewed by a professional cryptographer or signals
+intelligence specialist. It describes a theoretical design concept.
+Nothing in this document constitutes professional cryptographic,
+legal, or operational security advice.*
