@@ -492,11 +492,40 @@ its current key size (Grover's algorithm reduces its effective security
 from 256 bits to 128 bits, which remains adequate).
 
 **Implementation quality:**
-The GNU Radio modules used (gr-qradiolink and gr-linux-crypto) are
-noted by their author as AI-generated code that has not been reviewed
-by professional programmers. The modules have been fuzz-tested and
-unit-tested, but fuzz testing is not a substitute for code review in
-security-sensitive applications.
+The gr-linux-crypto module has an extensive test suite (413 passed,
+31 skipped, 0 failed as of 2025-11-16). Cryptographic correctness has
+been validated at multiple levels:
+
+- **NIST CAVP test vectors:** AES-128-GCM 4/4 passing (100%),
+  AES-256-GCM 4/4 passing (100%), RFC 8439 ChaCha20-Poly1305 3/3
+  passing (100%), including full AAD (Additional Authenticated Data)
+  support
+- **Google Wycheproof vectors:** BrainpoolP256r1/P384r1/P512r1 ECDH
+  validated against 2,534+ vectors; ECDSA validated against 475+
+  vectors per curve — Wycheproof specifically targets subtle
+  implementation bugs that basic compliance testing misses
+- **BSI TR-03111 compliance:** 20/20 tests passed (curve parameters,
+  key generation, ECDH, ECDSA, security levels)
+- **Fuzzing:** 805+ million executions via LibFuzzer with
+  AddressSanitizer and UndefinedBehaviorSanitizer — zero crashes,
+  zero memory errors
+- **CBMC formal verification:** 23/23 memory safety checks passed on
+  the core encryption path (bounds checking, pointer safety)
+- **Timing side-channel (dudect):** Authentication tag comparison and
+  encryption timing both tested at ~17.5 million measurements each;
+  maximum t-statistic 2.30 (threshold is 5) — no timing leakage
+  detected
+- **Cross-validation:** Compatible with OpenSSL 3.x and the Python
+  cryptography library; OpenSSL CLI interoperability confirmed
+
+The module is noted by its author as AI-generated code not reviewed
+by professional programmers. The validation results above significantly
+raise confidence beyond a typical unreviewed codebase, but they do not
+substitute for a full independent code audit. The module is explicitly
+not FIPS-140 certified, not evaluated for government or military use,
+and is recommended by its author for amateur radio, experimental, and
+research applications. It is built on top of OpenSSL and the Python
+cryptography library, both of which use FIPS-140 validated backends.
 
 ---
 
@@ -533,6 +562,9 @@ https://github.com/Supermagnum/gr-qradiolink
 
 **gr-linux-crypto (GNU Radio OOT module):**
 https://github.com/Supermagnum/gr-linux-crypto
+
+**gr-linux-crypto test results (NIST CAVP, Wycheproof, BSI TR-03111, fuzzing, dudect):**
+https://github.com/Supermagnum/gr-linux-crypto/blob/master/tests/TEST_RESULTS.md
 
 **Nitrokey:**
 https://www.nitrokey.com
