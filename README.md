@@ -87,9 +87,9 @@ GDSS eliminates these features through a masking process:
    Quadrature Phase Shift Keying), a bandwidth-efficient continuous-phase
    modulation scheme.
 
-2. The modulated signal is spread across a wide bandwidth using a
+2. As a example,- the modulated signal is spread across a wide bandwidth using a
    spreading factor of N=256, which distributes the signal energy across
-   the band and reduces its power density to below the noise floor. This
+500kHz or more, and reduces its power density to below the noise floor. This
    gives the legitimate receiver 24dB of processing gain through
    despreading — the ability to recover the signal from below what any
    passive observer can detect.
@@ -222,7 +222,7 @@ session key via ChaCha20 and Box-Muller transform.
 
 **Security contribution:**
 
-- Signal power is distributed across 500kHz at levels below the noise
+- Signal power is distributed across 500kHz or more,- at levels below the noise
   floor — approximately 24dB below detectable threshold for a passive
   observer without the spreading code
 - The amplitude distribution of the transmitted signal matches thermal
@@ -262,14 +262,14 @@ standardised in RFC 8439.
 **Security contribution:**
 
 - ChaCha20 provides 256-bit symmetric encryption. It is designed by
-  Daniel Bernstein with no involvement of NSA-influenced standards
+  Daniel Bernstein with no involvement of NSA-influenced standards.
 - Poly1305 provides a message authentication tag covering the entire
   ciphertext. Any modification, injection, or replay of the transmitted
   data causes authentication to fail at the receiver before decryption
-  begins
+  begins.
 - Computationally infeasible to break with current or foreseeable
-  classical computing
-- Resistant to timing side-channel attacks by design
+  classical computing.
+- Resistant to timing side-channel attacks by design.
 
 ---
 
@@ -283,12 +283,12 @@ security against the best known classical attacks.
 
 - BrainpoolP256r1 is a BSI-standardised curve (German Federal Office
   for Information Security) developed without NSA involvement, avoiding
-  the controversy surrounding NIST curves
+  the controversy surrounding NIST curves.
 - Both sides compute the same shared secret independently from each
-  other's public keys — the secret is never transmitted
+  other's public keys — the secret is never transmitted.
 - Man-in-the-middle attacks are defeated by the GnuPG web of trust
   authentication layer beneath it — an attacker cannot substitute a
-  fake public key that carries valid signatures from known keyholders
+  fake public key that carries valid signatures from known keyholders.
 
 ---
 
@@ -302,10 +302,10 @@ in person, building a chain of trust.
 
 - Identity authentication — a transmission cannot be forged by someone
   who has not physically met the legitimate keyholder and had their key
-  signed
-- Key exchange happens entirely off-air, before any transmission
-- Standard GnuPG key servers distribute and synchronise public keys
-- Revocation certificates allow compromised keys to be invalidated
+  signed.
+- Key exchange happens entirely off-air, before any transmission.
+- Standard GnuPG key servers distribute and synchronise public keys.
+- Revocation certificates allow compromised keys to be invalidated.
 
 ---
 
@@ -318,9 +318,9 @@ application memory.
 **Security contribution:**
 
 - Keys are protected by the kernel and inaccessible to user-space
-  processes without authorisation
+  processes without authorisation.
 - Keys are cleared from memory automatically when the associated
-  hardware token is removed
+  hardware token is removed.
 
 ---
 
@@ -331,15 +331,15 @@ hardware security device rather than on the computer's storage.
 
 **Security contribution:**
 
-- The private key never leaves the hardware device
+- The private key never leaves the hardware device.
 - All cryptographic operations requiring the private key are performed
-  on the device itself
+  on the device itself.
 - The device is PIN-protected with a minimum recommended PIN length of
-  5 characters (alphanumeric)
+  5 characters (alphanumeric).
 - If the device is removed, all cached key material is immediately
-  cleared from the computer's memory
+  cleared from the computer's memory.
 - Nitrokey supports firmware updates, allowing new cryptographic
-  algorithms to be added without replacing hardware
+  algorithms to be added without replacing hardware.
 
 ---
 
