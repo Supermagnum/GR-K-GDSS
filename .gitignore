@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .eggs/
+
+# Generated IQ test files (large; run generate_iq_test_files.py to create)
+tests/iq_files/

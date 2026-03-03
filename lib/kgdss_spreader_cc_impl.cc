@@ -11,6 +11,7 @@
 #include <gnuradio/kgdss/kgdss_spreader_cc.h>
 #include "kgdss_spreader_cc_impl.h"
 #include <gnuradio/io_signature.h>
+#include <pmt/pmt.h>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -82,7 +83,8 @@ kgdss_spreader_cc_impl::kgdss_spreader_cc_impl(int sequence_length,
       d_gaussian(0.0f, std::sqrt(variance)),
       d_key(chacha_key),
       d_nonce(chacha_nonce),
-      d_counter(0)
+      d_counter(0),
+      d_key_set(chacha_key.size() == 32 && chacha_nonce.size() == 12)
 {
     if (d_sequence_length <= 0) {
         throw std::invalid_argument("Sequence length must be positive");
@@ -93,11 +95,14 @@ kgdss_spreader_cc_impl::kgdss_spreader_cc_impl(int sequence_length,
     if (d_variance <= 0.0f) {
         throw std::invalid_argument("Variance must be positive");
     }
-    if (d_key.size() != 32) {
-        throw std::invalid_argument("ChaCha20 key must be exactly 32 bytes");
+    if (!d_key.empty() && d_key.size() != 32) {
+        throw std::invalid_argument("ChaCha20 key must be 0 or 32 bytes");
     }
-    if (d_nonce.size() != 12) {
-        throw std::invalid_argument("ChaCha20 nonce must be exactly 12 bytes");
+    if (!d_nonce.empty() && d_nonce.size() != 12) {
+        throw std::invalid_argument("ChaCha20 nonce must be 0 or 12 bytes");
+    }
+    if (d_key_set && (d_key.size() != 32 || d_nonce.size() != 12)) {
+        d_key_set = false;
     }
 
     if (sodium_init() < 0) {
@@ -105,9 +110,32 @@ kgdss_spreader_cc_impl::kgdss_spreader_cc_impl(int sequence_length,
     }
 
     generate_sequence();
+
+    message_port_register_in(pmt::mp("set_key"));
+    set_msg_handler(pmt::mp("set_key"),
+                    [this](pmt::pmt_t msg) { this->handle_key_msg(msg); });
 }
 
 kgdss_spreader_cc_impl::~kgdss_spreader_cc_impl() {}
+
+void kgdss_spreader_cc_impl::handle_key_msg(pmt::pmt_t msg)
+{
+    if (!pmt::is_dict(msg)) return;
+    pmt::pmt_t key_val = pmt::dict_ref(msg, pmt::mp("key"), pmt::PMT_NIL);
+    pmt::pmt_t nonce_val = pmt::dict_ref(msg, pmt::mp("nonce"), pmt::PMT_NIL);
+    if (!pmt::is_u8vector(key_val) || !pmt::is_u8vector(nonce_val)) return;
+    size_t key_len = pmt::length(key_val);
+    size_t nonce_len = pmt::length(nonce_val);
+    if (key_len != 32 || nonce_len != 12) return;
+    const uint8_t* k = (const uint8_t*)pmt::uniform_vector_elements(key_val, key_len);
+    const uint8_t* n = (const uint8_t*)pmt::uniform_vector_elements(nonce_val, nonce_len);
+    if (!k || !n) return;
+    std::unique_lock<std::mutex> lock(d_key_mutex);
+    d_key.assign(k, k + 32);
+    d_nonce.assign(n, n + 12);
+    d_counter = 0;
+    d_key_set = true;
+}
 
 void kgdss_spreader_cc_impl::generate_sequence()
 {
@@ -213,6 +241,14 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
     const gr_complex* in = (const gr_complex*)input_items[0];
     gr_complex* out = (gr_complex*)output_items[0];
 
+    {
+        std::unique_lock<std::mutex> key_lock(d_key_mutex);
+        if (!d_key_set) {
+            std::fill(out, out + noutput_items, gr_complex(0.0f, 0.0f));
+            return noutput_items;
+        }
+    }
+
     std::lock_guard<std::mutex> lock(d_mutex);
 
     int ninput_items = noutput_items / d_chips_per_symbol;
@@ -220,7 +256,10 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
 
     // Generate keyed Gaussian masking using ChaCha20 + Box-Muller (mask clamp 1e-4f)
     std::vector<uint8_t> ks(static_cast<size_t>(noutput_items) * 16);
-    fill_keystream(ks.data(), ks.size());
+    {
+        std::lock_guard<std::mutex> key_lock(d_key_mutex);
+        fill_keystream(ks.data(), ks.size());
+    }
 
     auto to_uniform = [](const uint8_t* b) -> float {
         uint32_t v;

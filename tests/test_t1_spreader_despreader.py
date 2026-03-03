@@ -366,5 +366,51 @@ class TestT1BlockBoundaryContinuity(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(BINDINGS_AVAILABLE, "C++ bindings not available")
+@unittest.skipUnless(
+    getattr(kgdss, "key_injector", None) is not None,
+    "key_injector not available",
+)
+class TestT1SetKeyMessagePort(unittest.TestCase):
+    """Round-trip using set_key message port and key_injector (no key at construction)."""
+
+    def test_round_trip_via_set_key_message(self):
+        n_syms = 20
+        data = np.exp(2j * np.pi * np.arange(n_syms) / 7).astype(np.complex64)
+        seq = _make_spreading_sequence()
+
+        try:
+            spreader = kgdss.kgdss_spreader_cc(
+                SEQ_LEN, CHIPS_PER_SYMBOL, VARIANCE, SEED, b"", b""
+            )
+            despreader = kgdss.kgdss_despreader_cc(
+                seq, CHIPS_PER_SYMBOL, CORR_THRESHOLD, TIMING_TOLERANCE, b"", b""
+            )
+        except ValueError as e:
+            if "32 bytes" in str(e) or "12 bytes" in str(e):
+                self.skipTest("this build does not support empty key/nonce (set_key at runtime)")
+            raise
+        shared_secret = bytes(range(32))
+        injector = kgdss.key_injector(shared_secret, session_id=0, tx_seq=1)
+
+        src = vector_source_c(data, False)
+        snk = vector_sink_c()
+        snk_lock = vector_sink_f()
+        snk_snr = vector_sink_f()
+        tb = gr.top_block()
+        tb.connect(src, spreader, despreader)
+        tb.connect((despreader, 0), snk)
+        tb.connect((despreader, 1), snk_lock)
+        tb.connect((despreader, 2), snk_snr)
+        tb.msg_connect(injector, "key_out", spreader, "set_key")
+        tb.msg_connect(injector, "key_out", despreader, "set_key")
+
+        injector.inject()
+        tb.run()
+        out = np.array(snk.data())
+        self.assertEqual(len(out), n_syms, "output length")
+        np.testing.assert_allclose(out, data, atol=TOL, rtol=TOL)
+
+
 if __name__ == "__main__":
     unittest.main()

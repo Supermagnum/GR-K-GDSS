@@ -11,7 +11,9 @@ The core of this OOT module is a pair of keyed GDSS blocks:
 - `kgdss_spreader_cc` (GRC: **Keyed GDSS Spreader**)
 - `kgdss_despreader_cc` (GRC: **Keyed GDSS Despreader**)
 
-Both must be configured with **matching parameters and the same ChaCha20 key/nonce pair** for a given session.
+Both must be configured with **matching parameters and the same ChaCha20 key/nonce pair** for a given session. Key and nonce can be set at construction time or at runtime via the **set_key** message port.
+
+**set_key message port:** Both blocks have a message input port `set_key`. When a message arrives (PMT dict with keys `"key"` and `"nonce"`, each a u8vector of 32 and 12 bytes), the block updates its internal ChaCha20 context and resets the keystream counter. Until a key is set (either at construction or via message), the block outputs zeros. This allows key material to stay in the kernel keyring until the moment it is needed and supports re-keying without restarting the flowgraph.
 
 ### `kgdss_spreader_cc` (Keyed GDSS Spreader)
 
@@ -112,23 +114,60 @@ This section describes how to wire **gr-linux-crypto** (keyring/key source) and 
 
 ### Getting keys into the GDSS blocks (gr-linux-crypto)
 
-The GDSS spreader and despreader take **key and nonce as constructor parameters** (fixed for the flowgraph run). They do not read keys from a stream. To use keys stored with gr-linux-crypto and the Linux kernel keyring:
+**Recommended: set_key message port and key_injector**
 
-1. **Before the session (e.g. in a startup script or control application):**
-   - Obtain the ECDH shared secret (e.g. via gr-linux-crypto ECDH or GnuPG + `get_shared_secret_from_gnupg` from gr-k-gdss).
-   - Derive session keys: `keys = derive_session_keys(ecdh_shared_secret)` (gr-k-gdss Python).
-   - Store them in the keyring: `ids = store_session_keys(keys)` (uses keyctl or gr-linux-crypto KeyringHelper).
-   - Build the GDSS nonce for this session: `nonce = gdss_nonce(session_id, tx_seq)` (gr-k-gdss).
+The cleanest approach is to key the blocks at runtime via the **set_key** message port, using the **key_injector** Python block. Key material then travels as bytes through GNU Radio's message system and can stay in the kernel keyring until the key_injector derives and sends it; the flowgraph can be re-keyed without restart.
 
-2. **When building the flowgraph:**
-   - Load the GDSS masking key from the keyring: `gdss_key = load_gdss_key(ids["gdss_masking"])` (gr-k-gdss Python; key ID from step 1).
-   - Pass `gdss_key` (32 bytes) and `nonce` (12 bytes) into the Keyed GDSS Spreader and Despreader. In **GRC** you must encode them as **hex strings** (64 hex chars for key, 24 for nonce) in the block parameters `chacha_key` and `chacha_nonce`. In **Python** flowgraphs you pass `list(gdss_key)` and `list(nonce)` to `kgdss_spreader_cc` / `kgdss_despreader_cc`.
+1. Build the spreader and despreader with **empty key and nonce** (e.g. in Python pass `b""` and `b""` so the blocks wait for a set_key message).
+2. Add a **key_injector** block (gr-k-gdss Python): `key_injector(shared_secret, session_id, tx_seq)`. It derives the GDSS key and nonce and formats them as a PMT message.
+3. Connect **key_injector.key_out** to the **set_key** message port of both the spreader and the despreader (use a message copy or duplicate connection if your flowgraph API supports it).
+4. At flowgraph start, either connect a message strobe (one-shot) to **key_injector.trigger**, or call **key_injector.inject()** once after `tb.start()` to send the key.
 
-3. **Using gr-linux-crypto blocks:**
-   - gr-linux-crypto provides **Kernel Keyring Source** (e.g. `linux_crypto_kernel_keyring_source` or `kernel_keyring_source`), which can read a key from the kernel keyring by key ID. That block typically outputs key material (e.g. as a stream or message) for use by other blocks. Because the GDSS blocks expect key/nonce at **construction time**, you cannot connect the keyring source output directly to the spreader/despreader. Use the keyring source in one of these ways:
-     - **Option A:** Run a small Python script that calls `load_gdss_key(key_id)` and then builds the flowgraph (e.g. with `gnuradio.eng_notation` and `kgdss`), passing the loaded bytes and `gdss_nonce(...)` into the block constructors.
-     - **Option B:** In GRC, use a **Variable** or **Id** to hold the key and nonce as hex strings. Set those variables from an external process that reads the keyring (e.g. a helper that runs at flowgraph start and writes hex to a file or uses message passing). The Keyed GDSS Spreader/Despreader parameters can reference those variables (e.g. `chacha_key` = `$key_hex`).
-   - For **payload encryption** (ChaCha20-Poly1305), use gr-linux-crypto's encrypt/decrypt blocks and the `payload_enc` and `payload_nonce` keys from the same session key derivation; those are separate from the GDSS key/nonce.
+```
+[Message Strobe / trigger] --> [key_injector] key_out --> set_key (spreader)
+                                    |                --> set_key (despreader)
+```
+
+Key injector (Python):
+
+```python
+from gnuradio import kgdss
+
+# ECDH shared secret (e.g. from keyring or get_shared_secret_from_gnupg)
+shared_secret = ...  # bytes, at least 32 bytes
+injector = kgdss.key_injector(shared_secret, session_id=0, tx_seq=1)
+# Connect injector.key_out to spreader.set_key and despreader.set_key (message ports)
+# Then: injector.inject()  # or use trigger port with a message strobe
+```
+
+**Alternative: key at construction**
+
+You can still pass key and nonce at construction (32 and 12 bytes). In **GRC** encode them as hex in `chacha_key` and `chacha_nonce`. In **Python** pass the bytes. If you pass empty key/nonce, the block outputs zeros until it receives a valid set_key message.
+
+**Payload encryption** (ChaCha20-Poly1305) remains separate: use gr-linux-crypto's encrypt/decrypt blocks with `payload_enc` and `payload_nonce` from the same session key derivation.
+
+### gr-linux-crypto compatibility
+
+gr-k-gdss is designed to work with gr-linux-crypto for key storage and ECDH. Use the following to keep behaviour and key handling compatible.
+
+**Where to get `shared_secret` for key_injector**
+
+- **From gr-linux-crypto ECDH (Brainpool):** Use `gr_linux_crypto.CryptoHelpers.brainpool_ecdh(private_key, peer_public_key)` to obtain the ECDH shared secret (bytes). Pass that as `shared_secret` into `kgdss.key_injector(shared_secret, session_id, tx_seq)`. The Brainpool keys come from `CryptoHelpers.generate_brainpool_keypair()` or `load_brainpool_*_key(pem_data)`.
+- **From GnuPG / PEM:** Use `kgdss.get_shared_secret_from_gnupg(my_private_key_pem, peer_public_key_pem)`, which uses gr-linux-crypto’s `CryptoHelpers` under the hood when available.
+
+**Keyring: storing and loading GDSS keys**
+
+- **gr-linux-crypto `KeyringHelper.add_key`** stores the key payload via a temp file; the keyring payload is the *filename* string, not the key bytes. So `KeyringHelper.read_key(key_id)` returns that path, not the key material. Do **not** use `KeyringHelper.add_key` for GDSS key material if you need to read raw key bytes later.
+- **gr-k-gdss** uses `keyctl padd` (pipe) in `store_session_keys()` so the keyring payload is the actual key bytes. Use `kgdss.store_session_keys(keys)` to store derived keys and `kgdss.load_gdss_key(key_id)` to read the 32-byte GDSS masking key. Run in a context where `keyctl read` is allowed (e.g. normal terminal); in restricted environments `load_gdss_key` may fail and key_injector or constructor keying should use keys obtained elsewhere (e.g. ECDH in process).
+
+**gr-linux-crypto Kernel Keyring Source block**
+
+- The gr-linux-crypto block module (**gnuradio.linux_crypto**) provides `kernel_keyring_source(key_id, auto_repeat)`, which outputs key bytes as a **stream** (one byte per sample). The GDSS spreader/despreader need key+nonce as a **single set_key message** (PMT dict). So you cannot connect the Kernel Keyring Source stream output directly to the set_key port. To use the keyring with GDSS either: (1) use **key_injector** with a `shared_secret` obtained in Python (e.g. from ECDH or from `load_gdss_key` + manual nonce), or (2) load the GDSS key in Python with `load_gdss_key(int(key_id))`, build the set_key PMT dict (key 32 bytes, nonce 12 bytes), and send it once to the set_key ports.
+
+**Package names**
+
+- **gr_linux_crypto** (Python package): `KeyringHelper`, `CryptoHelpers`, `GNURadioCryptoUtils`. Use for ECDH, HKDF (if needed), and keyring helpers.
+- **gnuradio.linux_crypto** (GNU Radio block module, from gr-linux-crypto): `kernel_keyring_source`, ECIES blocks, etc. Use for flowgraph blocks that read keys from the keyring as a stream.
 
 ### TX chain: SOQPSK modulator and Keyed GDSS Spreader
 

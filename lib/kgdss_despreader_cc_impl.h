@@ -8,6 +8,7 @@
 #define INCLUDED_KGDSS_DESPREDER_CC_IMPL_H
 
 #include <gnuradio/kgdss/kgdss_despreader_cc.h>
+#include <pmt/pmt.h>
 #include <vector>
 #include <deque>
 #include <mutex>
@@ -65,8 +66,11 @@ private:
     std::vector<uint8_t> d_key;   // 32 bytes ChaCha20 key
     std::vector<uint8_t> d_nonce; // 12 bytes ChaCha20 nonce
     uint64_t d_counter;           // keystream position counter
+    bool d_key_set;               // true once key/nonce set (constructor or set_key message)
+    std::mutex d_key_mutex;       // protects d_key, d_nonce, d_counter, d_key_set
 
     void build_sequence_complex(const std::vector<float>& spreading_sequence);
+    void handle_key_msg(pmt::pmt_t msg);
     gr_complex correlate(const gr_complex* samples, int offset, int length);
     void update_timing();
     void update_lock_detection(float correlation);

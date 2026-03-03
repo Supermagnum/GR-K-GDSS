@@ -11,6 +11,7 @@
 #include <gnuradio/kgdss/kgdss_despreader_cc.h>
 #include "kgdss_despreader_cc_impl.h"
 #include <gnuradio/io_signature.h>
+#include <pmt/pmt.h>
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -118,7 +119,8 @@ kgdss_despreader_cc_impl::kgdss_despreader_cc_impl(
       d_have_prev_corr(false),
       d_key(chacha_key),
       d_nonce(chacha_nonce),
-      d_counter(0)
+      d_counter(0),
+      d_key_set(chacha_key.size() == 32 && chacha_nonce.size() == 12)
 {
     if (d_sequence_length == 0) {
         throw std::invalid_argument("Spreading sequence cannot be empty");
@@ -126,11 +128,11 @@ kgdss_despreader_cc_impl::kgdss_despreader_cc_impl(
     if (d_chips_per_symbol <= 0) {
         throw std::invalid_argument("Chips per symbol must be positive");
     }
-    if (d_key.size() != 32) {
-        throw std::invalid_argument("ChaCha20 key must be exactly 32 bytes");
+    if (!chacha_key.empty() && chacha_key.size() != 32) {
+        throw std::invalid_argument("ChaCha20 key must be 0 or 32 bytes");
     }
-    if (d_nonce.size() != 12) {
-        throw std::invalid_argument("ChaCha20 nonce must be exactly 12 bytes");
+    if (!chacha_nonce.empty() && chacha_nonce.size() != 12) {
+        throw std::invalid_argument("ChaCha20 nonce must be 0 or 12 bytes");
     }
 
     if (sodium_init() < 0) {
@@ -138,11 +140,33 @@ kgdss_despreader_cc_impl::kgdss_despreader_cc_impl(
     }
 
     build_sequence_complex(spreading_sequence);
-
     d_input_buffer.clear();
+
+    message_port_register_in(pmt::mp("set_key"));
+    set_msg_handler(pmt::mp("set_key"),
+                    [this](pmt::pmt_t msg) { this->handle_key_msg(msg); });
 }
 
 kgdss_despreader_cc_impl::~kgdss_despreader_cc_impl() {}
+
+void kgdss_despreader_cc_impl::handle_key_msg(pmt::pmt_t msg)
+{
+    if (!pmt::is_dict(msg)) return;
+    pmt::pmt_t key_val = pmt::dict_ref(msg, pmt::mp("key"), pmt::PMT_NIL);
+    pmt::pmt_t nonce_val = pmt::dict_ref(msg, pmt::mp("nonce"), pmt::PMT_NIL);
+    if (!pmt::is_u8vector(key_val) || !pmt::is_u8vector(nonce_val)) return;
+    size_t key_len = pmt::length(key_val);
+    size_t nonce_len = pmt::length(nonce_val);
+    if (key_len != 32 || nonce_len != 12) return;
+    const uint8_t* k = (const uint8_t*)pmt::uniform_vector_elements(key_val, key_len);
+    const uint8_t* n = (const uint8_t*)pmt::uniform_vector_elements(nonce_val, nonce_len);
+    if (!k || !n) return;
+    std::unique_lock<std::mutex> lock(d_key_mutex);
+    d_key.assign(k, k + 32);
+    d_nonce.assign(n, n + 12);
+    d_counter = 0;
+    d_key_set = true;
+}
 
 void kgdss_despreader_cc_impl::build_sequence_complex(const std::vector<float>& spreading_sequence)
 {
@@ -344,12 +368,25 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
     float* out_lock = (float*)output_items[1];
     float* out_snr = (float*)output_items[2];
 
-    std::lock_guard<std::mutex> lock(d_mutex);
-
     int ninput_items_available = ninput_items[0];
     int ninput_items_needed = noutput_items * d_chips_per_symbol;
     int ninput_items_used = std::min(ninput_items_available, ninput_items_needed);
     int actual_output_items = ninput_items_used / d_chips_per_symbol;
+
+    {
+        std::unique_lock<std::mutex> key_lock(d_key_mutex);
+        if (!d_key_set) {
+            for (int i = 0; i < actual_output_items; i++) {
+                out_symbols[i] = gr_complex(0.0f, 0.0f);
+                out_lock[i] = 0.0f;
+                out_snr[i] = 0.0f;
+            }
+            consume(0, actual_output_items * d_chips_per_symbol);
+            return actual_output_items;
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(d_mutex);
 
     const float MIN_MASK = 1e-4f;
     auto to_uniform = [](const uint8_t* b) -> float {
@@ -369,7 +406,10 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
         // Per-symbol keystream: same byte range as spreader for this symbol's chips
         const size_t ks_len = static_cast<size_t>(d_chips_per_symbol) * 16;
         std::vector<uint8_t> ks(ks_len);
-        fill_keystream(ks.data(), ks_len);
+        {
+            std::lock_guard<std::mutex> key_lock(d_key_mutex);
+            fill_keystream(ks.data(), ks_len);
+        }
 
         if (d_state == STATE_ACQUISITION) {
             int step = std::max(1, d_sequence_length / COARSE_SEARCH_BINS);

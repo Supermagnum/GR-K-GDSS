@@ -24,6 +24,11 @@ except ImportError:
     keyring_import_error = None
 
 try:
+    from .key_injector import key_injector
+except ImportError:
+    key_injector = None
+
+try:
     from .sync_burst_utils import (
         derive_sync_schedule,
         derive_sync_pn_sequence,
@@ -46,6 +51,7 @@ except ImportError:
     kgdss_sync_state = None
 
 __all__ = [
+    "key_injector",
     "derive_session_keys",
     "store_session_keys",
     "load_gdss_key",

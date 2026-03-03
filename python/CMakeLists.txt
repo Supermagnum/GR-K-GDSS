@@ -16,7 +16,7 @@ else()
 endif()
 
 install(
-    FILES __init__.py session_key_derivation.py sync_burst_utils.py
+    FILES __init__.py session_key_derivation.py sync_burst_utils.py key_injector.py
     DESTINATION ${kgdss_python_install_dir}
     COMPONENT pythonapi
 )
