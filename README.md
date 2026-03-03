@@ -585,6 +585,14 @@ exchange layer. ChaCha20-Poly1305 is considered quantum-resistant at
 its current key size (Grover's algorithm reduces its effective security
 from 256 bits to 128 bits, which remains adequate).
 
+**Body of evidence:** The keyed GDSS construction produces output that is
+statistically indistinguishable from Gaussian noise across all standard
+detection metrics (mean, variance symmetry, kurtosis, skewness,
+autocorrelation); see [Testing](docs/TESTING.md) and the IQ file analysis
+there. Combined with the gr-linux-crypto NIST CAVP validation results
+below, this is a meaningful body of evidence to present alongside the
+design document.
+
 **Implementation quality:**
 The gr-linux-crypto module has an extensive test suite (413 passed,
 31 skipped, 0 failed as of 2025-11-16). Cryptographic correctness has

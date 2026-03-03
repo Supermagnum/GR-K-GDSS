@@ -171,7 +171,14 @@ def derive_session_keys(ecdh_shared_secret: bytes, salt: Optional[bytes] = None)
 
 
 def store_session_keys(keys: Dict[str, bytes]) -> Dict[str, str]:
-    """Store derived keys in kernel keyring. Returns keyring IDs."""
+    """
+    Store derived keys in kernel keyring. Returns keyring IDs (strings).
+    When keyctl is available uses keyctl padd so key payloads are raw bytes
+    (load_gdss_key then returns key bytes). When only gr-linux-crypto
+    KeyringHelper is available uses add_key (keyring stores a path); in that
+    case load_gdss_key would not return key bytes. Prefer having keyctl
+    available for GDSS key storage/load.
+    """
     use_keyctl = _keyctl_path() is not None
 
     KeyringHelper = _get_keyring_helper()
@@ -211,8 +218,14 @@ def _parse_keyctl_read_output(raw: bytes) -> bytes:
 
 
 def load_gdss_key(keyring_id: int) -> bytes:
-    # Prefer direct keyctl read; keyctl may still output text format when stdout is not a tty.
-    raw = _keyctl_read_key(keyring_id)
+    """
+    Load the 32-byte GDSS masking key from the kernel keyring by key ID.
+    Prefers direct keyctl read (raw bytes). Falls back to gr-linux-crypto KeyringHelper
+    only when keyctl is unavailable; KeyringHelper.read_key returns keyctl stdout (for keys
+    stored with keyctl padd this is raw bytes; for keys stored with KeyringHelper.add_key
+    the payload is a path string, so use store_session_keys for GDSS keys).
+    """
+    raw = _keyctl_read_key(int(keyring_id))
     if raw is not None:
         return _parse_keyctl_read_output(raw)
 
@@ -220,7 +233,7 @@ def load_gdss_key(keyring_id: int) -> bytes:
     if KeyringHelper is None:
         raise RuntimeError("Linux keyring helper not available (gr-linux-crypto not installed)")
     helper = KeyringHelper()
-    raw_helper = helper.read_key(str(keyring_id))
+    raw_helper = helper.read_key(str(int(keyring_id)))
     return _parse_keyctl_read_output(raw_helper)
 
 

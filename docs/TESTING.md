@@ -99,6 +99,7 @@ These tests exercise the C++ blocks via Python bindings. They ensure the keyed s
 | **TestT1GaussianDistribution** | Inspects the spreader output mask values (I and Q); checks mean near 0 and standard deviation near 1. Validates the Box-Muller Gaussian masking. |
 | **TestT1NoNearZeroMask** | Checks that no mask value is below a small threshold; ensures the spreader clamps near-zero masks to avoid division issues in the despreader. |
 | **TestT1BlockBoundaryContinuity** | Runs spreader/despreader with 25 symbols and with 50 symbols (same key/nonce); asserts the first 25 recovered symbols of the 50-symbol run match the 25-symbol run. Ensures keystream continuity across work() calls in one flowgraph. |
+| **TestT1SetKeyMessagePort** | Builds spreader and despreader with empty key/nonce, adds key_injector, connects key_out to both set_key ports, calls inject(), runs the flowgraph; asserts round-trip output matches input. Validates runtime key injection via the set_key message port. Skipped if key_injector is unavailable or the build does not support empty key/nonce. |
 
 T1 tests are skipped if the C++ Python bindings (`gnuradio.kgdss.kgdss_python`) are not available.
 
@@ -143,6 +144,77 @@ The keyring round-trip is skipped if the keyring is not available (no keyctl) or
 
 With the module installed, dependencies available, and tests run in a normal terminal (so keyctl read is allowed):
 
-- **30 passed** — All tests, including keyring round-trip and block-boundary continuity, pass.
+- **30 or 31 passed** — All tests pass. If the build supports empty key/nonce and key_injector is available, TestT1SetKeyMessagePort runs and 31 tests pass; otherwise that test is skipped and 30 pass.
 
 If the keyring round-trip is skipped with "Permission denied", run `pytest tests/ -v` in a normal system terminal (outside any sandbox) so the process can read keys from the session keyring. If gr_linux_crypto and gr-k-gdss are installed in the default Python search path (e.g. /usr/local), no PYTHONPATH is needed for normal use.
+
+## IQ test file generation and analysis
+
+Three scripts in `tests/` generate and validate IQ test files used to check the keyed GDSS blocks statistically. The generated files are not stored in the repository (they are large); run `generate_iq_test_files.py` to create them locally. See `.gitignore` for `tests/iq_files/`.
+
+### What each IQ test file is
+
+| File | Description |
+|------|-------------|
+| **01_gaussian_noise_baseline.cf32** | Pure complex Gaussian noise (I and Q each N(0,1)), same length and format as the other files. Used as the reference against which keyed GDSS output is compared; if masking works, keyed transmission should be statistically indistinguishable from this baseline. |
+| **02_plaintext_reference.cf32** | The known payload (PAYLOAD_BYTES) mapped to BPSK symbols (+1/-1 on I, zero on Q) and repeated to fill the same number of samples. Stored alongside **02_payload_reference.bin** (raw bytes). Reference for what the despreader should recover when the key is correct. |
+| **03_keyed_gdss_transmission.cf32** | The same payload as in 02, spread with the keyed GDSS construction (ChaCha20 keystream, Box-Muller masking, spreading factor 256) using the test key and nonce. This is the "transmitted" signal; it should look like Gaussian noise (same statistics as 01) to a passive observer. |
+| **04_keyed_gdss_despread_correct_key.cf32** | Result of despreading 03 with the correct key and nonce. After averaging over the spreading factor and dividing by the same masks used on transmit, the result should match the original payload; the analyser checks Pearson correlation > 0.95. |
+| **05_keyed_gdss_despread_wrong_key.cf32** | Result of despreading 03 with a wrong key and nonce. Without the correct key, the recovered stream should be uncorrelated with the payload; the analyser checks \|correlation\| < 0.05 (key isolation). |
+| **06_sync_burst_isolation.cf32** | A short (2 ms) sync burst (PN sequence with Gaussian envelope, calibrated above noise) centred in 1 second of silence. Used to validate sync burst generation and to compare PSD in the plot script. |
+| **07_nonce_reuse_transmission_A.cf32 / B.cf32** | Two transmissions with the same key and nonce but different payloads (A and B). Reusing key+nonce is insecure; the XOR of the two streams can leak structure. The analyser reports WARN if correlation of the XOR result with a known pattern exceeds a threshold. |
+| **08_real_noise_placeholder_README.txt** | Instructions for recording real noise from an SDR (sample rate, duration, format). Optionally, copy a real recording (e.g. from `sdr-noise/08_real_noise_with_hardware_artifacts.cf32`) into `tests/iq_files/` to run the same noise tests on File 8. |
+
+### Scripts
+
+1. **generate_iq_test_files.py** — Builds all test files in `tests/iq_files/`: Gaussian noise baseline (01), plaintext reference (02), keyed GDSS transmission (03), correct-key despread (04), wrong-key despread (05), sync burst isolation (06), nonce-reuse pair (07), and a placeholder README for real noise (08). Requires numpy, scipy, cryptography (and optionally pycryptodome for ChaCha20 IETF).
+2. **analyse_iq_files.py** — Runs statistical checks on the generated (and optionally real) IQ files: mean, variance symmetry, kurtosis, skewness, autocorrelation on noise-like files; round-trip correlation on file 04; key isolation on file 05; nonce reuse detection on file 07. Prints a PASS/FAIL/WARN table and exits with 0 only if no tests fail.
+3. **plot_iq_comparison.py** — Produces `tests/iq_files/iq_comparison.png`: 3x3 grid of amplitude histograms, power spectral density, and autocorrelation for files 01, 03, 04, 05, 06. Requires matplotlib.
+
+Run from the repo root or from `tests/`:
+
+```bash
+cd tests
+python3 generate_iq_test_files.py
+ls -lh iq_files/
+python3 analyse_iq_files.py
+python3 plot_iq_comparison.py
+```
+
+### Example IQ file analysis output
+
+A successful run of `analyse_iq_files.py` (with all generated files present) looks like:
+
+```
+=== gr-k-gdss IQ File Analysis ===
+
+File                                       Test                         Result
+--------------------------------------------------------------------------------
+01_gaussian_noise_baseline.cf32            Mean (I)                     PASS
+01_gaussian_noise_baseline.cf32            Mean (Q)                     PASS
+01_gaussian_noise_baseline.cf32            Variance symmetry            PASS
+01_gaussian_noise_baseline.cf32            Kurtosis (I)                 PASS
+01_gaussian_noise_baseline.cf32            Kurtosis (Q)                 PASS
+01_gaussian_noise_baseline.cf32            Skewness (I)                 PASS
+01_gaussian_noise_baseline.cf32            Skewness (Q)                 PASS
+01_gaussian_noise_baseline.cf32            Autocorrelation              PASS
+03_keyed_gdss_transmission.cf32            Mean (I)                     PASS
+03_keyed_gdss_transmission.cf32            Mean (Q)                     PASS
+03_keyed_gdss_transmission.cf32            Variance symmetry            PASS
+03_keyed_gdss_transmission.cf32            Kurtosis (I)                 PASS
+03_keyed_gdss_transmission.cf32            Kurtosis (Q)                 PASS
+03_keyed_gdss_transmission.cf32            Skewness (I)                 PASS
+03_keyed_gdss_transmission.cf32            Skewness (Q)                 PASS
+03_keyed_gdss_transmission.cf32            Autocorrelation              PASS
+04_keyed_gdss_despread_correct_key.cf32    Round-trip correlation       PASS
+05_keyed_gdss_despread_wrong_key.cf32      Key isolation                PASS
+07_nonce_reuse                             Nonce reuse detection        PASS
+--------------------------------------------------------------------------------
+PASSED: 19   FAILED: 0   WARNINGS: 0
+```
+
+The comparison plot is written to:
+
+`tests/iq_files/iq_comparison.png`
+
+If you add a real-noise recording (e.g. copy `sdr-noise/08_real_noise_with_hardware_artifacts.cf32` into `tests/iq_files/` as described in the placeholder README), the analyser runs the same noise tests on it and includes File 8 in the table.

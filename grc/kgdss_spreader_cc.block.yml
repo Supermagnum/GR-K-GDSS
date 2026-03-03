@@ -36,6 +36,9 @@ parameters:
 inputs:
 -   domain: stream
     dtype: complex
+-   domain: message
+    id: set_key
+    optional: true
 
 outputs:
 -   domain: stream
@@ -63,6 +66,9 @@ documentation: |-
 
     The ChaCha20 key and nonce must be provided from the session key derivation
     functions to avoid nonce reuse.
+
+    Key and nonce can be set at construction or at runtime via the set_key
+    message port (PMT dict with "key" and "nonce" u8vectors, 32 and 12 bytes).
 
 file_format: 1
 

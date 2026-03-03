@@ -8,6 +8,7 @@
 #define INCLUDED_KGDSS_SPREADER_CC_IMPL_H
 
 #include <gnuradio/kgdss/kgdss_spreader_cc.h>
+#include <pmt/pmt.h>
 #include <vector>
 #include <mutex>
 #include <random>
@@ -34,8 +35,11 @@ private:
     std::vector<uint8_t> d_key;   // 32 bytes ChaCha20 key
     std::vector<uint8_t> d_nonce; // 12 bytes ChaCha20 nonce
     uint64_t d_counter;           // keystream position counter
+    bool d_key_set;               // true once key/nonce set (constructor or set_key message)
+    std::mutex d_key_mutex;       // protects d_key, d_nonce, d_counter, d_key_set
 
     void generate_sequence();
+    void handle_key_msg(pmt::pmt_t msg);
     void fill_keystream(uint8_t* buf, size_t len);
     float box_muller(float u1, float u2);
 
