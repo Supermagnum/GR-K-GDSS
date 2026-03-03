@@ -7,4 +7,6 @@ __pycache__/
 .eggs/
 
 # Generated IQ test files (large; run generate_iq_test_files.py to create)
-tests/iq_files/
+tests/iq_files/*.cf32
+tests/iq_files/*.bin
+tests/iq_files/*.json
