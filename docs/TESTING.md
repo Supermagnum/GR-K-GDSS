@@ -150,7 +150,25 @@ If the keyring round-trip is skipped with "Permission denied", run `pytest tests
 
 ## IQ test file generation and analysis
 
-Three scripts in `tests/` generate and validate IQ test files used to check the keyed GDSS blocks statistically. The generated files are not stored in the repository (they are large); run `generate_iq_test_files.py` to create them locally. See `.gitignore` for `tests/iq_files/`.
+Three scripts in `tests/` generate and validate IQ test files used to check the keyed GDSS blocks statistically. **No IQ files are included in the repository** (generated or recorded); they are too large. Run `generate_iq_test_files.py` locally to create the generated set, and optionally copy a real recording into `tests/iq_files/` as described below. See `.gitignore` for `tests/iq_files/`.
+
+### What IQ files are
+
+**IQ** means in-phase (I) and quadrature (Q): two real signals that together represent a complex baseband (or IF) waveform. Each sample is one complex number: I is the real part, Q the imaginary part. So the waveform is I(t) + j*Q(t). This is the usual format for SDR and GNU Radio: one complex sample per time step.
+
+In this test suite, IQ files are stored as **.cf32**: complex 32-bit float, with I and Q interleaved as consecutive float32 values (same as GNU Radio’s complex64 / `np.complex64`). So each sample is 8 bytes (I, Q), and the file has no separate header; it is raw complex samples. All generated and recorded files in `tests/iq_files/` use this format at 500 kHz sample rate so they can be compared directly.
+
+### Generated files vs the real recording
+
+| Source | Files | Role |
+|--------|--------|------|
+| **Generated** | 01–07, 09–13 (and 02_payload_reference.bin, JSON metadata) | Created by `generate_iq_test_files.py` from fixed parameters (seeds, keys, payload). No SDR or radio involved. Used as baselines (noise, plaintext), keyed/standard GDSS signals, despread results, sync bursts, and cross-correlations. |
+| **Placeholder** | 08_real_noise_placeholder_README.txt | Written by the generator. It is a text file with instructions for recording real noise and, optionally, where to copy the project’s SDR recording. |
+| **Recording (optional)** | 08_real_noise_with_hardware_artifacts.cf32 (or 08_real_noise_reference.cf32) | **Not** produced by the generator. It is a **real SDR recording** of the antenna input with no transmission: antenna to SDR source to file sink, 500 kHz, complex float32, at least 10 seconds. A pre-recorded example is provided in the project at `sdr-noise/08_real_noise_with_hardware_artifacts.cf32`. You can copy that file into `tests/iq_files/` (same name or as 08_real_noise_reference.cf32). |
+
+**How the recording is used:** If `analyse_iq_files.py` finds either `08_real_noise_with_hardware_artifacts.cf32` or `08_real_noise_reference.cf32` in `tests/iq_files/`, it runs the same set of noise tests on that file as on the synthetic noise (01) and keyed GDSS (03): mean, variance symmetry, kurtosis, skewness, autocorrelation. That lets you compare keyed GDSS and synthetic noise against **real hardware noise** (including any DC, gain, or spur artifacts from the SDR). The recording is only used by the analyser when present; the generator never creates or overwrites it.
+
+All of the above IQ data files (generated 01–07, 09–13 and optional recording 08) are excluded from the repository by `.gitignore` because they are too large to commit. Only the generator script, analyser, plot script, placeholder README for File 8, and the generated comparison plots (e.g. `iq_comparison.png`, `iq_comparison_vs_standard.png`) are tracked.
 
 ### What each IQ test file is
 
@@ -258,5 +276,15 @@ Output files:
 
 - `tests/iq_files/iq_comparison.png` — Keyed GDSS validation (3x3).
 - `tests/iq_files/iq_comparison_vs_standard.png` — Keyed vs standard GDSS comparison (4x3).
+
+### Unexpected PSD finding (Row 2, second plot): standard GDSS low-frequency peak
+
+In Row 2 of `iq_comparison_vs_standard.png`, standard GDSS (File 09) can show a **low-frequency spectral peak** that the noise baseline and keyed GDSS (File 03) do not. This is expected from the structure of standard GDSS, not a bug.
+
+- **Standard GDSS**: The same BPSK symbol is repeated for 256 chips (one symbol per spreading block). So the baseband chip stream is `symbol_1, symbol_1, ..., symbol_1` (256 times), then `symbol_2` repeated 256 times, and so on. The *symbol* therefore changes only every 256 samples; the mask (RNG) changes every sample. That slow, periodic change in the sign/magnitude of the symbol acts like a **amplitude modulation at the symbol rate** = sample rate / 256. At 500 kHz that is about 1.95 kHz. The PSD of such a process has extra energy at low frequencies (around that symbol rate), so a low-frequency peak appears. The mask is random but positive (abs of Gaussian), so it does not average out this slow envelope.
+
+- **Keyed GDSS**: The mask is derived from ChaCha20 and is **signed** (zero-mean Gaussian) and different every chip. So the product (symbol × mask) has no persistent “symbol envelope” visible in the spectrum: the zero-mean mask decorrelates the output from the slow symbol pattern. The PSD therefore stays effectively flat, like the noise baseline.
+
+So the low-frequency peak in standard GDSS is a **structural side effect of repeating the same symbol over 256 chips** with a positive (absolute-value) mask. Keyed GDSS avoids it by using a zero-mean, per-chip mask that removes that periodic component. This is another sense in which keyed GDSS is harder to distinguish from noise than standard GDSS.
 
 If you add a real-noise recording (e.g. copy `sdr-noise/08_real_noise_with_hardware_artifacts.cf32` into `tests/iq_files/` as described in the placeholder README), the analyser runs the same noise tests on it and includes File 8 in the table.
