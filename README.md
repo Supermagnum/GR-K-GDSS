@@ -31,6 +31,7 @@ A highly experimental Cryptographically keyed GDSS proposal.
 11. Build and Install
 12. [Usage](docs/USAGE.md)
 13. [Testing](docs/TESTING.md)
+14. [Test results](docs/TEST_RESULTS.md)
 
 ---
 
@@ -731,6 +732,7 @@ pytest tests/ -v
 ```
 
 - **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results (30 passed when keyctl and dependencies are available).
+- **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — Recorded pytest and IQ file analysis results (30 unit tests passed, 19 IQ checks passed).
 - **tests/README.md** — Quick run instructions and per-suite notes; keyring round-trip is skipped if the Linux kernel keyring or `keyctl` is not available.
 
 ---
