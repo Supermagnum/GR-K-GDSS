@@ -50,7 +50,7 @@ def main():
     n_ac = 500
     n_psd = 4096
 
-    # Row 1 - Amplitude histograms
+    # Row 1 - Amplitude histograms (shared scale so File 1, 3, 5 are comparable)
     for ax, data, title in [
         (axes[0, 0], f1, "File 1 (noise baseline)"),
         (axes[0, 1], f3, "File 3 (keyed GDSS transmission)"),
@@ -60,6 +60,8 @@ def main():
             d = data[:n_hist]
             ax.hist(d.real, bins=150, density=True, alpha=0.7, label="I", color="steelblue")
             ax.hist(d.imag, bins=150, density=True, alpha=0.5, label="Q", color="tomato")
+        ax.set_xlim(-5, 5)
+        ax.set_ylim(0, 0.45)
         ax.set_title(title)
         ax.set_xlabel("Amplitude")
         ax.legend()
