@@ -110,7 +110,7 @@ Keyed GDSS    (sessions A vs B):  0.1070  PROTECTED
 Improvement:  9.3x reduction in cross-session correlation
 ```
 
-**Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03; correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.107 PROTECTED, 9.3x improvement.
+**Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03; correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.107 PROTECTED, 9.3x improvement. The 0.107 keyed residual is a simulation artifact; in a real channel it would be lower and is not considered exploitable (see [TESTING.md](TESTING.md)).
 
 ### IQ comparison plots
 

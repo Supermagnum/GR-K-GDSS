@@ -371,7 +371,7 @@ All ratings are on a scale of 0–10. They assume correct implementation,
 appropriate operational discipline, and moving operators with minimum
 traffic. They do not represent a formal security evaluation.
 
-**Delta** in the tables below is the difference (Keyed GDSS minus Standard GDSS). A positive delta means keyed GDSS scores higher on that aspect; zero means no change. The comparison is supported by the [IQ file analysis](docs/TESTING.md#iq-test-file-generation-and-analysis): cross-session sync burst correlation shows roughly 9x lower correlation for keyed GDSS than for standard GDSS, and keyed GDSS output passes the same noise-like statistical tests as synthetic Gaussian noise.
+**Delta** in the tables below is the difference (Keyed GDSS minus Standard GDSS). A positive delta means keyed GDSS scores higher on that aspect; zero means no change. The comparison is supported by the [IQ file analysis](docs/TESTING.md#iq-test-file-generation-and-analysis): cross-session sync burst correlation shows roughly 9x lower correlation for keyed GDSS than for standard GDSS, and keyed GDSS output passes the same noise-like statistical tests as synthetic Gaussian noise. The small residual cross-session correlation (~0.11) seen in keyed GDSS in the test suite is a simulation artifact; in a real channel it would be lower and is not considered exploitable.
 
 ### Detection Resistance
 
