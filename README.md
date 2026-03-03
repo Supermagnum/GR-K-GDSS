@@ -370,6 +370,8 @@ All ratings are on a scale of 0–10. They assume correct implementation,
 appropriate operational discipline, and moving operators with minimum
 traffic. They do not represent a formal security evaluation.
 
+**Delta** in the tables below is the difference (Keyed GDSS minus Standard GDSS). A positive delta means keyed GDSS scores higher on that aspect; zero means no change.
+
 ### Detection Resistance
 
 | Aspect | Standard GDSS | Keyed GDSS | Delta | Notes |
