@@ -1,0 +1,90 @@
+id: kgdss_despreader_cc
+label: Keyed GDSS Despreader
+category: '[KGDSS]/DSSS'
+flags: [ python ]
+
+parameters:
+-   id: sequence_length
+    label: Sequence Length
+    dtype: int
+    default: '127'
+    minimum: 1
+-   id: chips_per_symbol
+    label: Chips per Symbol
+    dtype: int
+    default: '42'
+    minimum: 1
+-   id: variance
+    label: Variance (must match transmitter)
+    dtype: float
+    default: '1.0'
+    minimum: 0.001
+-   id: seed
+    label: Random Seed (must match transmitter)
+    dtype: int
+    default: '0'
+    minimum: 0
+-   id: correlation_threshold
+    label: Correlation Threshold
+    dtype: float
+    default: '0.7'
+-   id: timing_error_tolerance
+    label: Timing Error Tolerance
+    dtype: int
+    default: '2'
+-   id: chacha_key
+    label: 'ChaCha20 Key (32 bytes, hex string)'
+    dtype: raw
+    default: '""'
+-   id: chacha_nonce
+    label: 'ChaCha20 Nonce (12 bytes, hex string)'
+    dtype: raw
+    default: '""'
+
+inputs:
+-   domain: stream
+    dtype: complex
+
+outputs:
+-   domain: stream
+    dtype: complex
+    label: Despread Symbols
+    optional: false
+-   domain: stream
+    dtype: float
+    label: Lock Status
+    optional: false
+-   domain: stream
+    dtype: float
+    label: SNR Estimate (dB)
+    optional: false
+
+templates:
+    imports: |
+        from gnuradio import kgdss
+        import numpy as np
+        import binascii
+    make: |-
+        np.random.seed(${seed} if ${seed} > 0 else None)
+        spreading_sequence = np.random.normal(0.0, np.sqrt(${variance}), ${sequence_length}).tolist()
+
+        kgdss.kgdss_despreader_cc(
+            spreading_sequence,
+            ${chips_per_symbol},
+            ${correlation_threshold},
+            ${timing_error_tolerance},
+            list(binascii.unhexlify(${chacha_key}.strip('"')) if ${chacha_key} not in ('""', '') else b''),
+            list(binascii.unhexlify(${chacha_nonce}.strip('"')) if ${chacha_nonce} not in ('""', '') else b''))
+
+documentation: |-
+    Keyed GDSS (Gaussian-Distributed Spread-Spectrum) Despreader.
+
+    This block despreads a GDSS signal using correlation with the Gaussian spreading
+    sequence while removing the keyed Gaussian masking generated from the same
+    ChaCha20 keystream and nonce as the transmitter.
+
+    The ChaCha20 key and nonce must be provided from the session key derivation
+    functions to avoid nonce reuse.
+
+file_format: 1
+

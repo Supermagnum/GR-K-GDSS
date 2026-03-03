@@ -1,0 +1,68 @@
+id: kgdss_spreader_cc
+label: Keyed GDSS Spreader
+category: '[KGDSS]/DSSS'
+flags: [ python ]
+
+parameters:
+-   id: sequence_length
+    label: Sequence Length
+    dtype: int
+    default: '127'
+    minimum: 1
+-   id: chips_per_symbol
+    label: Chips per Symbol
+    dtype: int
+    default: '42'
+    minimum: 1
+-   id: variance
+    label: Variance
+    dtype: float
+    default: '1.0'
+    minimum: 0.001
+-   id: seed
+    label: Random Seed (0 = auto)
+    dtype: int
+    default: '0'
+    minimum: 0
+-   id: chacha_key
+    label: 'ChaCha20 Key (32 bytes, hex string)'
+    dtype: raw
+    default: '""'
+-   id: chacha_nonce
+    label: 'ChaCha20 Nonce (12 bytes, hex string)'
+    dtype: raw
+    default: '""'
+
+inputs:
+-   domain: stream
+    dtype: complex
+
+outputs:
+-   domain: stream
+    dtype: complex
+
+templates:
+    imports: |
+        from gnuradio import kgdss
+        import binascii
+    make: |-
+        kgdss.kgdss_spreader_cc(
+            ${sequence_length},
+            ${chips_per_symbol},
+            ${variance},
+            ${seed},
+            list(binascii.unhexlify(${chacha_key}.strip('"')) if ${chacha_key} not in ('""', '') else b''),
+            list(binascii.unhexlify(${chacha_nonce}.strip('"')) if ${chacha_nonce} not in ('""', '') else b''))
+
+documentation: |-
+    Keyed GDSS (Gaussian-Distributed Spread-Spectrum) Spreader.
+
+    This block spreads complex symbols using a Gaussian-distributed spreading sequence,
+    with the per-chip masking values derived from a ChaCha20 keystream and Box-Muller
+    transform keyed by a session-specific key and nonce.
+
+    The ChaCha20 key and nonce must be provided from the session key derivation
+    functions to avoid nonce reuse.
+
+file_format: 1
+
