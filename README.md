@@ -28,6 +28,9 @@ A highly experimental Cryptographically keyed GDSS proposal.
 8. The Nitrokey and Emergency Disposal
 9. What Remains Unresolved
 10. Sources and Further Reading
+11. Build and Install
+12. [Usage](docs/USAGE.md)
+13. [Testing](docs/TESTING.md)
 
 ---
 
@@ -657,6 +660,68 @@ https://github.com/Supermagnum/gr-linux-crypto/blob/master/tests/TEST_RESULTS.md
 
 **Nitrokey:**
 https://www.nitrokey.com
+
+---
+
+## 11. Build and Install
+
+This repository contains a GNU Radio out-of-tree (OOT) module that implements the keyed GDSS spreader and despreader blocks, plus Python helpers for key derivation and sync burst utilities.
+
+WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK ! 
+
+**Usage documentation** (block I/O, parameters, and how to connect gr-linux-crypto and SOQPSK for TX/RX) is in **[docs/USAGE.md](docs/USAGE.md)**.
+
+### Dependencies
+
+- **GNU Radio** 3.10 or newer (with development headers and Python bindings)
+- **libsodium** (preferred) or **OpenSSL** (for ChaCha20 in the C++ blocks)
+- **pybind11** (for Python bindings to the C++ blocks)
+- **gr-linux-crypto** — install and build this module first; the Python helpers depend on it for `KeyringHelper` and `CryptoHelpers`
+- **gr-qradiolink** — optional; provides the original GDSS blocks and SOQPSK; useful for reference and flowgraph examples
+- **Python:** `pycryptodome`, `cryptography`, `numpy` (for the Python helpers and tests)
+
+On Debian/Ubuntu you can install build dependencies and libsodium with:
+
+```bash
+sudo apt install build-essential cmake libgnuradio-dev libvolk-dev \
+  libsodium-dev pkg-config python3-dev python3-numpy pybind11-dev
+```
+
+### Build
+
+From the top level of this repository:
+
+```bash
+mkdir build
+cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+make -j$(nproc)
+```
+
+If CMake reports that libsodium was not found, it will fall back to OpenSSL; ensure `libssl-dev` is installed in that case.
+
+### Install
+
+After a successful build:
+
+```bash
+sudo make install
+sudo ldconfig
+```
+
+This installs the library, headers, Python package (`gnuradio.kgdss`), and GRC block descriptors. Ensure **gr-linux-crypto** is already installed so that the Python helpers can import it at runtime.
+
+### Tests
+
+Unit tests are in the `tests/` directory. Run them after installing the module (and gr-linux-crypto, for key derivation and cross-layer tests):
+
+```bash
+export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
+pytest tests/ -v
+```
+
+- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results (30 passed when keyctl and dependencies are available).
+- **tests/README.md** — Quick run instructions and per-suite notes; keyring round-trip is skipped if the Linux kernel keyring or `keyctl` is not available.
 
 ---
 
