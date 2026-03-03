@@ -10,8 +10,12 @@ import math
 import os
 import struct
 import sys
+import warnings
 
 import numpy as np
+
+# Suppress numpy RuntimeWarning from correlation when stddev is zero (harmless in our use)
+warnings.filterwarnings("ignore", message="invalid value encountered in divide", category=RuntimeWarning, module="numpy")
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 
@@ -363,6 +367,141 @@ Optional baseline with hardware artifacts (SDR recording):
 """
     with open(os.path.join(OUTPUT_DIR, "08_real_noise_placeholder_README.txt"), "w") as f:
         f.write(readme8)
+
+    # --- Standard (unkeyed) GDSS and keyed vs standard comparison (Files 09-13) ---
+    SESSION_ID_A = 1
+    SESSION_ID_B = 2
+
+    def _derive_full_session_keys(ecdh_shared_secret: bytes, salt: bytes = None):
+        """Return all session keys including sync_pn, sync_timing for File 11."""
+        if salt is None:
+            salt = bytes(32)
+        def hkdf_expand(info: bytes) -> bytes:
+            return HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                info=info,
+            ).derive(ecdh_shared_secret)
+        return {
+            "gdss_masking": hkdf_expand(b"gdss-chacha20-masking-v1"),
+            "sync_pn": hkdf_expand(b"sync-dsss-pn-sequence-v1"),
+            "sync_timing": hkdf_expand(b"sync-burst-timing-offset-v1"),
+        }
+
+    # File 09 - Standard GDSS transmission (unkeyed), Shakeel et al. 2023
+    rng09 = np.random.default_rng(seed=RNG_SEED)
+    symbols_in_09 = np.tile(symbols_bpsk, (n_symbols // n_sym + 1))[:n_symbols]
+    symbols_expanded_09 = np.repeat(symbols_in_09, SPREADING_N)
+    mask_i_09 = np.abs(rng09.normal(0, 1, n_chips))
+    mask_q_09 = np.abs(rng09.normal(0, 1, n_chips))
+    chips_09 = (symbols_expanded_09.real * mask_i_09 + 1j * symbols_expanded_09.imag * mask_q_09).astype(np.complex64)
+    if n_chips < N_SAMPLES:
+        file09 = np.concatenate([chips_09, np.zeros(N_SAMPLES - n_chips, dtype=np.complex64)])
+    else:
+        file09 = chips_09[:N_SAMPLES]
+    file09.tofile(os.path.join(OUTPUT_DIR, "09_standard_gdss_transmission.cf32"))
+    I09, Q09 = file09.real, file09.imag
+    meta09 = {
+        "type": "standard_gdss",
+        "spreading_factor": SPREADING_N,
+        "masking": "gaussian_rng",
+        "note": "Standard GDSS per Shakeel et al. 2023; masking from RNG not ChaCha20",
+        "mean_i": float(np.mean(I09)),
+        "mean_q": float(np.mean(Q09)),
+        "std_i": float(np.std(I09)),
+        "std_q": float(np.std(Q09)),
+        "kurtosis_i": float(stats.kurtosis(I09, fisher=False)),
+        "kurtosis_q": float(stats.kurtosis(Q09, fisher=False)),
+    }
+    with open(os.path.join(OUTPUT_DIR, "09_standard_gdss_transmission.json"), "w") as f:
+        json.dump(meta09, f, indent=2)
+
+    # File 10a - Standard GDSS sync burst Session A (fixed PN, seed 99)
+    PN_SEED_STD = 99
+    BURST_POS_FIXED = 10_000
+    SILENCE_LEN_10 = 500_000
+    rng10 = np.random.default_rng(seed=PN_SEED_STD)
+    pn10 = rng10.choice([-1.0, 1.0], size=10_000)
+    burst10 = pn10[:burst_len].astype(np.complex64)
+    burst10_env = _gaussian_envelope(burst10, rise_fraction=0.1)
+    scale10 = noise_floor * (10 ** (peak_target_db / 20.0)) / (np.max(np.abs(burst10_env)) + 1e-12)
+    burst10_scaled = burst10_env * scale10
+    silence_before = np.zeros(BURST_POS_FIXED, dtype=np.complex64)
+    silence_after = np.zeros(SILENCE_LEN_10 - BURST_POS_FIXED - burst_len, dtype=np.complex64)
+    file10a = np.concatenate([silence_before, burst10_scaled, silence_after])
+    file10a.tofile(os.path.join(OUTPUT_DIR, "10a_standard_gdss_sync_burst_session_A.cf32"))
+    meta10a = {"session": "A", "pn_seed": PN_SEED_STD, "burst_position": BURST_POS_FIXED, "type": "standard_gdss_fixed_pn"}
+    with open(os.path.join(OUTPUT_DIR, "10a_standard_gdss_sync_burst_session_A.json"), "w") as f:
+        json.dump(meta10a, f, indent=2)
+
+    # File 10b - Standard GDSS sync burst Session B (identical to 10a)
+    file10b = np.concatenate([silence_before, burst10_scaled, silence_after])
+    file10b.tofile(os.path.join(OUTPUT_DIR, "10b_standard_gdss_sync_burst_session_B.cf32"))
+    meta10b = {"session": "B", "pn_seed": PN_SEED_STD, "burst_position": BURST_POS_FIXED, "type": "standard_gdss_fixed_pn", "note": "Identical PN to session A - demonstrates vulnerability"}
+    with open(os.path.join(OUTPUT_DIR, "10b_standard_gdss_sync_burst_session_B.json"), "w") as f:
+        json.dump(meta10b, f, indent=2)
+
+    # File 11a - Keyed GDSS sync burst Session A (session-unique PN)
+    keys_full = _derive_full_session_keys(TEST_SHARED_SECRET)
+    sync_pn_key = keys_full["sync_pn"]
+    pn11a = _derive_sync_pn_sequence(sync_pn_key, SESSION_ID_A, burst_len)
+    burst11a = pn11a.astype(np.complex64)
+    burst11a_env = _gaussian_envelope(burst11a, rise_fraction=0.1)
+    scale11a = noise_floor * (10 ** (peak_target_db / 20.0)) / (np.max(np.abs(burst11a_env)) + 1e-12)
+    burst11a_scaled = burst11a_env * scale11a
+    file11a = np.concatenate([silence_before, burst11a_scaled, silence_after])
+    file11a.tofile(os.path.join(OUTPUT_DIR, "11a_keyed_gdss_sync_burst_session_A.cf32"))
+    meta11a = {"session_id": SESSION_ID_A, "type": "keyed_gdss_session_pn"}
+    with open(os.path.join(OUTPUT_DIR, "11a_keyed_gdss_sync_burst_session_A.json"), "w") as f:
+        json.dump(meta11a, f, indent=2)
+
+    # File 11b - Keyed GDSS sync burst Session B
+    pn11b = _derive_sync_pn_sequence(sync_pn_key, SESSION_ID_B, burst_len)
+    burst11b = pn11b.astype(np.complex64)
+    burst11b_env = _gaussian_envelope(burst11b, rise_fraction=0.1)
+    scale11b = noise_floor * (10 ** (peak_target_db / 20.0)) / (np.max(np.abs(burst11b_env)) + 1e-12)
+    burst11b_scaled = burst11b_env * scale11b
+    file11b = np.concatenate([silence_before, burst11b_scaled, silence_after])
+    file11b.tofile(os.path.join(OUTPUT_DIR, "11b_keyed_gdss_sync_burst_session_B.cf32"))
+    meta11b = {"session_id": SESSION_ID_B, "type": "keyed_gdss_session_pn"}
+    with open(os.path.join(OUTPUT_DIR, "11b_keyed_gdss_sync_burst_session_B.json"), "w") as f:
+        json.dump(meta11b, f, indent=2)
+
+    # File 12 - Cross-correlation standard GDSS sessions A vs B
+    data10a = np.fromfile(os.path.join(OUTPUT_DIR, "10a_standard_gdss_sync_burst_session_A.cf32"), dtype=np.complex64)
+    data10b = np.fromfile(os.path.join(OUTPUT_DIR, "10b_standard_gdss_sync_burst_session_B.cf32"), dtype=np.complex64)
+    I10a, I10b = data10a.real, data10b.real
+    cross12 = np.correlate(I10a - I10a.mean(), I10b - I10b.mean(), mode="full")
+    denom12 = len(I10a) * np.std(I10a) * np.std(I10b)
+    cross12_n = cross12 / denom12 if denom12 > 0 else cross12
+    peak12 = float(np.max(np.abs(cross12_n)))
+    peak_lag12 = int(np.argmax(np.abs(cross12_n)) - len(I10a) + 1)
+    file12 = (cross12_n.astype(np.float32) + 0.0j).astype(np.complex64)
+    file12.tofile(os.path.join(OUTPUT_DIR, "12_standard_gdss_crosscorr_A_vs_B.cf32"))
+    meta12 = {"peak_correlation": float(peak12), "peak_lag": peak_lag12, "conclusion": "Strong peak reveals repeating PN structure"}
+    with open(os.path.join(OUTPUT_DIR, "12_standard_gdss_crosscorr_A_vs_B.json"), "w") as f:
+        json.dump(meta12, f, indent=2)
+    assert peak12 > 0.5, f"Standard GDSS cross-session peak {peak12} <= 0.5"
+    print("VULNERABILITY CONFIRMED: Standard GDSS cross-session peak = {:.3f}".format(peak12), file=sys.stderr)
+
+    # File 13 - Cross-correlation keyed GDSS sessions A vs B
+    data11a = np.fromfile(os.path.join(OUTPUT_DIR, "11a_keyed_gdss_sync_burst_session_A.cf32"), dtype=np.complex64)
+    data11b = np.fromfile(os.path.join(OUTPUT_DIR, "11b_keyed_gdss_sync_burst_session_B.cf32"), dtype=np.complex64)
+    I11a, I11b = data11a.real, data11b.real
+    cross13 = np.correlate(I11a - I11a.mean(), I11b - I11b.mean(), mode="full")
+    denom13 = len(I11a) * np.std(I11a) * np.std(I11b)
+    cross13_n = cross13 / denom13 if denom13 > 0 else cross13
+    peak13 = float(np.max(np.abs(cross13_n)))
+    peak_lag13 = int(np.argmax(np.abs(cross13_n)) - len(I11a) + 1)
+    file13 = (cross13_n.astype(np.float32) + 0.0j).astype(np.complex64)
+    file13.tofile(os.path.join(OUTPUT_DIR, "13_keyed_gdss_crosscorr_A_vs_B.cf32"))
+    meta13 = {"peak_correlation": float(peak13), "peak_lag": peak_lag13, "conclusion": "No peak - session-unique PN sequences not detectable"}
+    with open(os.path.join(OUTPUT_DIR, "13_keyed_gdss_crosscorr_A_vs_B.json"), "w") as f:
+        json.dump(meta13, f, indent=2)
+    # 0.15 allows software simulation; real transmission (channel noise, hardware) would be lower
+    assert peak13 < 0.15, f"Keyed GDSS cross-session peak {peak13} >= 0.15"
+    print("PROTECTION CONFIRMED: Keyed GDSS cross-session peak = {:.3f}".format(peak13), file=sys.stderr)
 
     print("Generated all IQ test files in", OUTPUT_DIR)
 

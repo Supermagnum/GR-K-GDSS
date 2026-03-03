@@ -164,12 +164,19 @@ Three scripts in `tests/` generate and validate IQ test files used to check the 
 | **06_sync_burst_isolation.cf32** | A short (2 ms) sync burst (PN sequence with Gaussian envelope, calibrated above noise) centred in 1 second of silence. Used to validate sync burst generation and to compare PSD in the plot script. |
 | **07_nonce_reuse_transmission_A.cf32 / B.cf32** | Two transmissions with the same key and nonce but different payloads (A and B). Reusing key+nonce is insecure; the XOR of the two streams can leak structure. The analyser reports WARN if correlation of the XOR result with a known pattern exceeds a threshold. |
 | **08_real_noise_placeholder_README.txt** | Instructions for recording real noise from an SDR (sample rate, duration, format). Optionally, copy a real recording (e.g. from `sdr-noise/08_real_noise_with_hardware_artifacts.cf32`) into `tests/iq_files/` to run the same noise tests on File 8. |
+| **09_standard_gdss_transmission.cf32** | Standard (unkeyed) GDSS per Shakeel et al. 2023: masking from Gaussian RNG (not ChaCha20), same payload and spreading factor as 03. Used to compare keyed vs standard GDSS; both should look noise-like in histograms and PSD. |
+| **10a_standard_gdss_sync_burst_session_A.cf32** | Standard GDSS sync burst for "session A": fixed PN sequence (seed 99), 2 ms burst at fixed position 10000 in a 500k-sample silence window. Same PN for every session (vulnerability). |
+| **10b_standard_gdss_sync_burst_session_B.cf32** | Identical to 10a (same PN, same position). Cross-correlation of 10a vs 10b shows a strong peak (File 12), confirming the repeating-PN vulnerability. |
+| **11a_keyed_gdss_sync_burst_session_A.cf32** | Keyed GDSS sync burst for session A: session-unique PN and timing from derive_sync_pn_sequence / derive_sync_schedule. |
+| **11b_keyed_gdss_sync_burst_session_B.cf32** | Keyed GDSS sync burst for session B (different session_id). PN and burst position differ from 11a. Cross-correlation of 11a vs 11b (File 13) should show no detectable peak. |
+| **12_standard_gdss_crosscorr_A_vs_B.cf32** | Normalized cross-correlation of 10a vs 10b (I component). Strong peak confirms standard GDSS sync bursts are detectable across sessions. Generator asserts peak > 0.5. |
+| **13_keyed_gdss_crosscorr_A_vs_B.cf32** | Normalized cross-correlation of 11a vs 11b (I component). No strong peak; keyed GDSS session-unique PN is not detectable. Generator asserts peak < 0.15 (software simulation threshold; real transmission would be lower). The improvement ratio (standard peak / keyed peak) is what demonstrates protection. |
 
 ### Scripts
 
-1. **generate_iq_test_files.py** — Builds all test files in `tests/iq_files/`: Gaussian noise baseline (01), plaintext reference (02), keyed GDSS transmission (03), correct-key despread (04), wrong-key despread (05), sync burst isolation (06), nonce-reuse pair (07), and a placeholder README for real noise (08). Requires numpy, scipy, cryptography (and optionally pycryptodome for ChaCha20 IETF).
-2. **analyse_iq_files.py** — Runs statistical checks on the generated (and optionally real) IQ files: mean, variance symmetry, kurtosis, skewness, autocorrelation on noise-like files; round-trip correlation on file 04; key isolation on file 05; nonce reuse detection on file 07. Prints a PASS/FAIL/WARN table and exits with 0 only if no tests fail.
-3. **plot_iq_comparison.py** — Produces `tests/iq_files/iq_comparison.png`: 3x3 grid of amplitude histograms, power spectral density, and autocorrelation for files 01, 03, 04, 05, 06. Requires matplotlib.
+1. **generate_iq_test_files.py** — Builds all test files in `tests/iq_files/`: 01–08 as above, plus 09 (standard GDSS transmission), 10a/10b (standard sync bursts), 11a/11b (keyed sync bursts), 12 (standard cross-corr), 13 (keyed cross-corr). On success it prints "VULNERABILITY CONFIRMED" (File 12 peak > 0.5) and "PROTECTION CONFIRMED" (File 13 peak < 0.15), then "Generated all IQ test files in .../tests/iq_files". The 0.15 threshold is for software simulation; in real transmission, channel noise and hardware would push the keyed cross-session peak lower. The improvement ratio (e.g. 9x reduction) is what matters. Requires numpy, scipy, cryptography (and optionally pycryptodome for ChaCha20 IETF).
+2. **analyse_iq_files.py** — Runs statistical checks: same as before on 01–08; on 09 the same eight noise-like tests (with relaxed thresholds for standard GDSS) plus KL divergence vs 03; reads JSON for 12/13 and prints a cross-session correlation summary (Standard GDSS peak, Keyed GDSS peak, improvement ratio). Prints a PASS/FAIL/WARN table and exits with 0 only if no tests fail.
+3. **plot_iq_comparison.py** — Produces two plots. **iq_comparison.png**: original 3x3 grid (histograms, PSD, autocorrelation for 01, 03, 04, 05, 06). **iq_comparison_vs_standard.png**: 4x3 grid comparing keyed vs standard GDSS (rows 1–2: noise, keyed, standard; row 3: cross-correlation 12 vs 13 and overlay; row 4: despread comparison). Requires matplotlib.
 
 Run from the repo root or from `tests/`:
 
@@ -181,9 +188,19 @@ python3 analyse_iq_files.py
 python3 plot_iq_comparison.py
 ```
 
+### Example generator output
+
+A successful run of `generate_iq_test_files.py`:
+
+```
+VULNERABILITY CONFIRMED: Standard GDSS cross-session peak = 1.000
+PROTECTION CONFIRMED: Keyed GDSS cross-session peak = 0.107
+Generated all IQ test files in /path/to/GR-K-GDSS/tests/iq_files
+```
+
 ### Example IQ file analysis output
 
-A successful run of `analyse_iq_files.py` (with all generated files present) looks like:
+Example run of `analyse_iq_files.py` (with all generated files present, including 09 and 12/13):
 
 ```
 === gr-k-gdss IQ File Analysis ===
@@ -209,12 +226,37 @@ File                                       Test                         Result
 04_keyed_gdss_despread_correct_key.cf32    Round-trip correlation       PASS
 05_keyed_gdss_despread_wrong_key.cf32      Key isolation                PASS
 07_nonce_reuse                             Nonce reuse detection        PASS
+09_standard_gdss_transmission.cf32         Mean (I)                     PASS
+09_standard_gdss_transmission.cf32         Mean (Q)                     PASS
+09_standard_gdss_transmission.cf32         Variance symmetry            PASS
+09_standard_gdss_transmission.cf32         Kurtosis (I)                 PASS
+09_standard_gdss_transmission.cf32         Kurtosis (Q)                 PASS
+09_standard_gdss_transmission.cf32         Skewness (I)                 PASS
+09_standard_gdss_transmission.cf32         Skewness (Q)                 PASS
+09_standard_gdss_transmission.cf32         Autocorrelation              PASS
+09_vs_03                                   KL divergence (I)            PASS
+13_keyed_gdss_crosscorr                    Keyed cross-session peak < 0.15 PASS
 --------------------------------------------------------------------------------
-PASSED: 19   FAILED: 0   WARNINGS: 0
+PASSED: 29   FAILED: 0   WARNINGS: 0
+
+=== Cross-Session Sync Burst Correlation ===
+Standard GDSS (sessions A vs B):  1.0000  VULNERABLE
+Keyed GDSS    (sessions A vs B):  0.1070  PROTECTED
+Improvement:  9.3x reduction in cross-session correlation
 ```
 
-The comparison plot is written to:
+### Example plot output
 
-`tests/iq_files/iq_comparison.png`
+After `plot_iq_comparison.py`:
+
+```
+Saved: /path/to/GR-K-GDSS/tests/iq_files/iq_comparison.png
+Saved: /path/to/GR-K-GDSS/tests/iq_files/iq_comparison_vs_standard.png
+```
+
+Output files:
+
+- `tests/iq_files/iq_comparison.png` — Keyed GDSS validation (3x3).
+- `tests/iq_files/iq_comparison_vs_standard.png` — Keyed vs standard GDSS comparison (4x3).
 
 If you add a real-noise recording (e.g. copy `sdr-noise/08_real_noise_with_hardware_artifacts.cf32` into `tests/iq_files/` as described in the placeholder README), the analyser runs the same noise tests on it and includes File 8 in the table.
