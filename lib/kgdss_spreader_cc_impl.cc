@@ -1,6 +1,24 @@
 /*
  * Keyed GDSS Spreader implementation
  *
+ * Spreads complex baseband symbols using cryptographically keyed Gaussian-distributed
+ * masking. Each input symbol is repeated chips_per_symbol times and multiplied
+ * chip-wise by a mask derived from ChaCha20 keystream via the Box-Muller transform,
+ * so the output is statistically similar to Gaussian noise unless the receiver
+ * has the same key and nonce to invert the mask.
+ *
+ * Algorithm:
+ *   - ChaCha20 IETF (libsodium) produces a keystream from key (32 bytes) and
+ *     nonce (12 bytes). The 64-byte block counter is implicit (starts at 0).
+ *   - Every 16 keystream bytes form two uniform [0,1) values (uint32 LE) that
+ *     are fed to Box-Muller to produce two Gaussian samples (I and Q mask).
+ *   - Mask values are clamped to minimum magnitude MIN_MASK (1e-4) to avoid
+ *     division instability in the despreader.
+ *   - Output: out[i] = symbol.real() * mask_i + j * symbol.imag() * mask_q.
+ *
+ * Key/nonce can be set at construction or later via the set_key message port
+ * (PMT dict with "key" u8vector length 32, "nonce" u8vector length 12).
+ *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
@@ -207,6 +225,9 @@ std::vector<float> kgdss_spreader_cc_impl::get_spreading_sequence() const
     return out;
 }
 
+/* Fill buffer with ChaCha20 IETF keystream. Counter is in 64-byte blocks; skip
+ * bytes within the current block so we stay in sync with the spreader/despreader
+ * symbol stream. */
 void kgdss_spreader_cc_impl::fill_keystream(uint8_t* buf, size_t len)
 {
     if (len == 0) return;
@@ -224,6 +245,8 @@ void kgdss_spreader_cc_impl::fill_keystream(uint8_t* buf, size_t len)
     d_counter += len;
 }
 
+/* Box-Muller transform: convert two uniform [0,1) values to one Gaussian(0, variance).
+ * u1 must be > 0 (log(u1) defined); u2 is the angle. Result scaled by sqrt(d_variance). */
 float kgdss_spreader_cc_impl::box_muller(float u1, float u2)
 {
     if (u1 < 1e-10f) {

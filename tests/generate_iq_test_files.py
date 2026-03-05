@@ -5,12 +5,15 @@ All outputs are float32 interleaved IQ (complex64). Requires: numpy, scipy, cryp
 For ChaCha20 matching libsodium IETF, pycryptodome is used if available; else cryptography.
 """
 
+from __future__ import annotations
+
 import json
 import math
 import os
 import struct
 import sys
 import warnings
+from typing import Dict, Generator, Optional, Tuple
 
 import numpy as np
 
@@ -29,28 +32,43 @@ except ImportError:
     _CHACHA20_BACKEND = "cryptography"
 
 # Fixed parameters (reproducible tests)
-SAMPLE_RATE = 500_000
+SAMPLE_RATE = 500_000   # Hz; matches typical flowgraph
 DURATION_SEC = 10
 N_SAMPLES = SAMPLE_RATE * DURATION_SEC  # 5,000,000
-SPREADING_N = 256
+SPREADING_N = 256       # chips per symbol; must match C++ spreader
 
-TEST_KEY = bytes(range(32))
-TEST_NONCE = bytes(range(12))
-WRONG_KEY = bytes([x ^ 0xFF for x in range(32)])
+TEST_KEY = bytes(range(32))       # 32-byte ChaCha20 key for keyed GDSS
+TEST_NONCE = bytes(range(12))     # 12-byte IETF nonce
+WRONG_KEY = bytes([x ^ 0xFF for x in range(32)])   # wrong key for despread test
 WRONG_NONCE = bytes([x ^ 0xFF for x in range(12)])
-TEST_SHARED_SECRET = bytes(range(32))
+TEST_SHARED_SECRET = bytes(range(32))   # ECDH shared secret for HKDF
 SESSION_ID = 1
 TX_SEQ = 0
-PAYLOAD_BYTES = bytes([i % 256 for i in range(1024)])
-RNG_SEED = 42
-VARIANCE = 1.0
-MIN_MASK = 1e-4
+PAYLOAD_BYTES = bytes([i % 256 for i in range(1024)])   # 1 kB repeated as BPSK symbols
+RNG_SEED = 42           # for Gaussian noise and standard GDSS RNG
+VARIANCE = 1.0          # Gaussian mask variance (match C++ spreader)
+MIN_MASK = 1e-4         # minimum |mask| to avoid division instability (match C++)
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "iq_files")
 
 
-def _derive_session_keys(ecdh_shared_secret: bytes, salt: bytes = None):
-    """HKDF-based session key derivation (matches session_key_derivation.py)."""
+def _derive_session_keys(
+    ecdh_shared_secret: bytes,
+    salt: Optional[bytes] = None,
+) -> Dict[str, bytes]:
+    """
+    HKDF-based session key derivation (matches session_key_derivation.py).
+
+    Derives only gdss_masking for the test generator; full derivation in
+    session_key_derivation.py also produces sync_pn and sync_timing.
+
+    Args:
+        ecdh_shared_secret: Raw ECDH shared secret, at least 32 bytes.
+        salt: Optional 32-byte salt; default zero bytes.
+
+    Returns:
+        Dict with key "gdss_masking" (32 bytes).
+    """
     if salt is None:
         salt = bytes(32)
 
@@ -68,11 +86,26 @@ def _derive_session_keys(ecdh_shared_secret: bytes, salt: bytes = None):
 
 
 def _gdss_nonce(session_id: int, tx_seq: int) -> bytes:
+    """12-byte nonce: session_id (4 big-endian) + tx_seq (8 big-endian)."""
     return session_id.to_bytes(4, "big") + tx_seq.to_bytes(8, "big")
 
 
 def _chacha20_keystream(key: bytes, nonce: bytes, num_bytes: int) -> bytes:
-    """Generate ChaCha20 IETF keystream (match libsodium crypto_stream_chacha20_ietf)."""
+    """
+    Generate ChaCha20 IETF keystream (match libsodium crypto_stream_chacha20_ietf).
+
+    Encrypts num_bytes of zeros; counter starts at 0. Uses PyCryptodome or
+    cryptography backend with 16-byte nonce (4-byte counter + 12-byte nonce) when
+    using cryptography.
+
+    Args:
+        key: 32-byte key.
+        nonce: 12-byte IETF nonce.
+        num_bytes: Length of keystream to generate.
+
+    Returns:
+        num_bytes of keystream.
+    """
     if _CHACHA20_BACKEND == "pycryptodome":
         cipher = PyChaCha20.new(key=key, nonce=nonce)
         return cipher.encrypt(b"\x00" * num_bytes)
@@ -93,21 +126,55 @@ def _chacha20_keystream(key: bytes, nonce: bytes, num_bytes: int) -> bytes:
 
 
 def _to_uniform(b: bytes) -> float:
-    """Four bytes to uniform [0,1) (match C++ memcpy uint32 LE)."""
+    """
+    Map four little-endian bytes to uniform [0, 1).
+
+    Matches C++: memcpy uint32 LE, then (v + 0.5) / 2^32. Avoids 0 and 1.
+    """
     v = struct.unpack("<I", b[:4])[0]
     return (float(v) + 0.5) / 4294967296.0
 
 
 def _box_muller(u1: float, u2: float, variance: float = VARIANCE) -> float:
-    """Box-Muller transform matching kgdss_spreader_cc_impl.cc (with variance)."""
+    """
+    Box-Muller transform matching kgdss_spreader_cc_impl.cc (with variance).
+
+    Converts two uniform [0,1) values to one Gaussian(0, variance). u1 is
+    clamped to >= 1e-10 to avoid log(0).
+
+    Args:
+        u1: First uniform (radius); must be > 0.
+        u2: Second uniform (angle).
+        variance: Output variance. Default VARIANCE (1.0).
+
+    Returns:
+        One Gaussian sample scaled by sqrt(variance).
+    """
     if u1 < 1e-10:
         u1 = 1e-10
     g = math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
     return g * math.sqrt(variance)
 
 
-def _fill_masks(keystream: bytes, n_chips: int, variance: float = VARIANCE):
-    """Yield (mask_i, mask_q) per chip from keystream (16 bytes per chip)."""
+def _fill_masks(
+    keystream: bytes,
+    n_chips: int,
+    variance: float = VARIANCE,
+) -> Generator[Tuple[float, float], None, None]:
+    """
+    Yield (mask_i, mask_q) per chip from ChaCha20 keystream.
+
+    Each chip uses 16 bytes: two Box-Muller pairs for I and Q. Values below
+    MIN_MASK are clamped to +/- MIN_MASK to match C++ spreader/despreader.
+
+    Args:
+        keystream: At least n_chips * 16 bytes.
+        n_chips: Number of chips (symbol repetitions).
+        variance: Gaussian variance for Box-Muller.
+
+    Yields:
+        Pairs (mask_i, mask_q) for each chip.
+    """
     for i in range(n_chips):
         base = i * 16
         u1 = _to_uniform(keystream[base : base + 4])
@@ -123,8 +190,25 @@ def _fill_masks(keystream: bytes, n_chips: int, variance: float = VARIANCE):
         yield (mask_i, mask_q)
 
 
-def _masks_array(keystream: bytes, n_chips: int, variance: float = VARIANCE) -> np.ndarray:
-    """Vectorized: (n_chips, 2) array of (mask_i, mask_q) per chip. Clamp to MIN_MASK."""
+def _masks_array(
+    keystream: bytes,
+    n_chips: int,
+    variance: float = VARIANCE,
+) -> np.ndarray:
+    """
+    Vectorized mask generation: (n_chips, 2) array of (mask_i, mask_q) per chip.
+
+    Same mapping as _fill_masks but using numpy for speed. Keystream bytes are
+    interpreted as uint32 LE; Box-Muller applied; values below MIN_MASK clamped.
+
+    Args:
+        keystream: At least n_chips * 16 bytes.
+        n_chips: Number of chips.
+        variance: Gaussian variance.
+
+    Returns:
+        Shape (n_chips, 2) float array; column 0 = mask_i, column 1 = mask_q.
+    """
     ks = np.frombuffer(keystream[: n_chips * 16], dtype=np.uint8)
     ks = ks.reshape(-1, 16)
     v = np.frombuffer(ks[:, :4].tobytes(), dtype="<u4")
@@ -143,8 +227,25 @@ def _masks_array(keystream: bytes, n_chips: int, variance: float = VARIANCE) -> 
     return np.column_stack([mask_i, mask_q])
 
 
-def _derive_sync_pn_sequence(master_key: bytes, session_id: int, chips: int) -> np.ndarray:
-    """PN sequence matching sync_burst_utils.derive_sync_pn_sequence (using cryptography ChaCha20)."""
+def _derive_sync_pn_sequence(
+    master_key: bytes,
+    session_id: int,
+    chips: int,
+) -> np.ndarray:
+    """
+    Derive session-unique PN sequence for sync bursts (match sync_burst_utils).
+
+    HMAC-SHA256(master_key, "sync-pn-v1" || session_id) -> ChaCha20 key;
+    ChaCha20(key, zero nonce) expanded to bits, then mapped to +1/-1 float32.
+
+    Args:
+        master_key: 32-byte key (e.g. sync_pn from full session key derivation).
+        session_id: Session identifier.
+        chips: Length of PN sequence.
+
+    Returns:
+        One-dimensional float32 array of length chips with values in {-1.0, +1.0}.
+    """
     import hmac
     import hashlib
     pn_key = hmac.new(
@@ -169,8 +270,23 @@ def _derive_sync_pn_sequence(master_key: bytes, session_id: int, chips: int) -> 
     return bits.astype(np.float32) * 2 - 1
 
 
-def _gaussian_envelope(samples: np.ndarray, rise_fraction: float = 0.1) -> np.ndarray:
-    """Match sync_burst_utils.gaussian_envelope."""
+def _gaussian_envelope(
+    samples: np.ndarray,
+    rise_fraction: float = 0.1,
+) -> np.ndarray:
+    """
+    Apply Gaussian-shaped amplitude envelope to a burst (match sync_burst_utils).
+
+    Rise/fall ramps use exp(-x^2/2) over rise_fraction of the length at each
+    end to reduce sidelobes. Same as sync_burst_utils.gaussian_envelope.
+
+    Args:
+        samples: Complex or real burst samples.
+        rise_fraction: Fraction of length for rise and for fall (default 0.1).
+
+    Returns:
+        samples * envelope (same shape and dtype).
+    """
     n = len(samples)
     env = np.ones(n, dtype=np.float32)
     flank = int(n * rise_fraction)

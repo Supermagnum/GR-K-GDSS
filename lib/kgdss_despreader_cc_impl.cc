@@ -1,6 +1,24 @@
 /*
  * Keyed GDSS Despreader implementation
  *
+ * Despreads keyed GDSS complex samples and recovers symbols. Uses the same
+ * ChaCha20 key and nonce as the spreader to regenerate the Gaussian mask,
+ * then divides each chip by its mask and integrates over chips_per_symbol to
+ * produce one complex symbol per block. Supports acquisition (code-phase search),
+ * tracking (early-prompt-late timing), and lock detection.
+ *
+ * Algorithm:
+ *   - Keystream and Box-Muller match the spreader (16 bytes per chip -> mask I,Q).
+ *   - Despread: sum over chips of (chip_i / mask_i) and (chip_q / mask_q), then
+ *     divide by chips_per_symbol. Mask clamp MIN_MASK (1e-4) avoids division blow-up.
+ *   - Correlation: inner product of received chips with the spreading sequence
+ *     (built from the same key) for lock detection and timing.
+ *   - Lock: adaptive threshold (ADAPTIVE_THRESHOLD_MIN 0.2) and LOCK_THRESHOLD
+ *     consecutive high correlations set is_locked; output ports 1 (lock 0/1) and
+ *     2 (SNR estimate dB) are updated each symbol.
+ *
+ * Key/nonce: set at construction or via set_key message port (PMT dict "key"/"nonce").
+ *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
@@ -20,7 +38,9 @@
 namespace gr {
 namespace kgdss {
 
+/* Minimum correlation (relative to peak) to consider "locked". */
 const float kgdss_despreader_cc_impl::ADAPTIVE_THRESHOLD_MIN = 0.2f;
+/* Number of phase bins in acquisition for coarse code-phase search. */
 const int kgdss_despreader_cc_impl::COARSE_SEARCH_BINS = 32;
 
 kgdss_despreader_cc::~kgdss_despreader_cc() {}
@@ -222,6 +242,9 @@ void kgdss_despreader_cc_impl::update_timing()
     }
 }
 
+/* Update lock state: compare correlation magnitude to an adaptive threshold
+ * (function of correlation_threshold and ratio of current average to peak).
+ * Lock is declared after LOCK_THRESHOLD consecutive passes; one fail decrements. */
 void kgdss_despreader_cc_impl::update_lock_detection(float correlation)
 {
     float corr_mag = std::abs(correlation);
@@ -332,6 +355,7 @@ float kgdss_despreader_cc_impl::get_frequency_error() const
     return d_freq_error_rad_per_sym;
 }
 
+/* ChaCha20 IETF keystream; must match spreader byte-for-byte for the same key/nonce. */
 void kgdss_despreader_cc_impl::fill_keystream(uint8_t* buf, size_t len)
 {
     if (len == 0) return;
@@ -349,6 +373,8 @@ void kgdss_despreader_cc_impl::fill_keystream(uint8_t* buf, size_t len)
     d_counter += len;
 }
 
+/* Box-Muller: same formula as spreader but without variance scaling (despreader
+ * uses mask only for divide; variance cancels in the ratio). */
 float kgdss_despreader_cc_impl::box_muller(float u1, float u2)
 {
     if (u1 < 1e-10f) {

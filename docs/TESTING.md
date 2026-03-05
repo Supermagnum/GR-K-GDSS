@@ -99,7 +99,7 @@ These tests exercise the C++ blocks via Python bindings. They ensure the keyed s
 | **TestT1GaussianDistribution** | Inspects the spreader output mask values (I and Q); checks mean near 0 and standard deviation near 1. Validates the Box-Muller Gaussian masking. |
 | **TestT1NoNearZeroMask** | Checks that no mask value is below a small threshold; ensures the spreader clamps near-zero masks to avoid division issues in the despreader. |
 | **TestT1BlockBoundaryContinuity** | Runs spreader/despreader with 25 symbols and with 50 symbols (same key/nonce); asserts the first 25 recovered symbols of the 50-symbol run match the 25-symbol run. Ensures keystream continuity across work() calls in one flowgraph. |
-| **TestT1SetKeyMessagePort** | Builds spreader and despreader with empty key/nonce, adds key_injector, connects key_out to both set_key ports, calls inject(), runs the flowgraph; asserts round-trip output matches input. Validates runtime key injection via the set_key message port. Skipped if key_injector is unavailable or the build does not support empty key/nonce. |
+| **TestT1SetKeyMessagePort** | Builds spreader and despreader with empty key/nonce, adds key_injector(shared_secret, session_id, tx_seq), connects key_out to both set_key ports, runs the flowgraph; key_injector sends the key automatically on start(). Asserts round-trip output matches input. Validates runtime key injection via the set_key message port. Skipped if key_injector is unavailable or the build does not support empty key/nonce. |
 
 T1 tests are skipped if the C++ Python bindings (`gnuradio.kgdss.kgdss_python`) are not available.
 

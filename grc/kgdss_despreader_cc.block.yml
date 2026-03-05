@@ -89,8 +89,9 @@ documentation: |-
     The ChaCha20 key and nonce must be provided from the session key derivation
     functions to avoid nonce reuse.
 
-    Key and nonce can be set at construction or at runtime via the set_key
-    message port (PMT dict with "key" and "nonce" u8vectors, 32 and 12 bytes).
+    Key and nonce are from session key derivation (no manual entry). Connect
+    key_injector.key_out or GDSS Set Key Source.set_key_out to set_key for
+    automatic keying on flowgraph start. Or set at construction (32 and 12 bytes).
 
 file_format: 1
 
