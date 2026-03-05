@@ -1,0 +1,55 @@
+id: kgdss_key_injector
+label: Keyed GDSS Key Injector
+category: '[KGDSS]/DSSS'
+flags: [ python ]
+
+parameters:
+-   id: keyring_id
+    label: Keyring key ID (0 = use shared secret hex)
+    dtype: int
+    default: '0'
+    minimum: 0
+-   id: shared_secret_hex
+    label: Shared secret (64 hex chars) if keyring_id is 0
+    dtype: string
+    default: '"0000000000000000000000000000000000000000000000000000000000000000"'
+-   id: session_id
+    label: Session ID
+    dtype: int
+    default: '1'
+    minimum: 0
+-   id: tx_seq
+    label: TX sequence
+    dtype: int
+    default: '0'
+    minimum: 0
+
+inputs:
+-   domain: message
+    id: trigger
+    optional: true
+    label: trigger
+-   domain: message
+    id: shared_secret
+    optional: true
+    label: shared_secret
+
+outputs:
+-   domain: message
+    id: key_out
+    label: set_key
+
+templates:
+  imports: |
+    from gnuradio import kgdss
+  make: |-
+    kgdss.key_injector(keyring_id=${keyring_id}, session_id=${session_id}, tx_seq=${tx_seq}) if ${keyring_id} else kgdss.key_injector(shared_secret=bytes.fromhex((str(${shared_secret_hex}).replace('"', '').strip() + '00'*32)[:64]), session_id=${session_id}, tx_seq=${tx_seq})
+
+documentation: |-
+  Provides GDSS key and nonce from session key derivation (no manual key entry).
+  Set keyring_id to the keyring key ID for gdss_masking (from store_session_keys)
+  and leave shared secret empty; or set keyring_id to 0 and paste 64-char shared
+  secret hex. Connects key_out to set_key of Keyed GDSS Spreader and Despreader.
+  Key is sent automatically when the flowgraph starts.
+
+file_format: 1
