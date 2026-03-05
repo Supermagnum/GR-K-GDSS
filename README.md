@@ -30,8 +30,9 @@ A highly experimental Cryptographically keyed GDSS proposal.
 10. Sources and Further Reading
 11. Build and Install
 12. [Usage](docs/USAGE.md)
-13. [Testing](docs/TESTING.md)
-14. [Test results](docs/TEST_RESULTS.md)
+13. [Examples](examples/)
+14. [Testing](docs/TESTING.md)
+15. [Test results](docs/TEST_RESULTS.md)
 
 ---
 
@@ -681,6 +682,14 @@ This repository contains a GNU Radio out-of-tree (OOT) module that implements th
 WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK ! 
 
 **Usage documentation** (block I/O, parameters, and how to connect gr-linux-crypto and SOQPSK for TX/RX) is in **[docs/USAGE.md](docs/USAGE.md)**.
+
+### Examples
+
+The **[examples/](examples/)** directory contains a ready-made GNU Radio Companion flowgraph:
+
+- **tx_example_kgdss.grc** — A TX (transmit) example that wires: Audio Source (microphone) -> resampler -> Codec2 encoder -> Brainpool ECIES Multi-Recipient Encrypt (gr-linux-crypto) -> byte-to-bit unpack -> SOQPSK modulator (gr-qradiolink) -> Keyed GDSS Spreader -> Null Sink. The **Keyed GDSS Key Injector** block supplies key and nonce from the kernel keyring (variable `keyring_id`) and connects its message port to the spreader's `set_key` input. Replace the Null Sink with an osmocom or UHD Sink for real hardware output. Generate and run the flowgraph with `grcc tx_example_kgdss.grc` then `python3 tx_example_kgdss.py`. See [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md) for verification steps.
+
+**Brainpool ECIES parameters in the example:** gr-linux-crypto supports reading recipient public keys from the **kernel keyring** or from a JSON file. **key_store_path** is optional: leave it empty to use the keyring. Add recipient public keys to the keyring with `keyctl add user "callsign:W1ABC" "$(cat pubkey.pem)"` or from Python with `CallsignKeyStore(...).add_public_key(callsign, public_key_pem)`; the ECIES block then looks up keys by description `callsign:CALLSIGN`. Alternatively set **key_store_path** to a JSON file path for file-based store (see gr-linux-crypto docs). **callsigns** is the comma-separated list of recipient callsigns (e.g. `"ALICE,BOB"`); keys are resolved from the keyring or from the JSON file. If callsigns is empty, the block does not encrypt for any recipients.
 
 ### Dependencies
 

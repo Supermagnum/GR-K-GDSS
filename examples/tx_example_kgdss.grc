@@ -1,0 +1,350 @@
+options:
+  parameters:
+    alias: ''
+    author: gr-k-gdss
+    catch_exceptions: 'True'
+    comment: ''
+    copyright: Copyright 2024
+    description: Keyed GDSS TX example. Audio from mic -> Codec2 -> ECIES encrypt
+      -> SOQPSK mod -> Keyed GDSS Spreader -> SDR sink. Replace Null Sink with osmocom
+      Sink or UHD Sink for hardware output.
+    gen_linking: dynamic
+    generate_options: qt_gui
+    generator_class_name: PythonQtGuiGenerator
+    generator_module: gnuradio.grc.workflows.python_qt_gui
+    hier_block_src_path: '.:'
+    id: tx_example_kgdss
+    max_nouts: '0'
+    output_language: python
+    qt_qss_theme: ''
+    realtime_scheduling: ''
+    run: 'True'
+    run_command: '{python} -u {filename}'
+    thread_safe_setters: ''
+    title: Keyed GDSS TX Example
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [16, 0.0]
+    rotation: 0
+    state: enabled
+
+blocks:
+- name: callsigns
+  id: variable
+  parameters:
+    comment: ECIES recipient callsigns (comma-separated). Keys are looked up from
+      kernel keyring (callsign:CALLSIGN) or from key_store_path JSON when set.
+    value: '""'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [304, 176.0]
+    rotation: 0
+    state: enabled
+- name: key_store_path
+  id: variable
+  parameters:
+    comment: 'Optional. Leave empty to use kernel keyring: add recipient public keys
+      with keyctl add user "callsign:W1ABC" "$(cat pubkey.pem)" or CallsignKeyStore.add_public_key.
+      Or set path to JSON file for file-based store (see gr-linux-crypto docs).'
+    value: '""'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [40, 176.0]
+    rotation: 0
+    state: enabled
+- name: keyring_id
+  id: variable
+  parameters:
+    comment: Kernel keyring key ID for GDSS key (from store_session_keys)
+    value: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [880, 16.0]
+    rotation: 0
+    state: enabled
+- name: sample_rate
+  id: variable
+  parameters:
+    comment: Sample rate for Codec2 (e.g. 8000)
+    value: '8000'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [224, 16.0]
+    rotation: 0
+    state: enabled
+- name: session_id
+  id: variable
+  parameters:
+    comment: GDSS session ID (must match RX)
+    value: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [432, 16.0]
+    rotation: 0
+    state: enabled
+- name: tx_seq
+  id: variable
+  parameters:
+    comment: GDSS TX sequence (increment per session)
+    value: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [632, 16.0]
+    rotation: 0
+    state: enabled
+- name: audio_source_0
+  id: audio_source
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Microphone input, mono, for Codec2
+    device_name: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    num_outputs: '1'
+    ok_to_block: 'True'
+    samp_rate: '48000'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [16, 432.0]
+    rotation: 0
+    state: enabled
+- name: blocks_float_to_short_0
+  id: blocks_float_to_short
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Convert float audio to short for Codec2
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    scale: '32768'
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [520, 448.0]
+    rotation: 0
+    state: enabled
+- name: blocks_null_sink_0
+  id: blocks_null_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    bus_structure_sink: '[[0,],]'
+    comment: Replace with SDR hardware sink (e.g. osmocom Sink, UHD Sink) for real
+      transmission. This is a placeholder so the flowgraph runs without hardware.
+    num_inputs: '1'
+    type: complex
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [2304, 496.0]
+    rotation: 0
+    state: enabled
+- name: blocks_unpack_k_bits_bb_0
+  id: blocks_unpack_k_bits_bb
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Unpack bytes to bits for SOQPSK modulator
+    k: '8'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1512, 352.0]
+    rotation: 0
+    state: enabled
+- name: blocks_vector_to_stream_0
+  id: blocks_vector_to_stream
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Convert Codec2 48-byte frames to byte stream for ECIES
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    num_items: '48'
+    type: byte
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [936, 384.0]
+    rotation: 0
+    state: enabled
+- name: brainpool_ecies_multi_encrypt_0
+  id: brainpool_ecies_multi_encrypt
+  parameters:
+    affinity: ''
+    alias: ''
+    callsigns: callsigns
+    comment: Encrypt Codec2 bitstream with Brainpool ECIES. gr-linux-crypto reads
+      recipient public keys from kernel keyring (callsign:CALLSIGN) when key_store_path
+      empty, or from JSON file. See gr-linux-crypto docs.
+    curve: '"brainpoolP256r1"'
+    kdf_info: '"gr-linux-crypto-ecies-v1"'
+    key_store_path: key_store_path
+    maxoutbuf: '0'
+    minoutbuf: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1216, 448.0]
+    rotation: 0
+    state: enabled
+- name: kgdss_key_injector_0
+  id: kgdss_key_injector
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Injects GDSS key and nonce from keyring; connect key_out to spreader
+      set_key
+    keyring_id: keyring_id
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    session_id: session_id
+    shared_secret_hex: '"0000000000000000000000000000000000000000000000000000000000000000"'
+    tx_seq: tx_seq
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1088, 616.0]
+    rotation: 0
+    state: enabled
+- name: kgdss_spreader_cc_0
+  id: kgdss_spreader_cc
+  parameters:
+    affinity: ''
+    alias: ''
+    chacha_key: '""'
+    chacha_nonce: '""'
+    chips_per_symbol: '256'
+    comment: Keyed GDSS spreader; key from key_injector via set_key message
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    seed: '0'
+    sequence_length: '256'
+    variance: '1.0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1976, 448.0]
+    rotation: 0
+    state: enabled
+- name: linux_crypto_nitrokey_interface_0
+  id: linux_crypto_nitrokey_interface
+  parameters:
+    affinity: ''
+    alias: ''
+    auto_repeat: 'False'
+    comment: 'Kernel source can also be used.
+
+      Please read: https://github.com/Supermagnum/gr-linux-crypto?tab=readme-ov-file#how-to-get-gnupg-key-id'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    slot: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [720, 552.0]
+    rotation: 0
+    state: enabled
+- name: qradiolink_mod_soqpsk_0
+  id: qradiolink_mod_soqpsk
+  parameters:
+    affinity: ''
+    alias: ''
+    carrier_freq: '0'
+    comment: SOQPSK modulator (requires gr-qradiolink)
+    filter_width: '10000'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    mode: '1'
+    samp_rate: '250000'
+    sps: '10'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1704, 440.0]
+    rotation: 0
+    state: enabled
+- name: rational_resampler_xxx_0
+  id: rational_resampler_xxx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Resample 48 kHz to 8 kHz for Codec2
+    decim: '6'
+    fbw: '0'
+    interp: '1'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    taps: ''
+    type: fff
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [280, 408.0]
+    rotation: 0
+    state: enabled
+- name: vocoder_codec2_encode_sp_0
+  id: vocoder_codec2_encode_sp
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Codec2 audio encoder (MODE_2400 outputs 48 bytes per frame)
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    mode: codec2.MODE_2400
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [728, 448.0]
+    rotation: 0
+    state: enabled
+
+connections:
+- [audio_source_0, '0', rational_resampler_xxx_0, '0']
+- [blocks_float_to_short_0, '0', vocoder_codec2_encode_sp_0, '0']
+- [blocks_unpack_k_bits_bb_0, '0', qradiolink_mod_soqpsk_0, '0']
+- [blocks_vector_to_stream_0, '0', brainpool_ecies_multi_encrypt_0, '0']
+- [brainpool_ecies_multi_encrypt_0, '0', blocks_unpack_k_bits_bb_0, '0']
+- [kgdss_key_injector_0, set_key, kgdss_spreader_cc_0, set_key]
+- [kgdss_spreader_cc_0, '0', blocks_null_sink_0, '0']
+- [linux_crypto_nitrokey_interface_0, '0', brainpool_ecies_multi_encrypt_0, '1']
+- [qradiolink_mod_soqpsk_0, '0', kgdss_spreader_cc_0, '0']
+- [rational_resampler_xxx_0, '0', blocks_float_to_short_0, '0']
+- [vocoder_codec2_encode_sp_0, '0', blocks_vector_to_stream_0, '0']
+
+metadata:
+  file_format: 1
+  grc_version: v3.11.0.0git-1032-gab049f6e
