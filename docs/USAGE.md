@@ -1,28 +1,32 @@
 # GR-K-GDSS Usage
 
-This document describes how to use the keyed GDSS spreader and despreader blocks, their inputs and outputs, and how to connect them with gr-linux-crypto and SOQPSK (gr-qradiolink) for TX/RX.
+This document describes how to use the keyed GDSS blocks (spreader, despreader, and key injector), their inputs and outputs, and how to connect them with gr-linux-crypto and SOQPSK (gr-qradiolink) for TX/RX.
 
 ---
 
 ## Block API summary
 
-| Block | Input | Output | Parameters (valid ranges) |
-|-------|--------|--------|----------------------------|
-| `kgdss_spreader_cc` | 1 complex stream (symbol rate) | 1 complex stream (chip rate) | sequence_length > 0, chips_per_symbol > 0, variance > 0, seed (0 = time-based), chacha_key (0 or 32 bytes), chacha_nonce (0 or 12 bytes) |
-| `kgdss_despreader_cc` | 1 complex stream (chip rate) | 3 streams: complex symbols, float lock (0/1), float SNR (dB) | spreading_sequence non-empty, chips_per_symbol > 0, correlation_threshold, timing_error_tolerance, chacha_key (0 or 32 bytes), chacha_nonce (0 or 12 bytes) |
+All three blocks are in GRC under category **KGDSS / DSSS**.
 
-**Message port (both blocks):** `set_key` accepts a PMT dict with keys `"key"` (u8vector length 32) and `"nonce"` (u8vector length 12). Until key is set, spreader outputs zeros and despreader outputs zeros on all ports.
+| Block | Stream inputs | Stream outputs | Message inputs | Message outputs | Main parameters |
+|-------|----------------|----------------|----------------|-----------------|-----------------|
+| **Keyed GDSS Spreader** (`kgdss_spreader_cc`) | 1 complex (symbol rate) | 1 complex (chip rate) | `set_key` (optional) | none | sequence_length, chips_per_symbol, variance, seed, chacha_key, chacha_nonce |
+| **Keyed GDSS Despreader** (`kgdss_despreader_cc`) | 1 complex (chip rate) | 3: complex (symbols), float (lock), float (SNR dB) | `set_key` (optional) | none | spreading_sequence, chips_per_symbol, correlation_threshold, timing_error_tolerance, chacha_key, chacha_nonce |
+| **Keyed GDSS Key Injector** (`kgdss_key_injector`) | none | none | `trigger` (optional), `shared_secret` (optional) | `key_out` | keyring_id, shared_secret_hex, session_id, tx_seq |
 
-**Despreader status (query after flowgraph runs):** `get_sync_state()`, `is_locked()`, `get_snr_estimate()`, `get_last_soft_metric()`, `get_frequency_error()`.
+**Spreader / Despreader message input `set_key`:** PMT dict with `"key"` (u8vector 32 bytes) and `"nonce"` (u8vector 12 bytes). Until a key is set, the spreader outputs zeros and the despreader outputs zeros on all stream ports. Connect **Key Injector** output `key_out` to both blocks' `set_key` input.
+
+**Despreader status (query in Python after flowgraph runs):** `get_sync_state()`, `is_locked()`, `get_snr_estimate()`, `get_last_soft_metric()`, `get_frequency_error()`.
 
 ---
 
-## Keyed GDSS spreader and despreader blocks
+## Keyed GDSS blocks
 
-The core of this OOT module is a pair of keyed GDSS blocks:
+The core of this OOT module is three blocks:
 
 - `kgdss_spreader_cc` (GRC: **Keyed GDSS Spreader**)
 - `kgdss_despreader_cc` (GRC: **Keyed GDSS Despreader**)
+- `kgdss_key_injector` (GRC: **Keyed GDSS Key Injector**)
 
 Both must be configured with **matching parameters and the same ChaCha20 key/nonce pair** for a given session. Key and nonce can be set at construction time or at runtime via the **set_key** message port.
 
@@ -30,13 +34,12 @@ Both must be configured with **matching parameters and the same ChaCha20 key/non
 
 ### `kgdss_spreader_cc` (Keyed GDSS Spreader)
 
-- **Input**:
-  - One complex stream (`complex`), at the symbol rate.
-  - Each sample is a complex baseband symbol (e.g. QPSK/pi/4-DQPSK/OFDM subcarrier symbol) before spreading.
-- **Output**:
-  - One complex stream (`complex`), at `chips_per_symbol` times the input rate.
-  - Each input symbol is expanded into `chips_per_symbol` complex chips.
-  - The real and imaginary parts are multiplied by keyed Gaussian mask values derived from:
+- **Stream input:** One complex stream (`complex`), at the symbol rate. Each sample is a complex baseband symbol (e.g. QPSK/pi/4-DQPSK/OFDM subcarrier symbol) before spreading.
+- **Stream output:** One complex stream (`complex`), at `chips_per_symbol` times the input rate. Each input symbol is expanded into `chips_per_symbol` complex chips.
+- **Message input:** `set_key` (optional). When present, a PMT dict with `"key"` (u8vector 32 bytes) and `"nonce"` (u8vector 12 bytes). Connect from Key Injector `key_out` or GDSS Set Key Source `set_key_out`.
+- **Message outputs:** None.
+
+The real and imaginary parts of each chip are multiplied by keyed Gaussian mask values derived from:
     - A fixed Gaussian spreading sequence (length `sequence_length`, variance `variance`, RNG `seed`).
     - A ChaCha20 keystream keyed by `chacha_key` and `chacha_nonce`, converted to Gaussian via Box-Muller and clamped away from zero.
 
@@ -72,17 +75,13 @@ Both must be configured with **matching parameters and the same ChaCha20 key/non
 
 ### `kgdss_despreader_cc` (Keyed GDSS Despreader)
 
-- **Input**:
-  - One complex stream (`complex`), at the **chip rate**, i.e. the output of `kgdss_spreader_cc` after the channel.
-- **Outputs**:
-  - **Output 0**: complex stream (`complex`, label: *Despread Symbols*).
-    - Recovered complex symbols at the original symbol rate.
-    - This should match the pre-spreader symbols (within channel/noise limits).
-  - **Output 1**: float stream (`float`, label: *Lock Status*).
-    - Per-symbol lock metric.
-    - Values near 1.0 indicate acquisition/lock; values near 0.0 indicate loss of lock.
-  - **Output 2**: float stream (`float`, label: *SNR Estimate (dB)*).
-    - Per-symbol SNR estimate derived from the despreading correlation and noise statistics.
+- **Stream input:** One complex stream (`complex`), at the chip rate (output of the spreader after the channel).
+- **Stream outputs:**
+  - **Output 0** (Despread Symbols): complex stream (`complex`). Recovered symbols at the original symbol rate; should match the pre-spreader symbols within channel/noise limits.
+  - **Output 1** (Lock Status): float stream (`float`). Per-symbol lock metric; near 1.0 when locked, near 0.0 when not.
+  - **Output 2** (SNR Estimate (dB)): float stream (`float`). Per-symbol SNR estimate from despreading correlation and noise.
+- **Message input:** `set_key` (optional). PMT dict with `"key"` (u8vector 32 bytes) and `"nonce"` (u8vector 12 bytes). Connect from Key Injector `key_out` or GDSS Set Key Source `set_key_out`.
+- **Message outputs:** None.
 
 **Key parameters (must match spreader):**
 
@@ -117,7 +116,27 @@ Both must be configured with **matching parameters and the same ChaCha20 key/non
 
 - The spreading sequence passed to the despreader must be the same as the one used by the spreader. With the provided GRC blocks, both sides independently regenerate the same sequence from `(sequence_length, variance, seed)`; in Python you can share the exact list of floats.
 
-Together, `kgdss_spreader_cc` and `kgdss_despreader_cc` implement a keyed, Gaussian-distributed spread-spectrum layer that can be dropped around an existing complex symbol stream, as long as both ends share the same ChaCha20 key/nonce and spreading parameters.
+### `kgdss_key_injector` (Keyed GDSS Key Injector)
+
+Provides the GDSS key and nonce to the spreader and despreader via the `set_key` message port. Key material comes from session key derivation (keyring or shared secret); no manual key bytes.
+
+- **Stream inputs:** None.
+- **Stream outputs:** None.
+- **Message inputs:**
+  - `trigger` (optional): When any message is received, the block re-sends the current key message on `key_out`. Not required for normal use; the key is sent once when the flowgraph starts.
+  - `shared_secret` (optional): When a message with a 32-byte u8vector body is received, the block derives key and nonce from it and publishes the set_key message on `key_out`. Use when key material is supplied by another block (e.g. from gr-linux-crypto).
+- **Message output:** `key_out`. Carries a PMT dict with `"key"` (u8vector 32 bytes) and `"nonce"` (u8vector 12 bytes). Connect `key_out` to the `set_key` message input of both the Keyed GDSS Spreader and the Keyed GDSS Despreader (use a message copy/duplicate if your flowgraph supports it).
+
+**Parameters:**
+
+- `keyring_id` (int): Keyring key ID for the gdss_masking key (from `store_session_keys`). Set to 0 to use `shared_secret_hex` instead.
+- `shared_secret_hex` (string): 64 hexadecimal characters (32 bytes) when `keyring_id` is 0. Ignored when `keyring_id` > 0.
+- `session_id` (int): Session identifier; must match on TX and RX.
+- `tx_seq` (int): Transmission sequence number; must match on TX and RX.
+
+**Usage:** Add the block, set either `keyring_id` or `shared_secret_hex` (with `keyring_id` = 0), set `session_id` and `tx_seq` to match the other side. Connect `key_out` to `set_key` on both the spreader and the despreader. No trigger connection is needed; the key is sent when the flowgraph starts.
+
+Together, `kgdss_spreader_cc`, `kgdss_despreader_cc`, and `kgdss_key_injector` implement a keyed, Gaussian-distributed spread-spectrum layer: the key injector feeds key/nonce to both ends, and the spreader/despreader handle the symbol stream as long as both ends share the same ChaCha20 key/nonce and spreading parameters.
 
 ---
 
