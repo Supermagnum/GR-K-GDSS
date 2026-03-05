@@ -1,6 +1,20 @@
 /*
  * Keyed GDSS Despreader/Correlator - despreads GDSS signal and recovers symbols
  *
+ * Input: complex stream (chips_per_symbol samples per symbol).
+ * Outputs: [0] complex despread symbols; [1] lock indicator (0 or 1 float); [2] SNR estimate (float dB).
+ *
+ * Parameters:
+ *   spreading_sequence - reference sequence (length or 2*length for I,Q); can be placeholder when using key.
+ *   chips_per_symbol - decimation factor (samples in per symbol out); must match spreader.
+ *   correlation_threshold - base threshold for lock detection (adaptive threshold applied).
+ *   timing_error_tolerance - max timing offset in samples for tracking.
+ *   chacha_key - 32-byte ChaCha20 key; empty to defer (use set_key message).
+ *   chacha_nonce - 12-byte ChaCha20 IETF nonce; empty if key empty.
+ *
+ * Message port "set_key": PMT dict with "key" (u8vector 32) and "nonce" (u8vector 12).
+ * get_sync_state(), is_locked(), get_snr_estimate(), get_last_soft_metric(), get_frequency_error() for status.
+ *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
@@ -25,6 +39,7 @@ public:
         STATE_LOCKED
     };
 
+    /** spreading_sequence non-empty; chips_per_symbol > 0; key 0 or 32 bytes; nonce 0 or 12 bytes. */
     static sptr make(const std::vector<float>& spreading_sequence,
                      int chips_per_symbol,
                      float correlation_threshold,

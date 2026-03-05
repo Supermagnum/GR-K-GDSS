@@ -2,7 +2,19 @@
 # -*- coding: utf-8 -*-
 """
 Sync burst timing and PN sequence utilities for gr-k-gdss.
+
+Provides cryptographically derived sync burst parameters so that each session
+uses a unique PN sequence and timing offset, preventing cross-session
+correlation (unlike standard GDSS with a fixed PN). Uses ChaCha20 for
+deterministic keystream; requires PyCryptodome or cryptography.
+
+Exported API:
+  - derive_sync_schedule(master_key, session_id, window_ms) -> Callable[[int], int]
+  - derive_sync_pn_sequence(master_key, session_id, chips) -> np.ndarray
+  - gaussian_envelope(samples, rise_fraction) -> np.ndarray
 """
+
+from __future__ import annotations
 
 from typing import Callable
 
@@ -45,11 +57,27 @@ if _ChaCha20 is None:
 ChaCha20 = _ChaCha20
 
 
-def derive_sync_schedule(master_key: bytes, session_id: int, window_ms: int = 50) -> Callable[[int], int]:
+def derive_sync_schedule(
+    master_key: bytes,
+    session_id: int,
+    window_ms: int = 50,
+) -> Callable[[int], int]:
     """
-    Returns a function that, given a nominal epoch (integer milliseconds
-    since session start), returns the actual TX offset in milliseconds.
-    Offset is deterministic for both TX and RX given the same master_key.
+    Derive a deterministic sync-burst timing schedule for a session.
+
+    Returns a callable that maps a nominal epoch (milliseconds since session
+    start) to an actual TX offset in milliseconds in the range [-window_ms,
+    +window_ms]. TX and RX compute the same offset given the same master_key
+    and session_id, so sync bursts are aligned without using a fixed position
+    (which would be correlatable across sessions).
+
+    Args:
+        master_key: 32-byte key (e.g. sync_timing from derive_session_keys).
+        session_id: Session identifier; different sessions get different offsets.
+        window_ms: Half-width of the offset window in ms. Default 50.
+
+    Returns:
+        Function get_offset(epoch_ms: int) -> int giving offset in milliseconds.
     """
     import hashlib
     import hmac
@@ -71,10 +99,26 @@ def derive_sync_schedule(master_key: bytes, session_id: int, window_ms: int = 50
     return get_offset
 
 
-def derive_sync_pn_sequence(master_key: bytes, session_id: int, chips: int = 10000) -> np.ndarray:
+def derive_sync_pn_sequence(
+    master_key: bytes,
+    session_id: int,
+    chips: int = 10000,
+) -> np.ndarray:
     """
-    Returns a binary PN sequence derived from the session key.
-    Both TX and RX generate identical sequences given same inputs.
+    Derive a session-unique pseudo-noise sequence for sync bursts.
+
+    Uses HMAC-SHA256 to derive a ChaCha20 key from master_key and session_id,
+    then expands ChaCha20 keystream to bits. Both TX and RX generate the same
+    sequence given the same master_key and session_id. Values are +1.0 or -1.0
+    (BPSK-like) as float32.
+
+    Args:
+        master_key: 32-byte key (e.g. sync_pn from derive_session_keys).
+        session_id: Session identifier; different sessions get different PN.
+        chips: Length of the PN sequence. Default 10000.
+
+    Returns:
+        One-dimensional float32 array of length chips with values in {-1.0, +1.0}.
     """
     import hashlib
     import hmac
@@ -93,10 +137,26 @@ def derive_sync_pn_sequence(master_key: bytes, session_id: int, chips: int = 100
     return bits.astype(np.float32) * 2 - 1
 
 
-def gaussian_envelope(samples: np.ndarray, rise_fraction: float = 0.1) -> np.ndarray:
+def gaussian_envelope(
+    samples: np.ndarray,
+    rise_fraction: float = 0.1,
+) -> np.ndarray:
     """
-    Applies a Gaussian amplitude envelope to a burst.
-    rise_fraction: fraction of burst used for rise/fall (each side).
+    Apply a Gaussian-shaped amplitude envelope to a burst to reduce sidelobes.
+
+    The envelope is unity in the center and ramps up from zero at the start
+    and down to zero at the end using a half-Gaussian (exp(-x^2/2)) shape.
+    This softens the burst edges in the time domain and reduces spectral
+    splatter compared to a rectangular window.
+
+    Args:
+        samples: Complex or real array of burst samples (modified in place if
+            possible; otherwise a copy is returned multiplied by the envelope).
+        rise_fraction: Fraction of the burst length used for rise (start) and
+            fall (end). Default 0.1 (10% on each side).
+
+    Returns:
+        Array of same shape and dtype as samples, scaled by the envelope.
     """
     n = len(samples)
     env = np.ones(n, dtype=np.float32)

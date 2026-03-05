@@ -1,6 +1,20 @@
 /*
  * Keyed GDSS Spreader - spreads complex symbols using keyed Gaussian-distributed sequence
  *
+ * Input: complex stream (one symbol per call; interpolates to chips_per_symbol samples).
+ * Output: complex stream (chips_per_symbol samples per input symbol), masked so that
+ * the waveform is statistically similar to Gaussian noise without the key.
+ *
+ * Parameters:
+ *   sequence_length - length of internal spreading sequence (e.g. 256).
+ *   chips_per_symbol - interpolation factor (samples out per symbol in); typically 256.
+ *   variance - Gaussian mask variance (e.g. 1.0).
+ *   seed - RNG seed when key not set; 0 = use time-based seed.
+ *   chacha_key - 32-byte ChaCha20 key; empty to defer (use set_key message).
+ *   chacha_nonce - 12-byte ChaCha20 IETF nonce; empty if key empty.
+ *
+ * Message port "set_key": PMT dict with "key" (u8vector 32) and "nonce" (u8vector 12).
+ *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
@@ -20,6 +34,7 @@ class KGDSS_API kgdss_spreader_cc : public sync_interpolator
 public:
     typedef std::shared_ptr<kgdss_spreader_cc> sptr;
 
+    /** sequence_length and chips_per_symbol positive; variance > 0; key 0 or 32 bytes; nonce 0 or 12 bytes. */
     static sptr make(int sequence_length,
                      int chips_per_symbol,
                      float variance,
