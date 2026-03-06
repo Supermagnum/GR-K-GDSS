@@ -681,7 +681,26 @@ This repository contains a GNU Radio out-of-tree (OOT) module that implements th
 
 WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK ! 
 
-**Usage documentation** (block I/O, parameters, and how to connect gr-linux-crypto and SOQPSK for TX/RX) is in **[docs/USAGE.md](docs/USAGE.md)**.
+### Where to find what (documentation and file roles)
+
+| What you need | Where it is |
+|---------------|-------------|
+| **Block API and Python helpers** (spreader, despreader, key injector; session key derivation, sync burst functions) | **[docs/USAGE.md](docs/USAGE.md)** — Block I/O and parameters, helper function reference, gr-linux-crypto/SOQPSK wiring, sync epoch window. |
+| **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Test suites T1/T2/T3 and cross-layer; per-test description; IQ file generation and analysis. |
+| **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** |
+| **Example flowgraph** (TX with Codec2, ECIES, SOQPSK, GDSS) | **[examples/](examples/)** — `tx_example_kgdss.grc` and verification; see [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md). |
+| **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`; headers in **include/gnuradio/kgdss/**. |
+| **Python helpers** (key derivation, keyring, sync burst) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`; API details in [docs/USAGE.md](docs/USAGE.md). |
+| **GRC block definitions** | **grc/** — `kgdss_spreader_cc.block.yml`, `kgdss_despreader_cc.block.yml`, `kgdss_key_injector.block.yml`. |
+| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_cross_layer.py`; described in [docs/TESTING.md](docs/TESTING.md). |
+| **IQ test file generator and analyser** | **tests/generate_iq_test_files.py** (builds 01–13 and metadata), **tests/analyse_iq_files.py** (PASS/FAIL checks), **tests/plot_iq_comparison.py** (plots); see [docs/TESTING.md](docs/TESTING.md). |
+| **Quick test run** | **tests/README.md** — Run commands; keyring/sandbox notes. |
+| **Python bindings** (C++ blocks to Python) | **python/bindings/** — `kgdss_spreader_cc_python.cc`, `kgdss_despreader_cc_python.cc`, `kgdss_python.cc`; expose spreader/despreader and `kgdss_sync_state` to `gnuradio.kgdss`. |
+| **Build system** | **CMakeLists.txt** (top level), **lib/CMakeLists.txt**, **python/CMakeLists.txt**, **python/bindings/CMakeLists.txt**, **grc/CMakeLists.txt**, **include/gnuradio/kgdss/CMakeLists.txt** — build and install the C++ library, Python package, and GRC blocks. |
+
+**Usage documentation** is in **[docs/USAGE.md](docs/USAGE.md)**. There you will find:
+- **Block API:** stream and message inputs/outputs, parameters, and usage for the three GNU Radio blocks (Keyed GDSS Spreader, Despreader, Key Injector), plus how to connect gr-linux-crypto and SOQPSK for TX/RX.
+- **Python helper functions:** session key derivation and keyring (`derive_session_keys`, `store_session_keys`, `load_gdss_key`, `get_shared_secret_from_gnupg`, `gdss_nonce`, `payload_nonce`, `keyring_available`, `keyring_import_error`) and sync burst utilities (`derive_sync_schedule`, `derive_sync_pn_sequence`, `gaussian_envelope`). These are documented in the "Python helper functions" section; the blocks are documented in the "Keyed GDSS blocks" section.
 
 ### Examples
 

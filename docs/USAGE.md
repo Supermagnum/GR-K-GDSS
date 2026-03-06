@@ -16,7 +16,34 @@ All three blocks are in GRC under category **KGDSS / DSSS**.
 
 **Spreader / Despreader message input `set_key`:** PMT dict with `"key"` (u8vector 32 bytes) and `"nonce"` (u8vector 12 bytes). Until a key is set, the spreader outputs zeros and the despreader outputs zeros on all stream ports. Connect **Key Injector** output `key_out` to both blocks' `set_key` input.
 
-**Despreader status (query in Python after flowgraph runs):** `get_sync_state()`, `is_locked()`, `get_snr_estimate()`, `get_last_soft_metric()`, `get_frequency_error()`.
+**Despreader status (query in Python after flowgraph runs):** `get_sync_state()` (returns `kgdss_sync_state` enum), `is_locked()`, `get_snr_estimate()`, `get_last_soft_metric()`, `get_frequency_error()`. The `kgdss_sync_state` enum values indicate sync/lock state of the despreader.
+
+---
+
+## Python helper functions
+
+The module exposes Python helpers (not GNU Radio blocks) for session key derivation, keyring storage, and sync burst generation. Import with `from gnuradio import kgdss` or `import gnuradio.kgdss as kgdss`.
+
+### Session key derivation and keyring
+
+| Function | Purpose |
+|----------|---------|
+| **`derive_session_keys(ecdh_shared_secret, salt=None)`** | Derive session subkeys from the ECDH shared secret via HKDF-SHA256. Returns a dict with 32-byte keys: `"payload_enc"`, `"gdss_masking"`, `"sync_pn"`, `"sync_timing"`. Use `gdss_masking` for the spreader/despreader; `sync_pn` and `sync_timing` for sync burst helpers. |
+| **`store_session_keys(keys)`** | Store a dict of name -> 32-byte key bytes in the Linux kernel keyring. Prefers `keyctl` (raw bytes); falls back to gr-linux-crypto KeyringHelper when keyctl is unavailable. Returns dict of name -> keyring key ID (string). Use the ID for `gdss_masking` with `load_gdss_key(int(id))`. |
+| **`load_gdss_key(keyring_id)`** | Load the 32-byte GDSS masking key from the keyring by key ID (integer). Use the ID returned by `store_session_keys` for `"gdss_masking"`. Raises if the key is not 32 bytes or keyring is unavailable. |
+| **`get_shared_secret_from_gnupg(my_private_pem, peer_public_pem)`** | Perform ECDH with BrainpoolP256r1 keys (PEM bytes). Returns raw shared secret; pass to `derive_session_keys()`. Requires gr-linux-crypto CryptoHelpers. |
+| **`gdss_nonce(session_id, tx_seq)`** | Build the 12-byte nonce for the GDSS ChaCha20 masking keystream. Arguments: `session_id` (int), `tx_seq` (int). Returns 12 bytes (4-byte session_id big-endian + 8-byte tx_seq big-endian). Must match on TX and RX. |
+| **`payload_nonce(session_id, tx_seq)`** | Build the 96-bit nonce for payload ChaCha20-Poly1305 AEAD (e.g. gr-linux-crypto payload encryption). Format: prefix + session_id + tx_seq. Use with `payload_enc` from `derive_session_keys`. |
+| **`keyring_available()`** | Return True if the keyring helper (keyctl or gr-linux-crypto KeyringHelper) is available. |
+| **`keyring_import_error()`** | Return the exception message if keyring import failed, or None. Useful to report why keyring is unavailable. |
+
+### Sync burst utilities
+
+| Function | Purpose |
+|----------|---------|
+| **`derive_sync_schedule(master_key, session_id, window_ms=50)`** | Returns a callable `get_offset(epoch_ms)` that maps a nominal epoch (ms) to a burst offset in **[-window_ms, +window_ms]** ms. Use key `sync_timing` from `derive_session_keys`. Placement is deterministic for TX/RX, unpredictable to observers. See **Sync burst timing and epoch window** below for details. |
+| **`derive_sync_pn_sequence(master_key, session_id, chips=10000)`** | Derive a session-unique pseudo-noise sequence for sync bursts. Uses `sync_pn` from `derive_session_keys`. Returns a float32 array of length `chips` with values +1.0 or -1.0 (BPSK-like). TX and RX get the same sequence for the same key and session_id. |
+| **`gaussian_envelope(samples, rise_fraction=0.1)`** | Apply a Gaussian-shaped amplitude envelope to a burst (reduces sidelobes). `samples`: complex or real array; `rise_fraction`: fraction of length for rise/fall (default 0.1). Returns the array multiplied by the envelope (unity in center, ramps at edges). |
 
 ---
 
@@ -137,6 +164,22 @@ Provides the GDSS key and nonce to the spreader and despreader via the `set_key`
 **Usage:** Add the block, set either `keyring_id` or `shared_secret_hex` (with `keyring_id` = 0), set `session_id` and `tx_seq` to match the other side. Connect `key_out` to `set_key` on both the spreader and the despreader. No trigger connection is needed; the key is sent when the flowgraph starts.
 
 Together, `kgdss_spreader_cc`, `kgdss_despreader_cc`, and `kgdss_key_injector` implement a keyed, Gaussian-distributed spread-spectrum layer: the key injector feeds key/nonce to both ends, and the spreader/despreader handle the symbol stream as long as both ends share the same ChaCha20 key/nonce and spreading parameters.
+
+### Sync burst timing and epoch window
+
+The optional **sync burst** (a short DSSS burst used for timing alignment) uses Python helpers in `gnuradio.kgdss` (or `sync_burst_utils`): `derive_sync_schedule`, `derive_sync_pn_sequence`, and `gaussian_envelope`. These are not GNU Radio blocks; you use them in your own logic or flowgraph code to decide when and where to insert a burst.
+
+**How placement inside the epoch window is defined**
+
+- **`derive_sync_schedule(master_key, session_id, window_ms=50)`** returns a callable **`get_offset(epoch_ms)`**.
+- **Epoch** is a nominal time index in **milliseconds** (e.g. milliseconds since session start). You choose what values of `epoch_ms` correspond to “sync opportunities” (see below).
+- **Window:** The parameter **`window_ms`** is the half-width of the offset window in ms. The burst’s **offset** (in ms) is in the range **[-window_ms, +window_ms]** relative to that nominal epoch time.
+- **Placement:** For a given `epoch_ms`, the offset is computed deterministically from the session key (HMAC-SHA256 of `master_key` and `session_id` with domain `"sync-timing-v1"`), then ChaCha20 indexed by `epoch_ms` produces a value mapped into **[-window_ms, +window_ms]**. So TX and RX, with the same key and session_id, get the same offset for each epoch; different sessions get different patterns. **To an observer without the key, the placement is unpredictable** (they see only that bursts fall somewhere in the window); **TX and RX stay in agreement** because they both compute the same offset from the shared secret.
+
+**How often sync bursts occur**
+
+- **gr-k-gdss does not define the sync burst rate.** The schedule only maps “epoch index” -> “offset in window”. Your **application or protocol** decides how often there is a sync epoch (e.g. every 10 s, every 60 s) and what `epoch_ms` to pass (e.g. 0, 10000, 20000, …). So the **frequency of sync bursts is an application choice**, not fixed by the module.
+- Burst **duration** (e.g. 2 ms) and **window** (e.g. ±50 ms) are parameters you use when generating the burst and calling `get_offset`; the **period between bursts** is whatever your design uses for epoch spacing.
 
 ---
 
