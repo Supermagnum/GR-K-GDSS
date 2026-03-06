@@ -8,14 +8,21 @@ uses a unique PN sequence and timing offset, preventing cross-session
 correlation (unlike standard GDSS with a fixed PN). Uses ChaCha20 for
 deterministic keystream; requires PyCryptodome or cryptography.
 
+Sync bursts can be masked with the same keyed Gaussian masking as the data
+(apply_keyed_gaussian_mask) so they are statistically indistinguishable from
+the GDSS waveform to a passive observer.
+
 Exported API:
   - derive_sync_schedule(master_key, session_id, window_ms) -> Callable[[int], int]
   - derive_sync_pn_sequence(master_key, session_id, chips) -> np.ndarray
   - gaussian_envelope(samples, rise_fraction) -> np.ndarray
+  - apply_keyed_gaussian_mask(burst, gdss_key, nonce, variance) -> np.ndarray
 """
 
 from __future__ import annotations
 
+import math
+import struct
 from typing import Callable
 
 import numpy as np
@@ -55,6 +62,70 @@ if _ChaCha20 is None:
     raise ImportError("sync_burst_utils requires PyCryptodome or cryptography for ChaCha20")
 
 ChaCha20 = _ChaCha20
+
+# Minimum mask magnitude to match C++ spreader/despreader (avoids division instability).
+_MIN_MASK = 1e-4
+
+
+def _to_uniform(b: bytes) -> float:
+    """Four bytes LE to uniform [0, 1). Matches C++ spreader."""
+    v = struct.unpack("<I", b[:4])[0]
+    return (float(v) + 0.5) / 4294967296.0
+
+
+def _box_muller(u1: float, u2: float, variance: float = 1.0) -> float:
+    """Box-Muller: two uniform [0,1) -> one Gaussian(0, variance). Matches C++ spreader."""
+    if u1 < 1e-10:
+        u1 = 1e-10
+    g = math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
+    return g * math.sqrt(variance)
+
+
+def apply_keyed_gaussian_mask(
+    burst: np.ndarray,
+    gdss_key: bytes,
+    nonce: bytes,
+    variance: float = 1.0,
+) -> np.ndarray:
+    """
+    Apply the same keyed Gaussian masking to a burst as used for GDSS data.
+
+    Uses ChaCha20 IETF keystream and Box-Muller (matching kgdss_spreader_cc_impl)
+    so the burst is statistically indistinguishable from the GDSS waveform. A
+    passive observer sees Gaussian-noise-like statistics instead of a
+    recognizable DSSS chip pattern. Use gdss_sync_burst_nonce(session_id) for
+    nonce so the sync-burst keystream does not overlap with the data keystream.
+
+    Args:
+        burst: Complex array (chip-rate burst, e.g. PN * gaussian_envelope).
+        gdss_key: 32-byte GDSS masking key (e.g. gdss_masking from derive_session_keys).
+        nonce: 12-byte ChaCha20 IETF nonce (e.g. from gdss_sync_burst_nonce(session_id)).
+        variance: Gaussian variance for mask (default 1.0, match spreader).
+
+    Returns:
+        New complex array: out[i] = (burst[i].real * mask_i, burst[i].imag * mask_q).
+    """
+    n = len(burst)
+    num_bytes = n * 16
+    cipher = ChaCha20.new(key=gdss_key, nonce=nonce)
+    keystream = cipher.encrypt(b"\x00" * num_bytes)
+    out = np.empty_like(burst)
+    for i in range(n):
+        base = i * 16
+        u1 = _to_uniform(keystream[base : base + 4])
+        u2 = _to_uniform(keystream[base + 4 : base + 8])
+        u3 = _to_uniform(keystream[base + 8 : base + 12])
+        u4 = _to_uniform(keystream[base + 12 : base + 16])
+        mask_i = _box_muller(u1, u2, variance)
+        mask_q = _box_muller(u3, u4, variance)
+        if abs(mask_i) < _MIN_MASK:
+            mask_i = _MIN_MASK if mask_i >= 0 else -_MIN_MASK
+        if abs(mask_q) < _MIN_MASK:
+            mask_q = _MIN_MASK if mask_q >= 0 else -_MIN_MASK
+        out[i] = np.complex64(
+            complex(float(burst[i].real) * mask_i, float(burst[i].imag) * mask_q)
+        )
+    return out
 
 
 def derive_sync_schedule(

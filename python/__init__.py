@@ -9,6 +9,7 @@ try:
         load_gdss_key,
         get_shared_secret_from_gnupg,
         gdss_nonce,
+        gdss_sync_burst_nonce,
         payload_nonce,
         keyring_available,
         keyring_import_error,
@@ -19,6 +20,7 @@ except ImportError:
     load_gdss_key = None
     get_shared_secret_from_gnupg = None
     gdss_nonce = None
+    gdss_sync_burst_nonce = None
     payload_nonce = None
     keyring_available = None
     keyring_import_error = None
@@ -33,11 +35,13 @@ try:
         derive_sync_schedule,
         derive_sync_pn_sequence,
         gaussian_envelope,
+        apply_keyed_gaussian_mask,
     )
 except ImportError:
     derive_sync_schedule = None
     derive_sync_pn_sequence = None
     gaussian_envelope = None
+    apply_keyed_gaussian_mask = None
 
 try:
     from .kgdss_python import (
@@ -57,12 +61,14 @@ __all__ = [
     "load_gdss_key",
     "get_shared_secret_from_gnupg",
     "gdss_nonce",
+    "gdss_sync_burst_nonce",
     "payload_nonce",
     "keyring_available",
     "keyring_import_error",
     "derive_sync_schedule",
     "derive_sync_pn_sequence",
     "gaussian_envelope",
+    "apply_keyed_gaussian_mask",
     "kgdss_spreader_cc",
     "kgdss_despreader_cc",
     "kgdss_sync_state",

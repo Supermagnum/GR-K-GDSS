@@ -10,6 +10,11 @@ import sys
 
 import numpy as np
 
+try:
+    import pytest
+except ImportError:
+    pytest = None
+
 # Allow importing gnuradio.kgdss from build tree or install
 try:
     from gnuradio import kgdss
@@ -394,11 +399,13 @@ class TestT1SetKeyMessagePort(unittest.TestCase):
         injector = kgdss.key_injector(shared_secret, session_id=0, tx_seq=1)
 
         src = vector_source_c(data, False)
+        n_chips = n_syms * CHIPS_PER_SYMBOL
+        head_block = head(gr.sizeof_gr_complex, n_chips)
         snk = vector_sink_c()
         snk_lock = vector_sink_f()
         snk_snr = vector_sink_f()
         tb = gr.top_block()
-        tb.connect(src, spreader, despreader)
+        tb.connect(src, spreader, head_block, despreader)
         tb.connect((despreader, 0), snk)
         tb.connect((despreader, 1), snk_lock)
         tb.connect((despreader, 2), snk_snr)
@@ -406,10 +413,25 @@ class TestT1SetKeyMessagePort(unittest.TestCase):
         tb.msg_connect(injector, "key_out", despreader, "set_key")
 
         injector.inject()
-        tb.run()
+        # Start then stop once we have enough output; do not rely on natural termination (message-only injector can make scheduler never finish)
+        import time
+        tb.start()
+        deadline = time.monotonic() + 120.0
+        while len(snk.data()) < n_syms and time.monotonic() < deadline:
+            time.sleep(0.2)
+        tb.stop()
+        tb.wait()
+        if len(snk.data()) < n_syms:
+            self.fail("flowgraph did not produce {} symbols within 120 s (got {})".format(n_syms, len(snk.data())))
         out = np.array(snk.data())
         self.assertEqual(len(out), n_syms, "output length")
         np.testing.assert_allclose(out, data, atol=TOL, rtol=TOL)
+
+
+if pytest is not None:
+    TestT1SetKeyMessagePort.test_round_trip_via_set_key_message = pytest.mark.slow(
+        TestT1SetKeyMessagePort.test_round_trip_via_set_key_message
+    )
 
 
 if __name__ == "__main__":

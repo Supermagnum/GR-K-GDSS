@@ -13,14 +13,22 @@ try:
         derive_sync_schedule,
         derive_sync_pn_sequence,
         gaussian_envelope,
+        apply_keyed_gaussian_mask,
+        gdss_sync_burst_nonce,
     )
     T2_AVAILABLE = (
         derive_sync_schedule is not None
         and derive_sync_pn_sequence is not None
         and gaussian_envelope is not None
     )
+    T2_MASK_AVAILABLE = (
+        T2_AVAILABLE
+        and apply_keyed_gaussian_mask is not None
+        and gdss_sync_burst_nonce is not None
+    )
 except ImportError:
     T2_AVAILABLE = False
+    T2_MASK_AVAILABLE = False
 
 
 @unittest.skipUnless(T2_AVAILABLE, "gnuradio.kgdss sync_burst_utils not available")
@@ -119,3 +127,45 @@ class TestT2GaussianEnvelope(unittest.TestCase):
         # Right flank: envelope falls from centre to end (descending)
         for i in range(n - flank, n - 1):
             self.assertGreaterEqual(out[i], out[i + 1])
+
+
+@unittest.skipUnless(T2_MASK_AVAILABLE, "apply_keyed_gaussian_mask / gdss_sync_burst_nonce not available")
+class TestT2KeyedGaussianMask(unittest.TestCase):
+    """apply_keyed_gaussian_mask: same key/nonce/burst -> identical output; shape preserved."""
+
+    def test_mask_determinism(self):
+        key = os.urandom(32)
+        nonce = os.urandom(12)
+        burst = (np.random.randn(200) + 1j * np.random.randn(200)).astype(np.complex64)
+        a = apply_keyed_gaussian_mask(burst, key, nonce)
+        b = apply_keyed_gaussian_mask(burst, key, nonce)
+        np.testing.assert_array_almost_equal(a, b)
+
+    def test_mask_shape(self):
+        key = os.urandom(32)
+        nonce = gdss_sync_burst_nonce(1)
+        burst = (np.ones(100) + 0.5j * np.ones(100)).astype(np.complex64)
+        out = apply_keyed_gaussian_mask(burst, key, nonce)
+        self.assertEqual(out.shape, burst.shape)
+        self.assertEqual(out.dtype, np.complex64)
+
+    def test_mask_different_nonce_different_output(self):
+        key = os.urandom(32)
+        burst = (np.ones(50) + 1j * np.ones(50)).astype(np.complex64)
+        out1 = apply_keyed_gaussian_mask(burst, key, gdss_sync_burst_nonce(1))
+        out2 = apply_keyed_gaussian_mask(burst, key, gdss_sync_burst_nonce(2))
+        self.assertFalse(np.allclose(out1, out2))
+
+
+@unittest.skipUnless(T2_MASK_AVAILABLE, "gdss_sync_burst_nonce not available")
+class TestT2SyncBurstNonce(unittest.TestCase):
+    """gdss_sync_burst_nonce returns 12 bytes; different session_id -> different nonce."""
+
+    def test_sync_burst_nonce_length(self):
+        n = gdss_sync_burst_nonce(1)
+        self.assertEqual(len(n), 12)
+
+    def test_sync_burst_nonce_per_session(self):
+        n1 = gdss_sync_burst_nonce(1)
+        n2 = gdss_sync_burst_nonce(2)
+        self.assertNotEqual(n1, n2)

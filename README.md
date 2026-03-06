@@ -1,6 +1,10 @@
 # GR-K-GDSS
 A highly experimental Cryptographically keyed GDSS proposal.
 
+The developer used curiosity to piece the suggested improvements in this project together. AI assisted with documentation and coding.
+
+---
+
 # Cryptographically Keyed GDSS — A Comparison with Standard GDSS
 
 **Status: Unreviewed theoretical design concept**

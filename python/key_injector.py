@@ -111,7 +111,8 @@ class key_injector(gr.basic_block):
         data = bytes(pmt.u8vector_elements(msg))
         if len(data) < 32:
             return
-        secret = data[:32]
+        # Use full secret (supports 32/40/48/64-byte Brainpool shared secrets)
+        secret = data
         keys = derive_session_keys(secret)
         gdss_key = keys["gdss_masking"]
         nonce = gdss_nonce(self._session_id, self._tx_seq)
