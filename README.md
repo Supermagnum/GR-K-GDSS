@@ -38,6 +38,7 @@ The developer used curiosity to piece the suggested improvements in this project
 14. [Testing](docs/TESTING.md)
 15. [Test results](docs/TEST_RESULTS.md)
 16. [Technical terms index](docs/GLOSSARY.md)
+17. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
 
 ---
 
@@ -703,6 +704,42 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **Quick test run** | **tests/README.md** — Run commands; keyring/sandbox notes. |
 | **Python bindings** (C++ blocks to Python) | **python/bindings/** — `kgdss_spreader_cc_python.cc`, `kgdss_despreader_cc_python.cc`, `kgdss_python.cc`; expose spreader/despreader and `kgdss_sync_state` to `gnuradio.kgdss`. |
 | **Build system** | **CMakeLists.txt** (top level), **lib/CMakeLists.txt**, **python/CMakeLists.txt**, **python/bindings/CMakeLists.txt**, **grc/CMakeLists.txt**, **include/gnuradio/kgdss/CMakeLists.txt** — build and install the C++ library, Python package, and GRC blocks. |
+
+### Available APIs (gr-linux-crypto)
+
+GR-K-GDSS uses **gr-linux-crypto** for key derivation (CryptoHelpers, KeyringHelper) and optionally for payload encryption. The following gr-linux-crypto APIs are available and can be combined with keyed GDSS as needed.
+
+**Shamir low-level**
+
+- `split(secret, threshold_k, num_shares_n, prime, curve)` — max secret: 31 / 47 / 63 bytes for P256 / P384 / P512
+- `reconstruct(shares, prime, secret_length, curve)`
+- `create_shamir_backed_key(threshold_k, num_shares_n, prime, curve)` — returns a 32-byte session key
+- `reconstruct_session_key(shares, prime, curve)`
+- `get_curve_prime(curve)`, `get_max_secret_bytes(curve)`, `get_share_value_bytes(curve)`, `SUPPORTED_CURVES`
+
+**MultiRecipientECIES**
+
+- `encrypt(plaintext, recipients)` / `decrypt(ciphertext, callsign, private_key_pem)`
+- `encrypt_and_sign(...)` / `verify_and_decrypt(...)`
+- `encrypt_shamir(plaintext, recipients, curve)` / `decrypt_shamir(...)` / `get_share_from_shamir_block(...)`
+
+**HPKE-style**
+
+- `HPKEBrainpool.seal(...)` / `open(...)` / `seal_with_auth(...)` / `open_with_auth(...)`
+
+**Nitrokey / card**
+
+- `get_keygrip_from_key_id(...)`, `decrypt_with_card(...)` (documented stub), C++ block with `key_source="opgp_card"`
+
+**Independent use — mix and match freely**
+
+| You want | Use |
+|----------|-----|
+| ECIES only | MultiRecipientECIES.encrypt / decrypt |
+| Shamir only | split / reconstruct or create_shamir_backed_key / reconstruct_session_key |
+| ECIES + Shamir (K-of-N quorum) | encrypt_shamir / decrypt_shamir |
+| Clean high-level API | HPKEBrainpool.seal / open |
+| Hardware-backed keys | Nitrokey C++ block or decrypt_with_card |
 
 **Usage documentation** is in **[docs/USAGE.md](docs/USAGE.md)**. There you will find:
 - **Block API:** stream and message inputs/outputs, parameters, and usage for the three GNU Radio blocks (Keyed GDSS Spreader, Despreader, Key Injector), plus how to connect gr-linux-crypto and SOQPSK for TX/RX.
