@@ -8,6 +8,15 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
 
 ---
 
+## Table of Contents
+
+- [Unit tests (pytest)](#unit-tests-pytest)
+- [IQ test file generation](#iq-test-file-generation)
+- [IQ file analysis](#iq-file-analysis)
+  - [IQ comparison plots](#iq-comparison-plots)
+
+---
+
 ## Unit tests (pytest)
 
 Run: `pytest tests/ -v` from the repository root (after installing the module and gr-linux-crypto). Example result with keyring available (Linux, Python 3.12):

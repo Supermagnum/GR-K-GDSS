@@ -2,6 +2,29 @@
 
 This document describes the unit tests for gr-k-gdss, how to run them, what each test does, and the expected results.
 
+## Table of Contents
+
+- [Running the tests](#running-the-tests)
+- [Documented test run](#documented-test-run)
+- [What the tests do](#what-the-tests-do)
+  - [Suite overview](#suite-overview)
+  - [T1 — Spreader/despreader (test_t1_spreader_despreader.py)](#t1--spreaderdespreader-test_t1_spreader_despreaderpy)
+  - [T2 — Sync burst (test_t2_sync_burst.py)](#t2--sync-burst-test_t2_sync_burstpy)
+  - [T3 — Key derivation (test_t3_key_derivation.py)](#t3--key-derivation-test_t3_key_derivationpy)
+  - [Cross-layer (test_cross_layer.py)](#cross-layer-test_cross_layerpy)
+- [Expected results](#expected-results)
+- [IQ test file generation and analysis](#iq-test-file-generation-and-analysis)
+  - [What IQ files are](#what-iq-files-are)
+  - [Generated files vs the real recording](#generated-files-vs-the-real-recording)
+  - [What each IQ test file is](#what-each-iq-test-file-is)
+  - [Scripts](#scripts)
+  - [Example generator output](#example-generator-output)
+  - [Example IQ file analysis output](#example-iq-file-analysis-output)
+  - [Example plot output](#example-plot-output)
+  - [Unexpected PSD finding (Row 2, second plot): standard GDSS low-frequency peak](#unexpected-psd-finding-row-2-second-plot-standard-gdss-low-frequency-peak)
+
+---
+
 ## Running the tests
 
 Prerequisites:
