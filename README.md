@@ -22,21 +22,22 @@ The developer used curiosity to piece the suggested improvements in this project
 
 ## Table of Contents
 
-1. Background
-2. What is GDSS?
-3. Standard GDSS — How It Works
-4. The Weakness in Standard GDSS
-5. Cryptographically Keyed GDSS — The Proposed Modification
-6. All Layers of Security
-7. Comparison — Standard GDSS vs Keyed GDSS
-8. The Nitrokey and Emergency Disposal
-9. What Remains Unresolved
-10. Sources and Further Reading
-11. Build and Install
+1. [Background](#1-background)
+2. [What is GDSS?](#2-what-is-gdss)
+3. [Standard GDSS — How It Works](#3-standard-gdss--how-it-works)
+4. [The Weakness in Standard GDSS](#4-the-weakness-in-standard-gdss)
+5. [Cryptographically Keyed GDSS — The Proposed Modification](#5-cryptographically-keyed-gdss--the-proposed-modification)
+6. [All Layers of Security](#6-all-layers-of-security)
+7. [Comparison — Standard GDSS vs Keyed GDSS](#7-comparison--standard-gdss-vs-keyed-gdss)
+8. [The Nitrokey, PIN Protection, and Emergency Disposal](#8-the-nitrokey-pin-protection-and-emergency-disposal)
+9. [What Remains Unresolved](#9-what-remains-unresolved)
+10. [Sources and Further Reading](#10-sources-and-further-reading)
+11. [Build and Install](#11-build-and-install)
 12. [Usage](docs/USAGE.md)
 13. [Examples](examples/)
 14. [Testing](docs/TESTING.md)
 15. [Test results](docs/TEST_RESULTS.md)
+16. [Technical terms index](docs/GLOSSARY.md)
 
 ---
 
@@ -692,6 +693,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **Block API and Python helpers** (spreader, despreader, key injector; session key derivation, sync burst functions) | **[docs/USAGE.md](docs/USAGE.md)** — Block I/O and parameters, helper function reference, gr-linux-crypto/SOQPSK wiring, sync epoch window. |
 | **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Test suites T1/T2/T3 and cross-layer; per-test description; IQ file generation and analysis. |
 | **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** |
+| **Technical terms index** (glossary of acronyms and terms) | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** |
 | **Example flowgraph** (TX with Codec2, ECIES, SOQPSK, GDSS) | **[examples/](examples/)** — `tx_example_kgdss.grc` and verification; see [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md). |
 | **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`; headers in **include/gnuradio/kgdss/**. |
 | **Python helpers** (key derivation, keyring, sync burst) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`; API details in [docs/USAGE.md](docs/USAGE.md). |
