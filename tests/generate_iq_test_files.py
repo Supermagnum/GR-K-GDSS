@@ -299,6 +299,29 @@ def _gaussian_envelope(
     return samples * env
 
 
+def _sync_burst_nonce(session_id: int) -> bytes:
+    """12-byte nonce for sync-burst masking so keystream does not overlap with data."""
+    return session_id.to_bytes(4, "big") + ((1 << 64) - 1).to_bytes(8, "big")
+
+
+def _apply_keyed_gaussian_mask(
+    burst: np.ndarray,
+    gdss_key: bytes,
+    nonce: bytes,
+    variance: float = VARIANCE,
+) -> np.ndarray:
+    """
+    Apply keyed Gaussian masking to a burst (same algorithm as kgdss_spreader_cc).
+
+    Result is statistically indistinguishable from GDSS data waveform.
+    """
+    n = len(burst)
+    ks = _chacha20_keystream(gdss_key, nonce, n * 16)
+    masks = _masks_array(ks, n, variance)
+    out = (burst.real * masks[:, 0] + 1j * burst.imag * masks[:, 1]).astype(np.complex64)
+    return out
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -401,31 +424,33 @@ def main():
         json.dump({"pearson_correlation_vs_payload": float(corr5)}, f, indent=2)
     assert abs(corr5) < 0.05, f"Wrong-key correlation |{corr5}| >= 0.05"
 
-    # File 6 - Sync burst isolation
+    # File 6 - Sync burst isolation (keyed Gaussian masked; indistinguishable from GDSS data)
     burst_len = 1000  # 2 ms at 500 kHz
     silence_half = 250_000  # 0.5 s
     total_6 = silence_half * 2 + burst_len
+    keys_6 = _derive_session_keys(TEST_SHARED_SECRET)
+    gdss_key_6 = keys_6["gdss_masking"]
+    sync_nonce_6 = _sync_burst_nonce(SESSION_ID)
     pn = _derive_sync_pn_sequence(TEST_SHARED_SECRET, SESSION_ID, burst_len)
     burst_raw = pn.astype(np.complex64)
     burst_envelope = _gaussian_envelope(burst_raw, rise_fraction=0.1)
+    burst_masked = _apply_keyed_gaussian_mask(burst_envelope, gdss_key_6, sync_nonce_6)
     noise_floor = 1.0
-    peak_target_db = 4.5
-    scale = noise_floor * (10 ** (peak_target_db / 20.0)) / (np.max(np.abs(burst_envelope)) + 1e-12)
-    burst_scaled = burst_envelope * scale
+    target_rms = 1.0
+    rms_masked = np.sqrt(np.mean(np.abs(burst_masked) ** 2)) + 1e-12
+    burst_scaled = burst_masked * (target_rms / rms_masked)
     silence = np.zeros(silence_half, dtype=np.complex64)
-    burst_silence = np.zeros(burst_len, dtype=np.complex64)
     file6 = np.concatenate([silence, burst_scaled, silence])
     if len(file6) < N_SAMPLES:
         file6 = np.concatenate([file6, np.zeros(N_SAMPLES - len(file6), dtype=np.complex64)])
     else:
         file6 = file6[:N_SAMPLES]
     file6.tofile(os.path.join(OUTPUT_DIR, "06_sync_burst_isolation.cf32"))
-    burst_power = np.mean(np.abs(burst_scaled) ** 2)
     meta6 = {
         "burst_duration_ms": 2.0,
-        "burst_power_db_above_noise": peak_target_db,
+        "keyed_gaussian_masked": True,
+        "burst_power_matches_noise": True,
         "noise_floor_power": float(noise_floor**2),
-        "burst_peak_power": float(np.max(np.abs(burst_scaled)) ** 2),
     }
     with open(os.path.join(OUTPUT_DIR, "06_sync_burst_isolation.json"), "w") as f:
         json.dump(meta6, f, indent=2)
@@ -537,6 +562,8 @@ Optional baseline with hardware artifacts (SDR recording):
     PN_SEED_STD = 99
     BURST_POS_FIXED = 10_000
     SILENCE_LEN_10 = 500_000
+    noise_floor = 1.0
+    peak_target_db = 4.5
     rng10 = np.random.default_rng(seed=PN_SEED_STD)
     pn10 = rng10.choice([-1.0, 1.0], size=10_000)
     burst10 = pn10[:burst_len].astype(np.complex64)
@@ -558,29 +585,33 @@ Optional baseline with hardware artifacts (SDR recording):
     with open(os.path.join(OUTPUT_DIR, "10b_standard_gdss_sync_burst_session_B.json"), "w") as f:
         json.dump(meta10b, f, indent=2)
 
-    # File 11a - Keyed GDSS sync burst Session A (session-unique PN)
+    # File 11a/11b - Keyed GDSS sync burst (session-unique PN + keyed Gaussian mask; power matches noise)
+    target_rms_11 = 1.0
     keys_full = _derive_full_session_keys(TEST_SHARED_SECRET)
     sync_pn_key = keys_full["sync_pn"]
+    gdss_key_11 = keys_full["gdss_masking"]
     pn11a = _derive_sync_pn_sequence(sync_pn_key, SESSION_ID_A, burst_len)
     burst11a = pn11a.astype(np.complex64)
     burst11a_env = _gaussian_envelope(burst11a, rise_fraction=0.1)
-    scale11a = noise_floor * (10 ** (peak_target_db / 20.0)) / (np.max(np.abs(burst11a_env)) + 1e-12)
-    burst11a_scaled = burst11a_env * scale11a
+    burst11a_masked = _apply_keyed_gaussian_mask(burst11a_env, gdss_key_11, _sync_burst_nonce(SESSION_ID_A))
+    rms11a = np.sqrt(np.mean(np.abs(burst11a_masked) ** 2)) + 1e-12
+    burst11a_scaled = burst11a_masked * (target_rms_11 / rms11a)
     file11a = np.concatenate([silence_before, burst11a_scaled, silence_after])
     file11a.tofile(os.path.join(OUTPUT_DIR, "11a_keyed_gdss_sync_burst_session_A.cf32"))
-    meta11a = {"session_id": SESSION_ID_A, "type": "keyed_gdss_session_pn"}
+    meta11a = {"session_id": SESSION_ID_A, "type": "keyed_gdss_session_pn", "keyed_gaussian_masked": True}
     with open(os.path.join(OUTPUT_DIR, "11a_keyed_gdss_sync_burst_session_A.json"), "w") as f:
         json.dump(meta11a, f, indent=2)
 
-    # File 11b - Keyed GDSS sync burst Session B
+    # File 11b - Keyed GDSS sync burst Session B (session-unique PN + keyed Gaussian mask)
     pn11b = _derive_sync_pn_sequence(sync_pn_key, SESSION_ID_B, burst_len)
     burst11b = pn11b.astype(np.complex64)
     burst11b_env = _gaussian_envelope(burst11b, rise_fraction=0.1)
-    scale11b = noise_floor * (10 ** (peak_target_db / 20.0)) / (np.max(np.abs(burst11b_env)) + 1e-12)
-    burst11b_scaled = burst11b_env * scale11b
+    burst11b_masked = _apply_keyed_gaussian_mask(burst11b_env, gdss_key_11, _sync_burst_nonce(SESSION_ID_B))
+    rms11b = np.sqrt(np.mean(np.abs(burst11b_masked) ** 2)) + 1e-12
+    burst11b_scaled = burst11b_masked * (target_rms_11 / rms11b)
     file11b = np.concatenate([silence_before, burst11b_scaled, silence_after])
     file11b.tofile(os.path.join(OUTPUT_DIR, "11b_keyed_gdss_sync_burst_session_B.cf32"))
-    meta11b = {"session_id": SESSION_ID_B, "type": "keyed_gdss_session_pn"}
+    meta11b = {"session_id": SESSION_ID_B, "type": "keyed_gdss_session_pn", "keyed_gaussian_masked": True}
     with open(os.path.join(OUTPUT_DIR, "11b_keyed_gdss_sync_burst_session_B.json"), "w") as f:
         json.dump(meta11b, f, indent=2)
 

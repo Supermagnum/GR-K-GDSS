@@ -14,6 +14,7 @@ Exported API:
   - store_session_keys(keys) -> dict of name -> keyring ID
   - load_gdss_key(keyring_id) -> 32-byte GDSS masking key
   - gdss_nonce(session_id, tx_seq) -> 12-byte nonce for ChaCha20 masking
+  - gdss_sync_burst_nonce(session_id) -> 12-byte nonce for sync-burst masking (keystream distinct from data)
   - payload_nonce(session_id, tx_seq) -> 96-bit nonce for payload AEAD
   - get_shared_secret_from_gnupg(my_private_pem, peer_public_pem) -> shared secret
   - keyring_available() -> bool
@@ -193,7 +194,8 @@ def derive_session_keys(
 
     Args:
         ecdh_shared_secret: Raw shared secret from ECDH (e.g. 32 bytes from
-            BrainpoolP256r1). Must be at least 32 bytes for HKDF.
+            BrainpoolP256r1, 48 from P384r1, 64 from P512r1). At least 32 bytes
+            recommended; longer secrets are used in full by HKDF.
         salt: Optional 32-byte salt for HKDF. Defaults to 32 zero bytes.
 
     Returns:
@@ -395,6 +397,27 @@ def gdss_nonce(session_id: int, tx_seq: int) -> bytes:
         12-byte nonce for ChaCha20 IETF (no counter in nonce; counter starts at 0).
     """
     return session_id.to_bytes(4, "big") + tx_seq.to_bytes(8, "big")
+
+
+# Reserved tx_seq value so sync-burst mask keystream does not overlap with data.
+SYNC_BURST_TX_SEQ = (1 << 64) - 1
+
+
+def gdss_sync_burst_nonce(session_id: int) -> bytes:
+    """
+    Return the 12-byte nonce for sync-burst keyed Gaussian masking.
+
+    Use this (with gdss_masking key) when calling apply_keyed_gaussian_mask
+    so the sync burst keystream is distinct from the data keystream. Same
+    session_id as the link; tx_seq is reserved (SYNC_BURST_TX_SEQ).
+
+    Args:
+        session_id: Session identifier.
+
+    Returns:
+        12-byte nonce for ChaCha20 IETF.
+    """
+    return gdss_nonce(session_id, SYNC_BURST_TX_SEQ)
 
 
 def payload_nonce(session_id: int, tx_seq: int) -> bytes:

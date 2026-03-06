@@ -24,9 +24,11 @@ If you use a venv that does not see system-installed packages, set PYTHONPATH so
 
 Install pytest if needed: `pip install pytest`.
 
-**Keyring test:** The keyring round-trip test is skipped with "Permission denied" when run inside a restricted environment (e.g. some sandboxes). Run `pytest tests/ -v` in a normal system terminal so the process can read keys from the session keyring; then all 30 tests pass.
+**Keyring test:** The keyring round-trip test is skipped with "Permission denied" when run inside a restricted environment (e.g. some sandboxes). Run `pytest tests/ -v` in a normal system terminal so the process can read keys from the session keyring.
 
-## Documented test run (30 passed)
+**Compile check:** From the repo root, run `mkdir -p build && cd build && cmake .. && make -j4` to verify the C++ and Python build. Install with `make install` (or `sudo make install` for system prefix) so that the unit tests see the installed module.
+
+## Documented test run
 
 Example full run from a normal terminal (Linux, Python 3.12, gr-test-env):
 
@@ -72,6 +74,8 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 ======================================================================================= 30 passed in 0.20s ==============
 ```
 
+(With the current source, after install, more tests run: TestT1SetKeyMessagePort plus TestT2KeyedGaussianMask, TestT2SyncBurstNonce, and TestT3SyncBurstNonce; expect 33–38 passed depending on environment.)
+
 ## What the tests do
 
 ### Suite overview
@@ -79,7 +83,7 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 | Suite | File | What it tests |
 |-------|------|----------------|
 | T1 | test_t1_spreader_despreader.py | C++ spreader and despreader blocks: round-trip, keystream behaviour, key/nonce validation, Gaussian masking, block continuity. |
-| T2 | test_t2_sync_burst.py | Python sync-burst helpers: PN sequence generation, timing offsets, Gaussian envelope shape. |
+| T2 | test_t2_sync_burst.py | Python sync-burst helpers: PN sequence generation, timing offsets, Gaussian envelope shape, keyed Gaussian mask for sync bursts, sync-burst nonce. |
 | T3 | test_t3_key_derivation.py | Session key derivation (HKDF), nonce construction, and storing/loading the GDSS key via the Linux kernel keyring. |
 | Cross-layer | test_cross_layer.py | End-to-end: derive keys, build spreader/despreader, run a full spread/despread flow; output matches input. |
 
@@ -101,6 +105,8 @@ These tests exercise the C++ blocks via Python bindings. They ensure the keyed s
 | **TestT1BlockBoundaryContinuity** | Runs spreader/despreader with 25 symbols and with 50 symbols (same key/nonce); asserts the first 25 recovered symbols of the 50-symbol run match the 25-symbol run. Ensures keystream continuity across work() calls in one flowgraph. |
 | **TestT1SetKeyMessagePort** | Builds spreader and despreader with empty key/nonce, adds key_injector(shared_secret, session_id, tx_seq), connects key_out to both set_key ports, runs the flowgraph; key_injector sends the key automatically on start(). Asserts round-trip output matches input. Validates runtime key injection via the set_key message port. Skipped if key_injector is unavailable or the build does not support empty key/nonce. |
 
+**Why TestT1SetKeyMessagePort is slow:** This test runs a full GNU Radio flowgraph (source -> spreader -> despreader with key_injector on the set_key port) until a fixed number of samples have been processed. The flowgraph scheduler is single-threaded by default, so all of that work runs on one CPU core. The test can take noticeably longer than the other T1 tests; that is expected.
+
 T1 tests are skipped if the C++ Python bindings (`gnuradio.kgdss.kgdss_python`) are not available.
 
 ### T2 — Sync burst (test_t2_sync_burst.py)
@@ -116,8 +122,10 @@ These tests cover the Python sync-burst utilities: PN sequence generation, timin
 | **TestT2TimingOffsetRange** | Checks that derived timing offsets fall within the configured window. |
 | **TestT2TimingOffsetDistribution** | Checks that offsets are spread across the range (not always the same value). |
 | **TestT2GaussianEnvelope** | Builds a Gaussian envelope and checks shape: rise, peak, and fall (right flank descending). |
+| **TestT2KeyedGaussianMask** | apply_keyed_gaussian_mask: same key/nonce/burst yields identical output; shape preserved; different nonce yields different output. Ensures sync bursts can be masked like GDSS data. |
+| **TestT2SyncBurstNonce** | gdss_sync_burst_nonce(session_id) returns 12 bytes; different session_id yields different nonce. |
 
-T2 tests are skipped if `sync_burst_utils` (e.g. derive_sync_pn_sequence, gaussian_envelope) is not available (missing PyCryptodome or cryptography).
+T2 tests are skipped if `sync_burst_utils` (e.g. derive_sync_pn_sequence, gaussian_envelope) is not available (missing PyCryptodome or cryptography). The keyed-mask and sync-burst-nonce tests are skipped unless `apply_keyed_gaussian_mask` and `gdss_sync_burst_nonce` are exported by the installed module.
 
 ### T3 — Key derivation (test_t3_key_derivation.py)
 
@@ -130,6 +138,7 @@ These tests cover HKDF-based session key derivation, nonce construction, and the
 | **TestT3Determinism** | Same secret and salt; asserts the derived keys are identical. |
 | **TestT3InputSensitivity** | Changes one byte of the secret; asserts all derived keys change. |
 | **TestT3NonceConstruction** | Checks gdss_nonce and payload_nonce lengths and that different (session, tx_seq) pairs produce different nonces; ensures no collision between session/tx_seq combinations. |
+| **TestT3SyncBurstNonce** | gdss_sync_burst_nonce(session_id) returns 12 bytes and is distinct from the data nonce gdss_nonce(session_id, 0) so the sync-burst keystream does not overlap the data keystream. |
 | **TestT3KeyringRoundTrip** | Derives session keys, stores them via store_session_keys (kernel keyring), loads the gdss_masking key with load_gdss_key, and asserts the loaded bytes match the stored key. Requires keyctl and a context where keyctl read is allowed (e.g. normal terminal). |
 
 The keyring round-trip is skipped if the keyring is not available (no keyctl) or if keyctl read fails (e.g. Permission denied in a sandbox).
@@ -144,7 +153,7 @@ The keyring round-trip is skipped if the keyring is not available (no keyctl) or
 
 With the module installed, dependencies available, and tests run in a normal terminal (so keyctl read is allowed):
 
-- **30 or 31 passed** — All tests pass. If the build supports empty key/nonce and key_injector is available, TestT1SetKeyMessagePort runs and 31 tests pass; otherwise that test is skipped and 30 pass.
+- **33 to 38 passed** — All tests pass. The exact count depends on build and environment: TestT1SetKeyMessagePort may be skipped (empty key/nonce support); keyring round-trip may be skipped (keyctl); and the new sync-burst tests (apply_keyed_gaussian_mask, gdss_sync_burst_nonce) run when the installed module exports them. After a full install from the current source, expect 38 tests when all features are available.
 
 If the keyring round-trip is skipped with "Permission denied", run `pytest tests/ -v` in a normal system terminal (outside any sandbox) so the process can read keys from the session keyring. If gr_linux_crypto and gr-k-gdss are installed in the default Python search path (e.g. /usr/local), no PYTHONPATH is needed for normal use.
 
@@ -198,14 +207,20 @@ All of the above IQ data files (generated 01–07, 09–13 and optional recordin
 2. **analyse_iq_files.py** — Runs statistical checks: same as before on 01–08; on 09 the same eight noise-like tests (with relaxed thresholds for standard GDSS) plus KL divergence vs 03; reads JSON for 12/13 and prints a cross-session correlation summary (Standard GDSS peak, Keyed GDSS peak, improvement ratio). Prints a PASS/FAIL/WARN table and exits with 0 only if no tests fail.
 3. **plot_iq_comparison.py** — Produces two plots. **iq_comparison.png**: original 3x3 grid (histograms, PSD, autocorrelation for 01, 03, 04, 05, 06). **iq_comparison_vs_standard.png**: 4x3 grid comparing keyed vs standard GDSS (rows 1–2: noise, keyed, standard; row 3: cross-correlation 12 vs 13 and overlay; row 4: despread comparison). Requires matplotlib.
 
-Run from the repo root or from `tests/`:
+Run from the repo root or from `tests/`. The generator can take several minutes because of the large cross-correlation in File 13; allow up to 600 seconds (10 minutes) on a typical machine:
 
 ```bash
 cd tests
-python3 generate_iq_test_files.py
+timeout 600 python3 generate_iq_test_files.py
 ls -lh iq_files/
 python3 analyse_iq_files.py
 python3 plot_iq_comparison.py
+```
+
+**Unit tests** (from repo root, with the module installed):
+
+```bash
+pytest tests/ -v
 ```
 
 ### Example generator output

@@ -33,6 +33,7 @@ The module exposes Python helpers (not GNU Radio blocks) for session key derivat
 | **`load_gdss_key(keyring_id)`** | Load the 32-byte GDSS masking key from the keyring by key ID (integer). Use the ID returned by `store_session_keys` for `"gdss_masking"`. Raises if the key is not 32 bytes or keyring is unavailable. |
 | **`get_shared_secret_from_gnupg(my_private_pem, peer_public_pem)`** | Perform ECDH with BrainpoolP256r1 keys (PEM bytes). Returns raw shared secret; pass to `derive_session_keys()`. Requires gr-linux-crypto CryptoHelpers. |
 | **`gdss_nonce(session_id, tx_seq)`** | Build the 12-byte nonce for the GDSS ChaCha20 masking keystream. Arguments: `session_id` (int), `tx_seq` (int). Returns 12 bytes (4-byte session_id big-endian + 8-byte tx_seq big-endian). Must match on TX and RX. |
+| **`gdss_sync_burst_nonce(session_id)`** | Return the 12-byte nonce for sync-burst keyed masking. Use with `gdss_masking` when calling `apply_keyed_gaussian_mask` so the sync burst keystream is distinct from the data keystream. |
 | **`payload_nonce(session_id, tx_seq)`** | Build the 96-bit nonce for payload ChaCha20-Poly1305 AEAD (e.g. gr-linux-crypto payload encryption). Format: prefix + session_id + tx_seq. Use with `payload_enc` from `derive_session_keys`. |
 | **`keyring_available()`** | Return True if the keyring helper (keyctl or gr-linux-crypto KeyringHelper) is available. |
 | **`keyring_import_error()`** | Return the exception message if keyring import failed, or None. Useful to report why keyring is unavailable. |
@@ -44,6 +45,8 @@ The module exposes Python helpers (not GNU Radio blocks) for session key derivat
 | **`derive_sync_schedule(master_key, session_id, window_ms=50)`** | Returns a callable `get_offset(epoch_ms)` that maps a nominal epoch (ms) to a burst offset in **[-window_ms, +window_ms]** ms. Use key `sync_timing` from `derive_session_keys`. Placement is deterministic for TX/RX, unpredictable to observers. See **Sync burst timing and epoch window** below for details. |
 | **`derive_sync_pn_sequence(master_key, session_id, chips=10000)`** | Derive a session-unique pseudo-noise sequence for sync bursts. Uses `sync_pn` from `derive_session_keys`. Returns a float32 array of length `chips` with values +1.0 or -1.0 (BPSK-like). TX and RX get the same sequence for the same key and session_id. |
 | **`gaussian_envelope(samples, rise_fraction=0.1)`** | Apply a Gaussian-shaped amplitude envelope to a burst (reduces sidelobes). `samples`: complex or real array; `rise_fraction`: fraction of length for rise/fall (default 0.1). Returns the array multiplied by the envelope (unity in center, ramps at edges). |
+| **`apply_keyed_gaussian_mask(burst, gdss_key, nonce, variance=1.0)`** | Apply the same keyed Gaussian masking to a sync burst as used for GDSS data (ChaCha20 + Box-Muller). The burst becomes statistically indistinguishable from the GDSS waveform so a passive observer cannot tell sync from data or noise. Use `gdss_sync_burst_nonce(session_id)` for `nonce` so the sync keystream does not overlap the data keystream. See **Sync burst keyed masking** below. |
+| **`gdss_sync_burst_nonce(session_id)`** | Returns the 12-byte nonce for sync-burst masking (session key derivation). Use with `gdss_masking` key when calling `apply_keyed_gaussian_mask` so the sync burst uses a keystream distinct from the data keystream. |
 
 ---
 
@@ -179,7 +182,20 @@ The optional **sync burst** (a short DSSS burst used for timing alignment) uses 
 **How often sync bursts occur**
 
 - **gr-k-gdss does not define the sync burst rate.** The schedule only maps “epoch index” -> “offset in window”. Your **application or protocol** decides how often there is a sync epoch (e.g. every 10 s, every 60 s) and what `epoch_ms` to pass (e.g. 0, 10000, 20000, …). So the **frequency of sync bursts is an application choice**, not fixed by the module.
-- Burst **duration** (e.g. 2 ms) and **window** (e.g. ±50 ms) are parameters you use when generating the burst and calling `get_offset`; the **period between bursts** is whatever your design uses for epoch spacing.
+- Burst **duration** (e.g. 2 ms) and **window** (e.g. +/-50 ms) are parameters you use when generating the burst and calling `get_offset`; the **period between bursts** is whatever your design uses for epoch spacing.
+
+**Sync burst keyed masking (indistinguishable from GDSS data)**
+
+Without masking, a sync burst is a recognizable DSSS waveform (chip-rate, BPSK-like), which can reveal to a passive observer that a transmission is occurring even if content stays protected. To avoid that, **apply the same keyed Gaussian masking to the sync burst as to the data** using `apply_keyed_gaussian_mask`. Then the burst has the same Gaussian-noise-like statistics as the GDSS data waveform and does not stand out against the noise floor. Timing remains hidden by the ChaCha20-derived offset from `derive_sync_schedule`; only the burst waveform itself is masked.
+
+Recommended flow for generating a keyed sync burst:
+
+1. Derive the PN sequence with `derive_sync_pn_sequence(sync_pn_key, session_id, chips)`.
+2. Shape the burst (e.g. cast to complex, apply `gaussian_envelope`).
+3. Call `apply_keyed_gaussian_mask(burst, gdss_masking_key, gdss_sync_burst_nonce(session_id), variance=1.0)`.
+4. Scale the result so its power matches the surrounding GDSS or noise floor (e.g. same RMS as data), then insert it at the offset given by `derive_sync_schedule`.
+
+Use `gdss_sync_burst_nonce(session_id)` (not the data nonce) so the sync-burst ChaCha20 keystream is separate from the data keystream. The receiver inverts the mask with the same key and nonce, then correlates with the known PN to detect the burst.
 
 ---
 
@@ -197,7 +213,7 @@ The ChaCha20 key and nonce are always provided from session key derivation; the 
 2. Add a **key_injector** block (gr-k-gdss). Provide key material in one of three ways:
    - **keyring_id** (int): Load the GDSS masking key from the kernel keyring. One-time setup: run ECDH, `derive_session_keys`, `store_session_keys` (with keyctl), then use the returned key id. No key bytes in the flowgraph.
    - **shared_secret** (bytes at construction): ECDH shared secret; key_injector derives the GDSS key and nonce via HKDF.
-   - **shared_secret** message port: Connect a block that sends the 32-byte shared secret once (e.g. from gr-linux-crypto); key_injector derives and sends set_key when the message arrives.
+   - **shared_secret** message port: Connect a block that sends the ECDH shared secret once (at least 32 bytes; see **ECDH shared secret length** below); key_injector derives and sends set_key when the message arrives.
 3. Connect **key_injector.key_out** to the **set_key** message port of both the spreader and the despreader.
 4. No trigger needed: key_injector sends the set_key message automatically when the flowgraph starts.
 
@@ -240,6 +256,19 @@ gr-k-gdss is designed to work with gr-linux-crypto for key storage and ECDH. Use
 
 - **From gr-linux-crypto ECDH (Brainpool):** Use `gr_linux_crypto.CryptoHelpers.brainpool_ecdh(private_key, peer_public_key)` to obtain the ECDH shared secret (bytes). Pass that as `shared_secret` into `kgdss.key_injector(shared_secret, session_id, tx_seq)`. The Brainpool keys come from `CryptoHelpers.generate_brainpool_keypair()` or `load_brainpool_*_key(pem_data)`.
 - **From GnuPG / PEM:** Use `kgdss.get_shared_secret_from_gnupg(my_private_key_pem, peer_public_key_pem)`, which uses gr-linux-crypto’s `CryptoHelpers` under the hood when available.
+
+**ECDH shared secret length (Brainpool curve sizes)**
+
+gr-linux-crypto and other ECDH implementations can use different Brainpool curves; the raw shared secret length in bytes equals the curve size (e.g. P256r1 gives 32 bytes, P384r1 gives 48 bytes, P512r1 gives 64 bytes). gr-k-gdss behaves as follows:
+
+| Curve (bits) | Shared secret (bytes) | key_injector constructor | key_injector shared_secret message | derive_session_keys (HKDF) |
+|--------------|------------------------|--------------------------|------------------------------------|----------------------------|
+| 160, 192, 224 | 20, 24, 28 | Rejected: requires at least 32 bytes | Ignored (payload &lt; 32 bytes) | Would accept; not used by key_injector |
+| 256 (P256r1) | 32 | Supported; full secret used | Supported; full secret used | Full entropy used |
+| 320, 384, 512 | 40, 48, 64 | Supported; full secret used | Supported; full secret used | Full entropy used |
+
+- **Minimum 32 bytes:** The key_injector requires at least 32 bytes so that HKDF has sufficient input; curves with shared secrets shorter than 32 bytes (160, 192, 224 bits) are not supported.
+- **Longer secrets:** For 32-byte and longer secrets, the full byte string is passed to HKDF; no truncation. Use 256-bit or larger curves (e.g. BrainpoolP256r1, P384r1, P512r1) for best practice.
 
 **Keyring: storing and loading GDSS keys**
 

@@ -12,13 +12,20 @@ try:
         store_session_keys,
         load_gdss_key,
         gdss_nonce,
+        gdss_sync_burst_nonce,
         payload_nonce,
         keyring_available,
         keyring_import_error,
     )
-    T3_AVAILABLE = derive_session_keys is not None and gdss_nonce is not None and payload_nonce is not None
+    T3_AVAILABLE = (
+        derive_session_keys is not None
+        and gdss_nonce is not None
+        and payload_nonce is not None
+    )
+    T3_SYNC_NONCE_AVAILABLE = T3_AVAILABLE and gdss_sync_burst_nonce is not None
 except ImportError:
     T3_AVAILABLE = False
+    T3_SYNC_NONCE_AVAILABLE = False
     keyring_available = None
     keyring_import_error = None
 
@@ -102,6 +109,21 @@ class TestT3NonceConstruction(unittest.TestCase):
         n_a = gdss_nonce(0, 1)
         n_b = gdss_nonce(1, 0)
         self.assertNotEqual(n_a, n_b)
+
+
+@unittest.skipUnless(T3_SYNC_NONCE_AVAILABLE, "gdss_sync_burst_nonce not available")
+class TestT3SyncBurstNonce(unittest.TestCase):
+    """gdss_sync_burst_nonce: 12 bytes; distinct from data nonce so sync keystream does not overlap."""
+
+    def test_sync_burst_nonce_length(self):
+        n = gdss_sync_burst_nonce(1)
+        self.assertEqual(len(n), 12)
+
+    def test_sync_burst_nonce_distinct_from_data_nonce(self):
+        session_id = 1
+        sync_nonce = gdss_sync_burst_nonce(session_id)
+        data_nonce = gdss_nonce(session_id, 0)
+        self.assertNotEqual(sync_nonce, data_nonce)
 
 
 def _keyring_skip_reason():

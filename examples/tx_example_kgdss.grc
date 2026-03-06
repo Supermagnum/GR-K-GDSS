@@ -41,7 +41,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [304, 176.0]
+    coordinate: [328, 136.0]
     rotation: 0
     state: enabled
 - name: key_store_path
@@ -157,7 +157,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [2304, 496.0]
+    coordinate: [3104, 488.0]
     rotation: 0
     state: enabled
 - name: blocks_unpack_k_bits_bb_0
@@ -173,7 +173,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1512, 352.0]
+    coordinate: [1928, 328.0]
     rotation: 0
     state: enabled
 - name: blocks_vector_to_stream_0
@@ -212,7 +212,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1216, 448.0]
+    coordinate: [1632, 424.0]
     rotation: 0
     state: enabled
 - name: kgdss_key_injector_0
@@ -232,7 +232,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1088, 616.0]
+    coordinate: [1936, 592.0]
     rotation: 0
     state: enabled
 - name: kgdss_spreader_cc_0
@@ -253,7 +253,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1976, 448.0]
+    coordinate: [2776, 440.0]
     rotation: 0
     state: enabled
 - name: linux_crypto_nitrokey_interface_0
@@ -272,7 +272,28 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [720, 552.0]
+    coordinate: [1136, 472.0]
+    rotation: 0
+    state: enabled
+- name: qradiolink_ldpc_encoder_0
+  id: qradiolink_ldpc_encoder
+  parameters:
+    affinity: ''
+    alias: ''
+    alist_file: '"/usr/share/gnuradio/fec/ldpc/n_0100_k_0042_gap_02.alist"'
+    block_length: '576'
+    code_rate: 1/2
+    code_selection_mode: Auto-select by Parameters
+    comment: ''
+    custom_block_length: '576'
+    custom_code_rate: '0.5'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1216, 304.0]
     rotation: 0
     state: enabled
 - name: qradiolink_mod_soqpsk_0
@@ -292,7 +313,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1704, 440.0]
+    coordinate: [2248, 296.0]
     rotation: 0
     state: enabled
 - name: rational_resampler_xxx_0
@@ -320,7 +341,9 @@ blocks:
   parameters:
     affinity: ''
     alias: ''
-    comment: Codec2 audio encoder (MODE_2400 outputs 48 bytes per frame)
+    comment: 'Codec2 audio encoder (MODE_2400 outputs 48 bytes per frame)
+
+      Other codecs can also be used.'
     maxoutbuf: '0'
     minoutbuf: '0'
     mode: codec2.MODE_2400
@@ -336,11 +359,12 @@ connections:
 - [audio_source_0, '0', rational_resampler_xxx_0, '0']
 - [blocks_float_to_short_0, '0', vocoder_codec2_encode_sp_0, '0']
 - [blocks_unpack_k_bits_bb_0, '0', qradiolink_mod_soqpsk_0, '0']
-- [blocks_vector_to_stream_0, '0', brainpool_ecies_multi_encrypt_0, '0']
+- [blocks_vector_to_stream_0, '0', qradiolink_ldpc_encoder_0, '0']
 - [brainpool_ecies_multi_encrypt_0, '0', blocks_unpack_k_bits_bb_0, '0']
 - [kgdss_key_injector_0, set_key, kgdss_spreader_cc_0, set_key]
 - [kgdss_spreader_cc_0, '0', blocks_null_sink_0, '0']
 - [linux_crypto_nitrokey_interface_0, '0', brainpool_ecies_multi_encrypt_0, '1']
+- [qradiolink_ldpc_encoder_0, '0', brainpool_ecies_multi_encrypt_0, '0']
 - [qradiolink_mod_soqpsk_0, '0', kgdss_spreader_cc_0, '0']
 - [rational_resampler_xxx_0, '0', blocks_float_to_short_0, '0']
 - [vocoder_codec2_encode_sp_0, '0', blocks_vector_to_stream_0, '0']

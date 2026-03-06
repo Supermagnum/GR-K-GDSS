@@ -2,6 +2,10 @@
 
 This document records snapshot results from the gr-k-gdss test suite. For how to run the tests and what they do, see [TESTING.md](TESTING.md).
 
+**Last recorded run: 6 March 2026 03:49**
+
+- **IQ file analysis:** 29 passed, 0 failed, 0 warnings. Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`.
+
 ---
 
 ## Unit tests (pytest)
@@ -49,7 +53,7 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 ======================================================================================= 30 passed in 0.20s ==============
 ```
 
-**Summary:** 30 passed, 0 failed. (With a build that supports empty key/nonce and key_injector, TestT1SetKeyMessagePort may run for 31 passed.)
+**Summary:** 30 passed, 0 failed. (With a build that supports empty key/nonce and key_injector, TestT1SetKeyMessagePort may run for 31 passed. The suite now also includes tests for sync-burst keyed masking and gdss_sync_burst_nonce; after a full install from current source, 33–38 tests may run depending on environment.)
 
 ---
 
@@ -106,11 +110,11 @@ PASSED: 29   FAILED: 0   WARNINGS: 0
 
 === Cross-Session Sync Burst Correlation ===
 Standard GDSS (sessions A vs B):  1.0000  VULNERABLE
-Keyed GDSS    (sessions A vs B):  0.1070  PROTECTED
-Improvement:  9.3x reduction in cross-session correlation
+Keyed GDSS    (sessions A vs B):  0.1028  PROTECTED
+Improvement:  9.7x reduction in cross-session correlation
 ```
 
-**Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03; correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.107 PROTECTED, 9.3x improvement. The 0.107 keyed residual is a simulation artifact; in a real channel it would be lower and is not considered exploitable (see [TESTING.md](TESTING.md)).
+**Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03; correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.103 PROTECTED, 9.7x improvement. The keyed residual (e.g. ~0.10) is a simulation artifact; in a real channel it would be lower and is not considered exploitable (see [TESTING.md](TESTING.md)).
 
 ### IQ comparison plots
 
