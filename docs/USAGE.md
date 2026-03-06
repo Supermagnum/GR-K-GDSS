@@ -4,6 +4,27 @@ This document describes how to use the keyed GDSS blocks (spreader, despreader, 
 
 ---
 
+## Table of Contents
+
+- [Block API summary](#block-api-summary)
+- [Python helper functions](#python-helper-functions)
+  - [Session key derivation and keyring](#session-key-derivation-and-keyring)
+  - [Sync burst utilities](#sync-burst-utilities)
+- [Keyed GDSS blocks](#keyed-gdss-blocks)
+  - [kgdss_spreader_cc (Keyed GDSS Spreader)](#kgdss_spreader_cc-keyed-gdss-spreader)
+  - [kgdss_despreader_cc (Keyed GDSS Despreader)](#kgdss_despreader_cc-keyed-gdss-despreader)
+  - [kgdss_key_injector (Keyed GDSS Key Injector)](#kgdss_key_injector-keyed-gdss-key-injector)
+  - [Sync burst timing and epoch window](#sync-burst-timing-and-epoch-window)
+- [Connecting gr-linux-crypto and SOQPSK (TX/RX chains)](#connecting-gr-linux-crypto-and-soqpsk-txrx-chains)
+  - [Getting keys into the GDSS blocks (automated, no manual entry)](#getting-keys-into-the-gdss-blocks-automated-no-manual-entry)
+  - [gr-linux-crypto compatibility](#gr-linux-crypto-compatibility)
+  - [Compatibility with gr-linux-crypto](#compatibility-with-gr-linux-crypto)
+  - [TX chain: SOQPSK modulator and Keyed GDSS Spreader](#tx-chain-soqpsk-modulator-and-keyed-gdss-spreader)
+  - [RX chain: Keyed GDSS Despreader and SOQPSK demodulator](#rx-chain-keyed-gdss-despreader-and-soqpsk-demodulator)
+  - [Summary](#summary)
+
+---
+
 ## Block API summary
 
 All three blocks are in GRC under category **KGDSS / DSSS**.
@@ -287,7 +308,7 @@ gr-linux-crypto and other ECDH implementations can use different Brainpool curve
 
 ### Compatibility with gr-linux-crypto
 
-GR-K-GDSS is designed to work with [gr-linux-crypto](https://github.com/gnuradio/gr-linux-crypto) (Python package `gr_linux_crypto`) for key derivation and optional kernel keyring storage.
+GR-K-GDSS is designed to work with [gr-linux-crypto](https://github.com/gnuradio/gr-linux-crypto) (Python package `gr_linux_crypto`) for key derivation and optional kernel keyring storage. Compatibility has been verified against the gr-linux-crypto Python package: `KeyringHelper`, `CryptoHelpers`, `CallsignKeyStore`, and the GDSS Set Key Source block (`gdss_set_key_source_block`). The same shared secret and HKDF usage (full secret, info `gdss-chacha20-masking-v1`, salt, nonce format) are used so that gr-linux-crypto's GDSS Set Key Source and GR-K-GDSS key injector derive the same GDSS key and nonce for a given session.
 
 **Required gr-linux-crypto APIs**
 

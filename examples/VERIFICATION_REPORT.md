@@ -2,6 +2,20 @@
 
 Verification steps run against `tx_example_kgdss.grc` in this directory.
 
+## Table of Contents
+
+- [Verification procedure (three layers)](#verification-procedure-three-layers)
+- [Step 1 — XML/YAML syntax check](#step-1--xmlyaml-syntax-check)
+- [Step 2b — Generate Python with grcc](#step-2b--generate-python-with-grcc)
+- [Step 2c — Python syntax check on generated file](#step-2c--python-syntax-check-on-generated-file)
+- [Step 2 — Block name uniqueness](#step-2--block-name-uniqueness)
+- [Step 3 — Connection integrity check](#step-3--connection-integrity-check)
+- [Step 4 — Message port connection check](#step-4--message-port-connection-check)
+- [Step 5 — Cross-check against encrypt_decrypt example](#step-5--cross-check-against-encrypt_decrypt-example)
+- [Step 6 — Summary](#step-6--summary)
+
+---
+
 ## Verification procedure (three layers)
 
 Run from the `examples/` directory:
