@@ -325,9 +325,11 @@ In Row 1 of `iq_comparison_vs_standard.png`, the amplitude histogram for File 09
 - **Contrast:** File 01 (noise) and File 03 (keyed GDSS) have both I and Q drawn from zero-mean Gaussians, so their histograms are smooth bell curves with no spike at zero.
 - So the notch/step in File 09 is an artifact of **BPSK (real symbols)** in the test generator, not a bug in the plot or in standard GDSS.
 
-### Unexpected PSD finding (Row 2, second plot): standard GDSS low-frequency peak
+### Unexpected PSD finding (Row 2, second plot): standard GDSS low-frequency structure
 
-In Row 2 of `iq_comparison_vs_standard.png`, standard GDSS (File 09) can show a **low-frequency spectral peak** that the noise baseline and keyed GDSS (File 03) do not. This is expected from the structure of standard GDSS, not a bug.
+In Row 2 of `iq_comparison_vs_standard.png`, standard GDSS (File 09) can show **low-frequency structure** that the noise baseline and keyed GDSS (File 03) do not. This is expected from the structure of standard GDSS, not a bug.
+
+**DC block in PSD:** The plot script applies a **DC block** before computing the PSD: it subtracts the mean from the real component (`data.real - np.mean(data.real)`) so that the zero-frequency bin does not dominate or create a notch in the display. This matches common SDR practice (DC blocking so the rest of the spectrum is visible). Without this block, standard GDSS (File 09) would show a sharp notch at DC (the zero-mean signal has negligible DC power, so the first Welch bin appears very low); that notch is a structural feature of standard GDSS (deterministic autocorrelation at zero lag). Keyed GDSS has no such structure at DC. With the DC block applied, the displayed PSD is comparable across the band; the remaining contrast (e.g. low-frequency peak in File 09) still shows that standard GDSS has structural features that keyed GDSS eliminates.
 
 - **Standard GDSS**: The same BPSK symbol is repeated for 256 chips (one symbol per spreading block). So the baseband chip stream is `symbol_1, symbol_1, ..., symbol_1` (256 times), then `symbol_2` repeated 256 times, and so on. The *symbol* therefore changes only every 256 samples; the mask (RNG) changes every sample. That slow, periodic change in the sign/magnitude of the symbol acts like a **amplitude modulation at the symbol rate** = sample rate / 256. At 500 kHz that is about 1.95 kHz. The PSD of such a process has extra energy at low frequencies (around that symbol rate), so a low-frequency peak appears. The mask is random but positive (abs of Gaussian), so it does not average out this slow envelope.
 
