@@ -731,6 +731,10 @@ GR-K-GDSS uses **gr-linux-crypto** for key derivation (CryptoHelpers, KeyringHel
 
 - `get_keygrip_from_key_id(...)`, `decrypt_with_card(...)` (documented stub), C++ block with `key_source="opgp_card"`
 
+**Utilities and compliance**
+
+- `secure_zero(buf)` (BSZ key lifecycle), `fips_status()`, BSI algorithm boundary: `check_algorithm_compliance`, `require_bsi_approved`, `list_approved_algorithms`
+
 **Independent use — mix and match freely**
 
 | You want | Use |
