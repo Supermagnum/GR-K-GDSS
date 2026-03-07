@@ -52,24 +52,42 @@ def main():
     n_ac = 500
     n_psd = 4096
 
-    # Row 1 - Amplitude histograms (shared scale so File 1, 3, 5 are comparable)
-    for ax, data, title in [
+    # Row-1 amplitude histograms: same File 1 scale in both figures (0.07 upper margin).
+    # File 09's Q=0 spike would dominate a global max and make File 1 look flat; use File-1-only scale for col 1.
+    bins_r1 = np.linspace(-5, 5, 151)
+    UPPER_MARGIN = 0.07
+
+    def max_density(data, bins):
+        if data is None:
+            return 0.0
+        d = data[:n_hist]
+        hi, _ = np.histogram(d.real, bins=bins, density=True)
+        hq, _ = np.histogram(d.imag, bins=bins, density=True)
+        return max(float(np.max(hi)), float(np.max(hq)))
+
+    ymax_f1 = max_density(f1, bins_r1) if f1 is not None else 0.0
+    y_upper_file1 = ymax_f1 * (1.0 + UPPER_MARGIN)  # same File 1 scale in both figures
+    ymax_fig1 = max(ymax_f1, max_density(f3, bins_r1), max_density(f5, bins_r1))
+    y_upper_fig1 = ymax_fig1 * (1.0 + UPPER_MARGIN)
+
+    # Row 1 - Amplitude histograms (fig 1: col1 uses File-1 scale so it matches fig 2; cols 2-3 use row max so nothing clips)
+    for col, (ax, data, title) in enumerate([
         (axes[0, 0], f1, "File 1 (noise baseline)"),
         (axes[0, 1], f3, "File 3 (keyed GDSS transmission)"),
         (axes[0, 2], f5, "File 5 (wrong-key despread)"),
-    ]:
+    ]):
         if data is not None:
             d = data[:n_hist]
-            ax.hist(d.real, bins=150, density=True, alpha=0.7, label="I", color="steelblue")
-            ax.hist(d.imag, bins=150, density=True, alpha=0.5, label="Q", color="tomato")
+            ax.hist(d.real, bins=bins_r1, density=True, alpha=0.7, label="I", color="steelblue")
+            ax.hist(d.imag, bins=bins_r1, density=True, alpha=0.5, label="Q", color="tomato")
         ax.set_xlim(-5, 5)
-        ax.set_ylim(0, 0.45)
+        ax.set_ylim(0, y_upper_file1 if col == 0 else y_upper_fig1)
         ax.set_title(title)
         ax.set_xlabel("Amplitude")
         ax.legend()
         ax.grid(True, alpha=0.3)
 
-    # Row 2 - PSD
+    # Row 2 - PSD (exclude first and last bins to avoid vertical lines at edges)
     for ax, data, title in [
         (axes[1, 0], f1, "File 1 (noise baseline)"),
         (axes[1, 1], f3, "File 3 (keyed GDSS transmission)"),
@@ -78,7 +96,7 @@ def main():
         if data is not None and len(data) >= n_psd:
             real_dc_blocked = data.real - np.mean(data.real)
             f, p = welch(real_dc_blocked, fs=SAMPLE_RATE, nperseg=n_psd, scaling="density")
-            ax.plot(f / 1e3, 10 * np.log10(p + 1e-12), linewidth=0.8, color="steelblue")
+            ax.plot(f[1:-1] / 1e3, 10 * np.log10(p[1:-1] + 1e-12), linewidth=0.8, color="steelblue")
         ax.set_title(title)
         ax.set_xlabel("Frequency offset (kHz)")
         ax.set_ylabel("Power (dB)")
@@ -125,26 +143,20 @@ def main():
         n_psd = 4096
         n_ac = 500
 
-        # Row 1 - Amplitude histograms (File 01, 03, 09); ylim from data so File 09 Q spike not cut off
-        bins_r1 = np.linspace(-5, 5, 151)
-        ymax_r1 = 0.45
-        for data in (f1, f3, f9):
-            if data is not None:
-                d = data[:n_hist]
-                hi, _ = np.histogram(d.real, bins=bins_r1, density=True)
-                hq, _ = np.histogram(d.imag, bins=bins_r1, density=True)
-                ymax_r1 = max(ymax_r1, float(np.max(hi)), float(np.max(hq)))
-        for ax, data, title in [
+        # Row 1 - File 01 same scale as in first figure (y_upper_file1); cols 2-3 scale so File 09 spike fits
+        ymax_fig2 = max(ymax_f1, max_density(f3, bins_r1), max_density(f9, bins_r1))
+        y_upper_fig2 = ymax_fig2 * (1.0 + UPPER_MARGIN)
+        for col, (ax, data, title) in enumerate([
             (ax2[0, 0], f1, "File 01 (noise baseline)"),
             (ax2[0, 1], f3, "File 03 (keyed GDSS)"),
             (ax2[0, 2], f9, "File 09 (standard GDSS)"),
-        ]:
+        ]):
             if data is not None:
                 d = data[:n_hist]
                 ax.hist(d.real, bins=bins_r1, density=True, alpha=0.7, label="I", color="steelblue")
                 ax.hist(d.imag, bins=bins_r1, density=True, alpha=0.5, label="Q", color="tomato")
             ax.set_xlim(-5, 5)
-            ax.set_ylim(0, ymax_r1 * 1.05)
+            ax.set_ylim(0, y_upper_file1 if col == 0 else y_upper_fig2)
             ax.set_title(title)
             ax.set_xlabel("Amplitude")
             ax.legend()
@@ -159,7 +171,7 @@ def main():
             if data is not None and len(data) >= n_psd:
                 real_dc_blocked = data.real - np.mean(data.real)
                 freq, p = welch(real_dc_blocked, fs=SAMPLE_RATE, nperseg=n_psd, scaling="density")
-                ax.plot(freq / 1e3, 10 * np.log10(p + 1e-12), linewidth=0.8, color="steelblue")
+                ax.plot(freq[1:-1] / 1e3, 10 * np.log10(p[1:-1] + 1e-12), linewidth=0.8, color="steelblue")
             ax.set_title(title)
             ax.set_xlabel("Frequency offset (kHz)")
             ax.set_ylabel("Power (dB)")
