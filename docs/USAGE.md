@@ -269,6 +269,8 @@ You can still pass key and nonce at construction (32 and 12 bytes). In **GRC** e
 
 **Payload encryption** (ChaCha20-Poly1305) remains separate: use gr-linux-crypto's encrypt/decrypt blocks with `payload_enc` and `payload_nonce` from the same session key derivation.
 
+**Shamir's Secret Sharing (gr-linux-crypto):** For K-of-N quorum decryption (e.g. at least K recipients must cooperate to decrypt), use gr-linux-crypto's `encrypt_shamir(plaintext, recipients, curve)` and `decrypt_shamir(...)` / `get_share_from_shamir_block(...)`. Low-level APIs: `split(secret, threshold_k, num_shares_n, prime, curve)`, `reconstruct(shares, prime, secret_length, curve)`, `create_shamir_backed_key(...)`, `reconstruct_session_key(shares, prime, curve)`. Max secret size is 31 / 47 / 63 bytes for P256 / P384 / P512. A session key reconstructed with `reconstruct_session_key` can be passed to `derive_session_keys` (e.g. as the ECDH shared secret) or used with the key injector if it is 32 bytes (e.g. from `create_shamir_backed_key`). See [GLOSSARY.md](GLOSSARY.md#shamirs-secret-sharing).
+
 ### gr-linux-crypto compatibility
 
 gr-k-gdss is designed to work with gr-linux-crypto for key storage and ECDH. Use the following to keep behaviour and key handling compatible.
@@ -308,7 +310,7 @@ gr-linux-crypto and other ECDH implementations can use different Brainpool curve
 
 ### Compatibility with gr-linux-crypto
 
-GR-K-GDSS is designed to work with [gr-linux-crypto](https://github.com/gnuradio/gr-linux-crypto) (Python package `gr_linux_crypto`) for key derivation and optional kernel keyring storage. Compatibility has been verified against the gr-linux-crypto Python package: `KeyringHelper`, `CryptoHelpers`, `CallsignKeyStore`, and the GDSS Set Key Source block (`gdss_set_key_source_block`). The same shared secret and HKDF usage (full secret, info `gdss-chacha20-masking-v1`, salt, nonce format) are used so that gr-linux-crypto's GDSS Set Key Source and GR-K-GDSS key injector derive the same GDSS key and nonce for a given session.
+GR-K-GDSS is designed to work with [gr-linux-crypto](https://github.com/gnuradio/gr-linux-crypto) (Python package `gr_linux_crypto`) for key derivation and optional kernel keyring storage. Compatibility has been verified against the current gr-linux-crypto Python package: `KeyringHelper`, `CryptoHelpers`, `CallsignKeyStore`, `MultiRecipientECIES`, `HPKEBrainpool`, Shamir helpers (`split`, `reconstruct`, `create_shamir_backed_key`, `reconstruct_session_key`, etc.), `nitrokey_bridge` (`decrypt_with_card`, `get_keygrip_from_key_id`), `fips_status`, `secure_zero`, and BSI algorithm boundary (`check_algorithm_compliance`, `require_bsi_approved`, `list_approved_algorithms`). GR-K-GDSS only requires `KeyringHelper` and `CryptoHelpers`; the rest are optional for payload encryption and key management. The same shared secret and HKDF usage (full secret, info `gdss-chacha20-masking-v1`, salt, nonce format) are used so that gr-linux-crypto's GDSS Set Key Source and GR-K-GDSS key injector derive the same GDSS key and nonce for a given session.
 
 **Required gr-linux-crypto APIs**
 
@@ -317,7 +319,7 @@ GR-K-GDSS is designed to work with [gr-linux-crypto](https://github.com/gnuradio
 
 **Import paths**
 
-GR-K-GDSS tries, in order: `gr_linux_crypto`, `gr_linux_crypto.keyring_helper`, `gr_linux_crypto.crypto_helpers`, `gr_linux_crypto.python.*`, `gnuradio.linux_crypto*`, and (when `GR_LINUX_CRYPTO_DIR` is set) `keyring_helper` / `crypto_helpers` from the gr-linux-crypto `python/` directory. This matches gr-linux-crypto installed via CMake (files under `gr_linux_crypto/`) or run from source with `GR_LINUX_CRYPTO_DIR` pointing at the gr-linux-crypto repo root.
+GR-K-GDSS tries, in order: `gr_linux_crypto`, `gr_linux_crypto.keyring_helper`, `gr_linux_crypto.crypto_helpers`, `gr_linux_crypto.python.*`, `gnuradio.linux_crypto*`, and (when `GR_LINUX_CRYPTO_DIR` is set) `keyring_helper` / `crypto_helpers` from the gr-linux-crypto `python/` directory. This matches gr-linux-crypto installed via CMake (files under `gr_linux_crypto/`) or run from source with `GR_LINUX_CRYPTO_DIR` pointing at the gr-linux-crypto repo root. If the package root fails to import (e.g. a new optional dependency), set `GR_LINUX_CRYPTO_DIR` to the gr-linux-crypto source directory so GR-K-GDSS can load `keyring_helper` and `crypto_helpers` from the `python/` folder.
 
 **Keyring and keyctl**
 

@@ -27,6 +27,7 @@ Definitions of technical terms and acronyms used in the GR-K-GDSS documentation 
 - [OOT module](#oot-module)
 - [PN sequence](#pn-sequence)
 - [Session key derivation](#session-key-derivation)
+- [Shamir's Secret Sharing](#shamirs-secret-sharing)
 - [set_key (message port)](#set_key-message-port)
 - [SOQPSK](#soqpsk)
 - [Spreader](#spreader)
@@ -159,6 +160,12 @@ Command-line and API interface to the Linux kernel keyring. Used by GR-K-GDSS to
 ## Session key derivation
 
 The process of deriving multiple subkeys (payload encryption, GDSS masking, sync PN, sync timing) from a single shared secret (e.g. ECDH output) using HKDF. GR-K-GDSS uses `derive_session_keys()` so that one ECDH exchange yields all keys needed for a session; keys are domain-separated to avoid reuse across purposes.
+
+---
+
+## Shamir's Secret Sharing
+
+**Shamir's Secret Sharing (SSS)** is a threshold scheme that splits a secret into n shares so that any k of them (the threshold) can reconstruct the secret; fewer than k shares reveal nothing. gr-linux-crypto provides low-level helpers (`split`, `reconstruct`, `create_shamir_backed_key`, `reconstruct_session_key`) and curve-specific constants (`get_curve_prime`, `get_max_secret_bytes`, `get_share_value_bytes`, `SUPPORTED_CURVES`). Maximum secret size depends on the curve prime: 31 bytes (P256), 47 (P384), 63 (P512). For K-of-N quorum encryption (e.g. decrypt only when at least K recipients cooperate), use gr-linux-crypto's `encrypt_shamir` / `decrypt_shamir` and `get_share_from_shamir_block`. GR-K-GDSS does not implement SSS itself; it can use session keys or shared secrets that were derived or reconstructed from Shamir shares elsewhere (e.g. after `reconstruct_session_key(shares, prime, curve)`).
 
 ---
 
