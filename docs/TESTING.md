@@ -317,6 +317,14 @@ Output files:
 - `tests/iq_files/iq_comparison.png` — Keyed GDSS validation (3x3).
 - `tests/iq_files/iq_comparison_vs_standard.png` — Keyed vs standard GDSS comparison (4x3).
 
+### File 09 histogram: notch or step at zero (Row 1, third plot)
+
+In Row 1 of `iq_comparison_vs_standard.png`, the amplitude histogram for File 09 (standard GDSS) can show a **notch or step at zero** in the Gaussian-like profile. This is expected.
+
+- **Cause:** File 09 is generated from **BPSK symbols** that are real-only (`symbols_bpsk = (2*bits - 1) + 0j`). The chip formula is `symbol.real * mask_i + 1j * symbol.imag * mask_q`, so the quadrature (Q) component is **identically zero**. The plot draws histograms of both I and Q; for File 09, the Q histogram is a **spike at zero** (all Q samples are 0). That spike, overlaid with the smooth Gaussian-shaped I distribution, appears as a vertical step or notch at zero.
+- **Contrast:** File 01 (noise) and File 03 (keyed GDSS) have both I and Q drawn from zero-mean Gaussians, so their histograms are smooth bell curves with no spike at zero.
+- So the notch/step in File 09 is an artifact of **BPSK (real symbols)** in the test generator, not a bug in the plot or in standard GDSS.
+
 ### Unexpected PSD finding (Row 2, second plot): standard GDSS low-frequency peak
 
 In Row 2 of `iq_comparison_vs_standard.png`, standard GDSS (File 09) can show a **low-frequency spectral peak** that the noise baseline and keyed GDSS (File 03) do not. This is expected from the structure of standard GDSS, not a bug.
