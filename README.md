@@ -633,7 +633,7 @@ by professional programmers. The validation results above significantly
 raise confidence beyond a typical unreviewed codebase, but they do not
 substitute for a full independent code audit. The module is explicitly
 not FIPS-140 certified, not evaluated for government or military use,
-and is recommended by its author for amateur radio, experimental, and
+and is recommended by its author for  experimental radio, and
 research applications. It is built on top of OpenSSL and the Python
 cryptography library, both of which use FIPS-140 validated backends.
 
