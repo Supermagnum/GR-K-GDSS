@@ -127,7 +127,7 @@ Improvement:  9.7x reduction in cross-session correlation
 
 ### IQ comparison plots
 
-Run `python3 tests/plot_iq_comparison.py`. Example output:
+Run `python3 tests/plot_iq_comparison.py`. The script applies a DC block (mean subtraction) before computing PSD so the zero-frequency bin does not dominate; Row 1 amplitude histograms in the second figure use a y-axis scale derived from the data so File 09's Q spike is not cut off. Example output:
 
 ```
 Saved: /path/to/GR-K-GDSS/tests/iq_files/iq_comparison.png

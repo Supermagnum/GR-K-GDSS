@@ -76,7 +76,8 @@ def main():
         (axes[1, 2], f6, "File 6 (sync burst)"),
     ]:
         if data is not None and len(data) >= n_psd:
-            f, p = welch(data.real, fs=SAMPLE_RATE, nperseg=n_psd, scaling="density")
+            real_dc_blocked = data.real - np.mean(data.real)
+            f, p = welch(real_dc_blocked, fs=SAMPLE_RATE, nperseg=n_psd, scaling="density")
             ax.plot(f / 1e3, 10 * np.log10(p + 1e-12), linewidth=0.8, color="steelblue")
         ax.set_title(title)
         ax.set_xlabel("Frequency offset (kHz)")
@@ -124,7 +125,15 @@ def main():
         n_psd = 4096
         n_ac = 500
 
-        # Row 1 - Amplitude histograms (File 01, 03, 09)
+        # Row 1 - Amplitude histograms (File 01, 03, 09); ylim from data so File 09 Q spike not cut off
+        bins_r1 = np.linspace(-5, 5, 151)
+        ymax_r1 = 0.45
+        for data in (f1, f3, f9):
+            if data is not None:
+                d = data[:n_hist]
+                hi, _ = np.histogram(d.real, bins=bins_r1, density=True)
+                hq, _ = np.histogram(d.imag, bins=bins_r1, density=True)
+                ymax_r1 = max(ymax_r1, float(np.max(hi)), float(np.max(hq)))
         for ax, data, title in [
             (ax2[0, 0], f1, "File 01 (noise baseline)"),
             (ax2[0, 1], f3, "File 03 (keyed GDSS)"),
@@ -132,10 +141,10 @@ def main():
         ]:
             if data is not None:
                 d = data[:n_hist]
-                ax.hist(d.real, bins=150, density=True, alpha=0.7, label="I", color="steelblue")
-                ax.hist(d.imag, bins=150, density=True, alpha=0.5, label="Q", color="tomato")
+                ax.hist(d.real, bins=bins_r1, density=True, alpha=0.7, label="I", color="steelblue")
+                ax.hist(d.imag, bins=bins_r1, density=True, alpha=0.5, label="Q", color="tomato")
             ax.set_xlim(-5, 5)
-            ax.set_ylim(0, 0.45)
+            ax.set_ylim(0, ymax_r1 * 1.05)
             ax.set_title(title)
             ax.set_xlabel("Amplitude")
             ax.legend()
@@ -148,7 +157,8 @@ def main():
             (ax2[1, 2], f9, "File 09 (standard GDSS)"),
         ]:
             if data is not None and len(data) >= n_psd:
-                freq, p = welch(data.real, fs=SAMPLE_RATE, nperseg=n_psd, scaling="density")
+                real_dc_blocked = data.real - np.mean(data.real)
+                freq, p = welch(real_dc_blocked, fs=SAMPLE_RATE, nperseg=n_psd, scaling="density")
                 ax.plot(freq / 1e3, 10 * np.log10(p + 1e-12), linewidth=0.8, color="steelblue")
             ax.set_title(title)
             ax.set_xlabel("Frequency offset (kHz)")
