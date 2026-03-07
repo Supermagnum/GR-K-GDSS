@@ -7,6 +7,7 @@ Definitions of technical terms and acronyms used in the GR-K-GDSS documentation 
 ## Table of Contents
 
 - [AEAD](#aead)
+- [Autocorrelation (IQ analysis)](#autocorrelation-iq-analysis)
 - [Box-Muller transform](#box-muller-transform)
 - [ChaCha20](#chacha20)
 - [Chip / chips per symbol](#chip--chips-per-symbol)
@@ -17,6 +18,9 @@ Definitions of technical terms and acronyms used in the GR-K-GDSS documentation 
 - [GRC](#grc)
 - [HKDF](#hkdf)
 - [IQ (I and Q)](#iq-i-and-q)
+- [KL divergence (IQ analysis)](#kl-divergence-iq-analysis)
+- [Kurtosis (IQ analysis)](#kurtosis-iq-analysis)
+- [Mean (I) and Mean (Q)](#mean-i-and-mean-q)
 - [Key injector](#key-injector)
 - [Keyed GDSS](#keyed-gdss)
 - [Keystream](#keystream)
@@ -29,17 +33,25 @@ Definitions of technical terms and acronyms used in the GR-K-GDSS documentation 
 - [Session key derivation](#session-key-derivation)
 - [Shamir's Secret Sharing](#shamirs-secret-sharing)
 - [set_key (message port)](#set_key-message-port)
+- [Skewness (IQ analysis)](#skewness-iq-analysis)
 - [SOQPSK](#soqpsk)
 - [Spreader](#spreader)
 - [Spreading sequence](#spreading-sequence)
 - [Standard GDSS](#standard-gdss)
 - [Sync burst](#sync-burst)
+- [Variance symmetry (IQ analysis)](#variance-symmetry-iq-analysis)
 
 ---
 
 ## AEAD
 
 **Authenticated Encryption with Associated Data.** An encryption mode that provides both confidentiality and integrity (authentication). In this project, payload encryption uses ChaCha20-Poly1305 AEAD (e.g. via gr-linux-crypto). The ciphertext is authenticated so that tampering can be detected.
+
+---
+
+## Autocorrelation (IQ analysis)
+
+In the IQ file analyser, **autocorrelation** is computed on the real (I) component of the signal over lags 1 to 100. For true noise (or good GDSS masking), samples should be uncorrelated: the normalized autocorrelation at non-zero lags should stay near zero (within a statistical bound, e.g. 3/sqrt(N)). PASS means no significant correlation at those lags; FAIL would indicate periodic or structured content that could be detected (e.g. unmasked repetition).
 
 ---
 
@@ -169,9 +181,33 @@ The process of deriving multiple subkeys (payload encryption, GDSS masking, sync
 
 ---
 
+## KL divergence (IQ analysis)
+
+**Kullback-Leibler divergence** measures how much one probability distribution differs from another. In the IQ analyser, KL divergence (I) compares the distribution of the **I (in-phase)** component of File 09 (standard GDSS) with File 03 (keyed GDSS). A low value means the two signals are statistically similar (both look like noise). The test is used to check that standard GDSS and keyed GDSS are hard to tell apart from their I-component histograms alone; PASS indicates the distributions are close enough for the intended comparison.
+
+---
+
+## Kurtosis (IQ analysis)
+
+**Kurtosis** measures how "tailed" or peaked a distribution is compared to a normal (Gaussian) distribution. For a Gaussian, kurtosis is 3 (the analyser uses `fisher=False`). The IQ analyser checks **Kurtosis (I)** and **Kurtosis (Q)** for the in-phase and quadrature components; PASS when the value lies in a range around 3 (e.g. 2.7 to 3.3). This ensures the signal looks Gaussian and thus noise-like; keyed GDSS masking is designed to produce approximately Gaussian outputs.
+
+---
+
+## Mean (I) and Mean (Q)
+
+The **mean** of the in-phase (I) and quadrature (Q) components of the complex baseband signal. For zero-mean noise or properly masked GDSS, both should be close to zero. The IQ analyser compares the sample mean to a statistical threshold (e.g. 3*sigma/sqrt(N)); **Mean (I) PASS** and **Mean (Q) PASS** mean the signal has no significant DC offset on I or Q, which is expected for Gaussian-like noise and for well-designed GDSS output.
+
+---
+
 ## set_key (message port)
 
 A message input port on the keyed GDSS spreader and despreader. When the block receives a PMT dict with `"key"` (32-byte u8vector) and `"nonce"` (12-byte u8vector), it updates its internal ChaCha20 context and uses that for masking. The key injector (or gr-linux-crypto GDSS Set Key Source) typically connects to this port so keys are injected at runtime rather than at block construction.
+
+---
+
+## Skewness (IQ analysis)
+
+**Skewness** measures the asymmetry of a distribution. A symmetric distribution (e.g. Gaussian) has skewness 0. The IQ analyser checks **Skewness (I)** and **Skewness (Q)**; PASS when the absolute value is below a small threshold (e.g. 0.1). This ensures the I and Q components are not skewed, as expected for noise-like or properly masked GDSS signals.
 
 ---
 
@@ -196,6 +232,12 @@ The base sequence (e.g. Gaussian-distributed, of length `sequence_length`) that 
 ## Standard GDSS
 
 The original GDSS design that uses an internal (non-keyed) random source for the Gaussian masking. Standard GDSS is statistically noise-like but can exhibit high cross-session correlation (e.g. sync bursts from different sessions correlate), which keyed GDSS reduces by making the mask key-dependent.
+
+---
+
+## Variance symmetry (IQ analysis)
+
+The IQ analyser compares the standard deviation (spread) of the **I** and **Q** components. For ideal circularly symmetric noise, I and Q should have the same variance. **Variance symmetry PASS** means the ratio of I and Q variances is close to 1 (within a tolerance, e.g. 10%). Large asymmetry could indicate non-noise structure. For BPSK-only test signals where Q is absent, the analyser may treat the test as PASS.
 
 ---
 

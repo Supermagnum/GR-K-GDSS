@@ -13,6 +13,7 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
 - [Unit tests (pytest)](#unit-tests-pytest)
 - [IQ test file generation](#iq-test-file-generation)
 - [IQ file analysis](#iq-file-analysis)
+  - [Explanation of analysis tests](#explanation-of-analysis-tests)
   - [IQ comparison plots](#iq-comparison-plots)
 
 ---
@@ -125,9 +126,20 @@ Improvement:  9.7x reduction in cross-session correlation
 
 **Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03; correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.103 PROTECTED, 9.7x improvement. The keyed residual (e.g. ~0.10) is a simulation artifact; in a real channel it would be lower and is not considered exploitable (see [TESTING.md](TESTING.md)).
 
+#### Explanation of analysis tests
+
+| Test | Meaning |
+|------|--------|
+| **Mean (I)** / **Mean (Q)** | Sample mean of the in-phase (I) or quadrature (Q) component. PASS: mean is close to zero (no DC offset), as expected for noise-like or masked GDSS. See [Mean (I) and Mean (Q)](GLOSSARY.md#mean-i-and-mean-q). |
+| **Variance symmetry** | I and Q have similar spread (standard deviation). PASS: ratio within tolerance; failure would suggest non-circular structure. See [Variance symmetry (IQ analysis)](GLOSSARY.md#variance-symmetry-iq-analysis). |
+| **Kurtosis (I)** / **Kurtosis (Q)** | Peakedness of the I or Q distribution vs Gaussian (expected ~3). PASS: value in range ~2.7–3.3 so the signal looks Gaussian. See [Kurtosis (IQ analysis)](GLOSSARY.md#kurtosis-iq-analysis). |
+| **Skewness (I)** / **Skewness (Q)** | Asymmetry of the I or Q distribution (0 = symmetric). PASS: |skewness| < 0.1. See [Skewness (IQ analysis)](GLOSSARY.md#skewness-iq-analysis). |
+| **Autocorrelation** | Normalized correlation of the I component with itself at lags 1–100. PASS: no significant correlation (signal looks uncorrelated like noise). See [Autocorrelation (IQ analysis)](GLOSSARY.md#autocorrelation-iq-analysis). |
+| **KL divergence (I)** | Compares the I-component distribution of File 09 (standard GDSS) with File 03 (keyed GDSS). PASS: distributions are close (both noise-like). See [KL divergence (IQ analysis)](GLOSSARY.md#kl-divergence-iq-analysis). |
+
 ### IQ comparison plots
 
-Run `python3 tests/plot_iq_comparison.py`. The script applies a DC block (mean subtraction) before computing PSD so the zero-frequency bin does not dominate; Row 1 amplitude histograms in the second figure use a y-axis scale derived from the data so File 09's Q spike is not cut off. Example output:
+Run `python3 tests/plot_iq_comparison.py`. A CSV index of all panels is in [plots_table.csv](plots_table.csv) (columns: plot_file, grid, row, col, panel_type, title, data_source). The script applies a DC block (mean subtraction) before computing PSD and excludes the first and last frequency bins when plotting PSD to avoid vertical lines at the plot edges. Row 1 amplitude histograms: File 1 (noise baseline) uses the same y-axis scale in both figures with a 0.07 upper margin so amplitudes barely fit; other panels in each row use a per-figure scale so File 05 and File 09 peaks are not cut off. Example output:
 
 ```
 Saved: /path/to/GR-K-GDSS/tests/iq_files/iq_comparison.png
