@@ -19,6 +19,7 @@ This document describes how to use the keyed GDSS blocks (spreader, despreader, 
   - [Getting keys into the GDSS blocks (automated, no manual entry)](#getting-keys-into-the-gdss-blocks-automated-no-manual-entry)
   - [gr-linux-crypto compatibility](#gr-linux-crypto-compatibility)
   - [Compatibility with gr-linux-crypto](#compatibility-with-gr-linux-crypto)
+  - [ECIES key store: missing JSON or empty callsigns/groups](#ecies-key-store-missing-json-or-empty-callsignsgroups)
   - [TX chain: SOQPSK modulator and Keyed GDSS Spreader](#tx-chain-soqpsk-modulator-and-keyed-gdss-spreader)
   - [RX chain: Keyed GDSS Despreader and SOQPSK demodulator](#rx-chain-keyed-gdss-despreader-and-soqpsk-demodulator)
   - [Summary](#summary)
@@ -327,6 +328,25 @@ GR-K-GDSS tries, in order: `gr_linux_crypto`, `gr_linux_crypto.keyring_helper`, 
 - **Recommended:** Install **keyutils** so that `keyctl` is on PATH. GR-K-GDSS then uses `keyctl padd` to store raw key bytes and `keyctl read` to load them; `store_session_keys()` and `load_gdss_key()` work correctly.
 - If keyctl is not available, `store_session_keys()` and `load_gdss_key()` still use `KeyringHelper`, but keys stored via `KeyringHelper.add_key` will not be usable for GDSS (load will raise because the keyring value is not 32 bytes). Use keyctl for GDSS key round-trip.
 - `KeyringHelper()` in gr-linux-crypto requires keyctl (keyutils) to be present; otherwise it raises. GR-K-GDSS turns that into a clear error suggesting to install keyutils.
+
+### ECIES key store: missing JSON or empty callsigns/groups
+
+When using gr-linux-crypto's Brainpool ECIES multi-recipient encrypt block (e.g. in the tx_example_kgdss flowgraph), keys are resolved from **key_store_path** (JSON file) and/or the **kernel keyring**. When the JSON file or the callsigns list is missing or empty, the module **falls back to encrypting to all available public keys** (from the file and the keyring). Only when there are no keys at all does encryption fail.
+
+**Fallback: encrypt to all available keys**  
+If **callsigns** is empty (or not set), the block uses **all available recipient callsigns**: those in the key store file (callsign-to-PEM or keygrip), those in the kernel keyring (e.g. `callsign:W1ABC`), and group members that have a resolvable key (so a file with only groups still allows "encrypt to all" when the members' keys are in the keyring). Missing or empty JSON, or empty callsigns, therefore results in "encrypt to all available" as long as at least one key exists in the file or keyring.
+
+**No JSON file (path missing or file does not exist)**  
+The key store loads an empty set from the file; it does not raise. Recipient keys come from the keyring when **use_keyring** is true. With **callsigns** empty, the block encrypts to all keyring callsigns (fallback). If there are no keyring keys either, there are no recipients and encryption fails (Python API raises; C++ block may output nothing).
+
+**JSON file exists but is empty `{}`**  
+Same as above: no keys from the file; keyring is used for the fallback when callsigns are empty.
+
+**JSON file has only groups (e.g. `{"net1": ["W1ABC", "W2ABC"]}`) and no callsign-to-PEM entries**  
+Only the key store’s *callsign* list is used for “encrypt to all”; group names are not public keys. Group members that have a key in the keyring are included in "all available". With **callsigns** empty, the block encrypts to all such members; the fallback still works when members' keys are only in the keyring. To encrypt explicitly for a group, resolve the group to a callsign list (e.g. `CallsignKeyStore.get_group("net1")`) and pass it as **callsigns**. Passing a group name as a callsign (e.g. `["net1"]`) fails because group names are not public keys.
+
+**Callsigns empty and no keys in store (file + keyring)**  
+Only in this case does encryption fail: Python API raises *"No recipients: provide a non-empty callsign list or add keys to the key store."*; the C++ block may output nothing.
 
 ### TX chain: SOQPSK modulator and Keyed GDSS Spreader
 
