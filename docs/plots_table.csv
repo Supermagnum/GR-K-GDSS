@@ -20,3 +20,6 @@ iq_comparison_vs_standard.png,4x3,3,3,cross_correlation,Overlay (red=standard gr
 iq_comparison_vs_standard.png,4x3,4,1,autocorrelation,File 04 (keyed correct-key despread),04_keyed_gdss_despread_correct_key.cf32
 iq_comparison_vs_standard.png,4x3,4,2,amplitude_histogram,File 05 (keyed wrong-key despread),05_keyed_gdss_despread_wrong_key.cf32
 iq_comparison_vs_standard.png,4x3,4,3,autocorrelation,Despread File 09 (no key needed),09_standard_gdss_transmission.cf32
+spectrum_realistic_baseline.png,1x1,1,1,psd,Synthetic realistic baseline (01b) 600 kHz,01b_realistic_noise_baseline.cf32
+spectrum_realistic_plus_standard_gdss.png,1x1,1,1,psd,Realistic noise + unkeyed GDSS 600 kHz,01c_realistic_noise_plus_standard_gdss.cf32
+spectrum_realistic_plus_keyed_gdss.png,1x1,1,1,psd,Realistic noise + keyed GDSS 600 kHz,01d_realistic_noise_plus_keyed_gdss.cf32

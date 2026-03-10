@@ -4,7 +4,7 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
 
 **Last recorded run: 6 March 2026 03:49**
 
-- **IQ file analysis:** 29 passed, 0 failed, 0 warnings. Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`.
+- **IQ file analysis:** 29 passed, 0 failed, 0 warnings. Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
 
 ---
 
@@ -15,6 +15,8 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
 - [IQ file analysis](#iq-file-analysis)
   - [Explanation of analysis tests](#explanation-of-analysis-tests)
   - [IQ comparison plots](#iq-comparison-plots)
+  - [Spectrum snapshot plots](#spectrum-snapshot-plots)
+  - [Real recorded noise (File 08): interpretation](#real-recorded-noise-file-08-interpretation)
 
 ---
 
@@ -155,3 +157,39 @@ Two files are produced:
 2. **iq_comparison_vs_standard.png** (4x3) — Keyed vs standard GDSS comparison. Rows 1–2: histograms and PSD for noise (01), keyed (03), and standard (09); all three should look alike. Row 3: cross-correlation of standard GDSS sessions (12, red) vs keyed sessions (13, green) and overlay; standard shows a detectable peak, keyed does not. Row 4: despreading (keyed correct/wrong key vs despread of standard GDSS without key).
 
 ![gr-k-gdss keyed vs standard GDSS comparison](../tests/iq_files/iq_comparison_vs_standard.png)
+
+### Spectrum snapshot plots
+
+Run `python3 tests/plot_spectrum_snapshots.py` to generate 600 kHz bandwidth spectrum images (Welch PSD with Gaussian roll-off for synthetic files; Blackman-Harris single-FFT for real noise). All images are written to `tests/iq_files/`.
+
+| Image | Description |
+|-------|-------------|
+| **spectrum_baseline.png** | Gaussian noise baseline (File 01). |
+| **spectrum_realistic_baseline.png** | Synthetic realistic baseline (File 01b): tilt, wandering, roll-off, 1/f, bumps. |
+| **spectrum_standard_gdss.png** | Unkeyed GDSS with embedded sync pulse (File 09 + File 06). |
+| **spectrum_keyed_gdss.png** | Keyed GDSS transmission (File 03). |
+| **spectrum_real_noise.png** | Real recorded noise (File 08 from `tests/iq_files/` or `sdr-noise/`). Blackman-Harris window; generated only when File 08 exists. |
+| **spectrum_realistic_plus_standard_gdss.png** | Realistic noise (01b) + unkeyed GDSS (09), Gaussian roll-off. Data: 01c. |
+| **spectrum_realistic_plus_keyed_gdss.png** | Realistic noise (01b) + keyed GDSS (03), Gaussian roll-off. Data: 01d. |
+
+#### Real recorded noise (File 08): interpretation
+
+The updated real recorded noise spectrum is very informative. The Y-axis scale is extremely compressed (e.g. about -119.0 to -120.0 dB), only about a 1 dB range. That tells us:
+
+- **Noise floor:** The noise floor is incredibly flat and consistent — only about 1 dB of variation across the entire 600 kHz bandwidth.
+- **Two spikes near 0 Hz:** The plot shows two spikes close to 0 Hz rather than a single central spike. These are likely **IQ imbalance** from the hardware: LO (local oscillator) leakage appearing as a mirror image on both sides of 0 Hz, a classic sign of IQ mismatch in the SDR front end.
+- **Broad hump around 0 Hz:** The broad hump around 0 Hz is **phase noise** from the local oscillator.
+
+![Spectrum baseline](../tests/iq_files/spectrum_baseline.png)
+
+![Spectrum realistic baseline](../tests/iq_files/spectrum_realistic_baseline.png)
+
+![Spectrum standard GDSS](../tests/iq_files/spectrum_standard_gdss.png)
+
+![Spectrum keyed GDSS](../tests/iq_files/spectrum_keyed_gdss.png)
+
+![Spectrum real noise](../tests/iq_files/spectrum_real_noise.png)
+
+![Spectrum realistic + standard GDSS](../tests/iq_files/spectrum_realistic_plus_standard_gdss.png)
+
+![Spectrum realistic + keyed GDSS](../tests/iq_files/spectrum_realistic_plus_keyed_gdss.png)
