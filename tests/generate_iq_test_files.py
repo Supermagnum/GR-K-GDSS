@@ -322,6 +322,69 @@ def _apply_keyed_gaussian_mask(
     return out
 
 
+def _apply_freq_gaussian_rolloff(signal: np.ndarray, sigma_frac: float = 0.25) -> np.ndarray:
+    """
+    Apply Gaussian roll-off in frequency domain so the spectrum has soft edges.
+    sigma_frac: roll-off width as fraction of Nyquist (0.25 = gentle taper at band edges).
+    """
+    n = len(signal)
+    spec = np.fft.fft(signal.astype(np.complex128))
+    freqs = np.fft.fftfreq(n)
+    # Gaussian in frequency: 1 at DC, decay at high |f|
+    sigma = sigma_frac * 0.5
+    g = np.exp(-(freqs**2) / (2 * (sigma**2 + 1e-12)))
+    spec = spec * g
+    out = np.fft.ifft(spec)
+    return np.ascontiguousarray(out.real.astype(np.float32) + 1j * out.imag.astype(np.float32), dtype=np.complex64)
+
+
+def _generate_realistic_noise(n_samples: int, rng: np.random.Generator) -> np.ndarray:
+    """
+    Generate complex noise with realistic receiver-like structure: slight tilt across
+    the band, slow power wandering, soft band-edge roll-off, 1/f near DC, and small
+    random bumps/dips (atmospheric/hardware-like).
+    """
+    n = n_samples
+    # Base white Gaussian
+    noise = (rng.standard_normal(n) + 1j * rng.standard_normal(n)).astype(np.complex128)
+    spec = np.fft.fft(noise)
+    freqs = np.fft.fftfreq(n)
+    f_abs = np.abs(freqs)
+    # Slight tilt across band (noise figure varying with frequency)
+    tilt = 1.0 + 0.015 * (freqs / (0.5 + 1e-9))
+    # Soft roll-off at band edges (cosine taper near Nyquist)
+    edge = 0.5 * 0.85
+    roll = np.where(f_abs <= edge, 1.0, 0.5 * (1.0 + np.cos(np.pi * (f_abs - edge) / (0.5 - edge + 1e-12))))
+    # 1/f (pink) boost near DC
+    pink = 1.0 + 0.08 / np.sqrt(f_abs * n + 1.0)
+    # Small random bumps/dips: smooth random curve in frequency (sparse points interpolated)
+    n_bump_pts = 80
+    bump_pts = np.cumsum(rng.standard_normal(n_bump_pts))
+    x_bump = np.linspace(0, n - 1, n_bump_pts)
+    bump_smooth = np.interp(np.arange(n), x_bump, bump_pts).astype(np.float64)
+    bump_smooth = bump_smooth / (np.std(bump_smooth) + 1e-12) * 0.03
+    bump = 1.0 + bump_smooth
+    # Combine in frequency domain (magnitude scaling)
+    scale = tilt * roll * pink * bump
+    spec = spec * scale
+    out = np.fft.ifft(spec)
+    out = np.ascontiguousarray(out, dtype=np.complex128)
+    # Random slow wandering of average power level (noise floor drifting over time)
+    n_pts = 150
+    walk = np.cumsum(rng.standard_normal(n_pts))
+    x_pts = np.linspace(0, n - 1, n_pts)
+    x_full = np.arange(n, dtype=np.float64)
+    wander = np.interp(x_full, x_pts, walk)
+    wander = wander / (np.std(wander) + 1e-12) * 0.04
+    envelope = 1.0 + wander
+    out = out * envelope
+    # Renormalize to unit variance
+    std = np.sqrt(np.var(out.real) + np.var(out.imag))
+    if std > 1e-12:
+        out = out / std
+    return out.astype(np.complex64)
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -329,6 +392,9 @@ def main():
     rng = np.random.default_rng(seed=RNG_SEED)
     noise = (rng.standard_normal(N_SAMPLES) + 1j * rng.standard_normal(N_SAMPLES)).astype(np.complex64)
     noise.tofile(os.path.join(OUTPUT_DIR, "01_gaussian_noise_baseline.cf32"))
+    # File 1b - Realistic noise (tilt, wandering, roll-off, 1/f, bumps)
+    realistic = _generate_realistic_noise(N_SAMPLES, rng)
+    realistic.tofile(os.path.join(OUTPUT_DIR, "01b_realistic_noise_baseline.cf32"))
     from scipy import stats
     I, Q = noise.real, noise.imag
     meta1 = {
@@ -557,6 +623,22 @@ Optional baseline with hardware artifacts (SDR recording):
     }
     with open(os.path.join(OUTPUT_DIR, "09_standard_gdss_transmission.json"), "w") as f:
         json.dump(meta09, f, indent=2)
+
+    # File 01c - Realistic noise + unkeyed GDSS (with Gaussian roll-off)
+    # File 01d - Realistic noise + keyed GDSS (with Gaussian roll-off)
+    path_01b = os.path.join(OUTPUT_DIR, "01b_realistic_noise_baseline.cf32")
+    path_03 = os.path.join(OUTPUT_DIR, "03_keyed_gdss_transmission.cf32")
+    if os.path.isfile(path_01b) and os.path.isfile(path_03):
+        rb = np.fromfile(path_01b, dtype=np.complex64)
+        f03 = np.fromfile(path_03, dtype=np.complex64)
+        n_merge = min(len(rb), len(file09), len(f03))
+        rb, f09_trim, f03_trim = rb[:n_merge], file09[:n_merge], f03[:n_merge]
+        g09 = _apply_freq_gaussian_rolloff(f09_trim)
+        g03 = _apply_freq_gaussian_rolloff(f03_trim)
+        merged_std = (rb + g09).astype(np.complex64)
+        merged_keyed = (rb + g03).astype(np.complex64)
+        merged_std.tofile(os.path.join(OUTPUT_DIR, "01c_realistic_noise_plus_standard_gdss.cf32"))
+        merged_keyed.tofile(os.path.join(OUTPUT_DIR, "01d_realistic_noise_plus_keyed_gdss.cf32"))
 
     # File 10a - Standard GDSS sync burst Session A (fixed PN, seed 99)
     PN_SEED_STD = 99
