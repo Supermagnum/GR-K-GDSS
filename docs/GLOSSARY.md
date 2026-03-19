@@ -12,12 +12,14 @@ Definitions of technical terms and acronyms used in the GR-K-GDSS documentation 
 - [ChaCha20](#chacha20)
 - [Chip / chips per symbol](#chip--chips-per-symbol)
 - [Covert communications](#covert-communications)
+- [DC spike (SDR hardware)](#dc-spike-sdr-hardware)
 - [Despreader](#despreader)
 - [ECDH](#ecdh)
 - [GDSS](#gdss)
 - [GRC](#grc)
 - [HKDF](#hkdf)
 - [IQ (I and Q)](#iq-i-and-q)
+- [IQ imbalance (SDR hardware)](#iq-imbalance-sdr-hardware)
 - [KL divergence (IQ analysis)](#kl-divergence-iq-analysis)
 - [Kurtosis (IQ analysis)](#kurtosis-iq-analysis)
 - [Mean (I) and Mean (Q)](#mean-i-and-mean-q)
@@ -79,6 +81,12 @@ Radio communications designed to avoid detection by passive observers. The trans
 
 ---
 
+## DC spike (SDR hardware)
+
+A **strong component at 0 Hz** (DC) in complex baseband from many SDR front ends, often due to **local oscillator leakage** and analog imperfections (common on RTL-SDR-class devices). If the wanted signal is tuned to DC, the spike can sit on the signal and degrade or prevent demodulation. GR-K-GDSS blocks do not remove it; use **offset tuning**, **DC block / high-pass**, or similar in GNU Radio ahead of the despreader. See [USAGE.md](USAGE.md#dc-spike-and-iq-imbalance-real-sdr-hardware).
+
+---
+
 ## Despreader
 
 The receive-side block that reverses spreading: it correlates the incoming chip-rate signal with the same spreading sequence and key-derived mask used by the spreader, then outputs symbol-rate complex samples. In GR-K-GDSS the block is `kgdss_despreader_cc` (Keyed GDSS Despreader). It requires the same key, nonce, and parameters as the spreader to recover the payload.
@@ -112,6 +120,12 @@ The receive-side block that reverses spreading: it correlates the incoming chip-
 ## IQ (I and Q)
 
 **In-phase and Quadrature.** The two components of a complex baseband signal. I is the real part, Q is the imaginary part. IQ files (e.g. `.cf32`) store complex samples as interleaved float32 (I, Q, I, Q, ...). Analysis of GDSS often checks that I and Q have similar statistics (mean near zero, symmetric variance, Gaussian-like distribution).
+
+---
+
+## IQ imbalance (SDR hardware)
+
+**Imperfect matching** between the in-phase and quadrature branches of a direct-conversion receiver: slightly different **gains** on I and Q and/or **phase** not exactly 90 degrees. This creates a **spectral mirror image** (energy from positive frequencies appears weakly at negative frequencies and vice versa). Near DC the image can overlap the wanted signal and reduce SNR. GR-K-GDSS does not correct IQ imbalance; use **source/driver calibration**, GNU Radio **IQ balance** correction, or extra link margin. See [USAGE.md](USAGE.md#dc-spike-and-iq-imbalance-real-sdr-hardware).
 
 ---
 
