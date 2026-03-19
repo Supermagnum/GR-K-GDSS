@@ -747,6 +747,7 @@ GR-K-GDSS uses **gr-linux-crypto** for key derivation (CryptoHelpers, KeyringHel
 
 **Usage documentation** is in **[docs/USAGE.md](docs/USAGE.md)**. There you will find:
 - **Block API:** stream and message inputs/outputs, parameters, and usage for the three GNU Radio blocks (Keyed GDSS Spreader, Despreader, Key Injector), plus how to connect gr-linux-crypto and SOQPSK for TX/RX.
+- **Real SDR hardware:** how to account for **DC spike** (LO leakage at 0 Hz) and **IQ imbalance** (mirror image) in GNU Radio; the GDSS blocks do not correct these (see the section *DC spike and IQ imbalance* in USAGE.md).
 - **Python helper functions:** session key derivation and keyring (`derive_session_keys`, `store_session_keys`, `load_gdss_key`, `get_shared_secret_from_gnupg`, `gdss_nonce`, `payload_nonce`, `keyring_available`, `keyring_import_error`) and sync burst utilities (`derive_sync_schedule`, `derive_sync_pn_sequence`, `gaussian_envelope`). These are documented in the "Python helper functions" section; the blocks are documented in the "Keyed GDSS blocks" section.
 
 ### Examples

@@ -21,8 +21,9 @@ This document describes how to use the keyed GDSS blocks (spreader, despreader, 
   - [Compatibility with gr-linux-crypto](#compatibility-with-gr-linux-crypto)
   - [ECIES key store: missing JSON or empty callsigns/groups](#ecies-key-store-missing-json-or-empty-callsignsgroups)
   - [TX chain: SOQPSK modulator and Keyed GDSS Spreader](#tx-chain-soqpsk-modulator-and-keyed-gdss-spreader)
-  - [RX chain: Keyed GDSS Despreader and SOQPSK demodulator](#rx-chain-keyed-gdss-despreader-and-soqpsk-demodulator)
-  - [Summary](#summary)
+- [RX chain: Keyed GDSS Despreader and SOQPSK demodulator](#rx-chain-keyed-gdss-despreader-and-soqpsk-demodulator)
+- [DC spike and IQ imbalance (real SDR hardware)](#dc-spike-and-iq-imbalance-real-sdr-hardware)
+- [Summary](#summary)
 
 ---
 
@@ -392,6 +393,34 @@ In GRC the chain looks like:
 - **Keyed GDSS Despreader** outputs 1 and 2: float streams for lock and SNR; connect to scopes or indicators as needed.
 
 The SOQPSK demodulator expects complex baseband symbols at the same symbol rate and alignment as produced by the SOQPSK modulator. The despreader must use the **same** `sequence_length`, `chips_per_symbol`, `variance`, `seed`, `chacha_key`, and `chacha_nonce` as the transmitter.
+
+### DC spike and IQ imbalance (real SDR hardware)
+
+The **Keyed GDSS Spreader** and **Keyed GDSS Despreader** do **not** implement correction for RTL-SDR-style **DC spikes** or **IQ imbalance**. Those effects come from the analog front end and tuner, not from the GDSS algorithm. You must handle them in the **RF / channel part** of your GNU Radio flowgraph (or by tuning/calibration outside GNU Radio).
+
+#### DC spike (strong energy at 0 Hz)
+
+Many low-cost SDRs (including typical RTL-SDR dongles) show a **large component at exactly DC** in complex baseband: local oscillator leakage and related imperfections. If your **wanted signal is centered at 0 Hz**, that spike sits on top of the signal and can **corrupt demodulation** (similar problems are common for APRS and other DC-centered modes on such hardware).
+
+**How to account for it in practice:**
+
+1. **Tune off DC (often the best approach):** Set the RF frequency or IF offset so the **signal of interest is not at DC** (e.g. a few tens or hundreds of kHz away). The despreader and downstream blocks then see the signal **offset** in baseband; your resampling and carrier recovery (if any) must match how you shifted the spectrum.
+2. **DC blocking / high-pass filtering:** Insert GNU Radio blocks such as **DC Block** (real or complex, depending on your chain) or a **high-pass filter** with a very low cutoff **before** the despreader, after the source and any mandatory low-pass anti-alias filtering. Trade-off: you **remove or attenuate true DC**, which can leave a **notch** at 0 Hz in displays and slightly distort any energy that really sits on DC.
+3. **Avoid stacking DC-sensitive stages:** If you already use a strong DC block, check that symbol timing and SNR estimates still behave as expected; extreme settings can affect slow drift or very narrowband signals.
+
+The **test and plot scripts** in this repository subtract mean or drop the DC bin for **visualization only**; that is not a substitute for a proper receive chain on live hardware.
+
+#### IQ imbalance (gain and phase mismatch on I and Q)
+
+Real receivers rarely have **perfect I/Q matching**. Slight **gain imbalance** and **phase error** (not exactly 90 degrees between I and Q) create a **mirror image** of the spectrum: energy leaks across positive/negative frequency. Near DC, the mirror can fold **close to the desired signal** and **reduce SNR**.
+
+**How to account for it in practice:**
+
+1. **Hardware / driver calibration:** Some sources and drivers expose **IQ balance** or correction; use them when available.
+2. **GNU Radio correction blocks:** For sources without built-in correction, consider blocks such as **IQ Balance** (correcting amplitude/phase imbalance on complex streams) in the path **after** the SDR source and **before** the despreader, tuned on a known test signal or calibration procedure.
+3. **System margin:** If correction is imperfect, plan for **extra SNR margin** and validate lock/SNR on your hardware.
+
+For interpretation of **recorded** IQ with mirrors and spurs near DC, see the real-noise spectrum notes in [TEST_RESULTS.md](TEST_RESULTS.md) and [TESTING.md](TESTING.md).
 
 ### Summary
 
