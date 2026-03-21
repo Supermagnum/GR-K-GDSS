@@ -4,6 +4,8 @@
 
 This folder builds the Cryptographically Keyed GDSS academic-style preprint.
 
+**IACR Cryptology ePrint Archive:** Paper [2025/108456](https://eprint.iacr.org/2025/108456). Archive record timestamp: **21 March 2026**.
+
 ## Requirements
 
 - `pdflatex` (TeX Live)
