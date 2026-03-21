@@ -7,7 +7,7 @@ Models:
   - DSSS: Shakeel eq.1 theoretical reference.
   - Standard GDSS: BPSK chip x_i = s * |G_i|, receiver Z = sum_i r_i (unknown mask).
   - Keyed GDSS: x_i = s * m_i, m_i from Box-Muller, receiver Z = mean(r_i / m_i), MIN_MASK clamp.
-  - VHF Rayleigh: flat block fading (constant g per symbol); Doppler Hz labels scale noise only.
+  - VHF Rayleigh: flat block fading (constant g per symbol); Doppler Hz labels scale noise only; SNR grid to +40 dB (see SNR_DB_GRID_VHF).
 """
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ from scipy import special
 MIN_MASK = 1e-4
 # Upper end +25 dB: keyed mean(r/m) has strong noise enhancement; a short grid looked flat near 0.5 BER.
 SNR_DB_GRID = np.arange(-20, 26, 1.0, dtype=np.float64)
+# VHF-only: extend to +40 dB so Figure 8 shows a falling slope (Rayleigh + keyed masking still limits steep waterfall).
+SNR_DB_GRID_VHF = np.arange(-20, 41, 1.0, dtype=np.float64)
 N_VALUES = (64, 128, 256)
 
 # Bits per (SNR, scenario) for production; override with BER_MC_NUM_BITS for quick runs
@@ -267,9 +269,12 @@ def mc_ber_standard_hf(
 def ldpc_effective_ber(
     uncoded_ber: np.ndarray,
     coding_gain_db: float,
+    snr_axis: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """Ideal rate-1/2: shift SNR axis by coding gain (equivalent Eb/N0 improvement)."""
-    snr_axis = SNR_DB_GRID
+    if snr_axis is None:
+        snr_axis = SNR_DB_GRID
+    snr_axis = np.asarray(snr_axis, dtype=np.float64)
     snr_shifted = snr_axis + coding_gain_db
     logb = np.log10(np.clip(uncoded_ber, 1e-12, 0.49))
     log_out = np.interp(
@@ -308,12 +313,12 @@ def run_vhf_curves(seed: int = 43) -> Dict[str, np.ndarray]:
     for label, fd in [("ped_50", 50.0), ("veh_200", 200.0)]:
         for mode in ("m1", "m2"):
             # Mode 2: approximate multicarrier diversity as 0.6 dB effective gain vs Mode 1
-            snr_eff = SNR_DB_GRID + (0.6 if mode == "m2" else 0.0)
+            snr_eff = SNR_DB_GRID_VHF + (0.6 if mode == "m2" else 0.0)
             unc_k = []
             for snr in snr_eff:
                 unc_k.append(mc_ber_keyed_rayleigh(n, float(snr), rng, fd_hz=fd))
             unc_k = np.array(unc_k)
-            coded_k = ldpc_effective_ber(unc_k, 5.0)
+            coded_k = ldpc_effective_ber(unc_k, 5.0, snr_axis=SNR_DB_GRID_VHF)
             res[f"{label}_{mode}_unc"] = unc_k
             res[f"{label}_{mode}_coded"] = coded_k
     return res
@@ -357,7 +362,13 @@ def save_all_npz(path: str, seed_base: int = 42) -> None:
     hf = run_hf_curves(seed_base + 2)
     unc, c576, c1152 = run_ldpc_block_comparison(seed_base + 3)
     snr = SNR_DB_GRID
-    payload = {"snr_db": snr, "ldpc_unc": unc, "ldpc_576": c576, "ldpc_1152": c1152}
+    payload = {
+        "snr_db": snr,
+        "snr_db_vhf": SNR_DB_GRID_VHF,
+        "ldpc_unc": unc,
+        "ldpc_576": c576,
+        "ldpc_1152": c1152,
+    }
     payload.update(awgn)
     payload.update({f"vhf_{k}": v for k, v in vhf.items()})
     payload.update({f"hf_{k}": v for k, v in hf.items()})

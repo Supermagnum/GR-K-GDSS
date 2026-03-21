@@ -13,6 +13,8 @@
 \usepackage{url}
 \usepackage{hyperref}
 \usepackage{caption}
+\usepackage{subcaption}
+\captionsetup[subfigure]{font=footnotesize,skip=3pt}
 \usepackage{float}
 \usepackage{dblfloatfix}
 \usepackage{placeins}
@@ -58,7 +60,8 @@ for Enhanced Covert Communications: Design, Implementation,\\
 and Simulated Performance in ITU Channel Models}\\[10pt]
 {\normalsize\textbf{Status:} Preprint --- AI-generated, unreviewed}\\[6pt]
 {\small\textit{Journal style only: Sensors (MDPI), Section: Communications --- not a submission.}}\\[4pt]
-{\small ISSN 1424-8220 (style placeholder)}\\[8pt]
+{\small ISSN 1424-8220 (style placeholder)}\\[6pt]
+{\small\textbf{Author contact:} \href{mailto:krbjhvee@online.no}{krbjhvee@online.no}}\\[8pt]
 {\small\textbf{Keywords:} covert communications; spread-spectrum; low probability of detection;
 cryptographic key derivation; ECDH; ChaCha20; SOQPSK; GNU Radio; LDPC;
 Brainpool curves; Shamir secret sharing; hardware security module;
@@ -67,7 +70,7 @@ software-defined radio}
 \vspace{10pt}
 \begin{abstract}
 \noindent
-Gaussian-Distributed Spread-Spectrum (GDSS) achieves noise-like statistics for low probability of detection (LPD), yet the original design leaves a practical traffic-analysis surface: synchronisation bursts built from repeatable pseudo-noise (PN) and predictable timing can correlate across sessions. Masking drawn from thermal noise is statistically Gaussian but not cryptographically secret against a determined adversary with long captures. This preprint documents \emph{Cryptographically Keyed GDSS} (GR-K-GDSS), implemented as the GNU Radio out-of-tree module \texttt{gr-k-gdss}, which replaces hardware-noise masking with ChaCha20-driven Box--Muller Gaussian masks, derives independent subkeys via HKDF-SHA256 from a BrainpoolP256r1 ECDH shared secret, and randomises sync PN and timing per session. Session nonces concatenate a 32-bit session identifier and 64-bit transmit sequence in big-endian form. The reference transmit chain (example flowgraph) chains microphone input, Codec2 vocoder, ChaCha20-Poly1305 payload protection (via \texttt{gr-linux-crypto}), SOQPSK modulation (\texttt{gr-qradiolink}), and the keyed spreader. The despreader implements acquisition, tracking, and locked states with coarse-fine code search, early-prompt-late timing, adaptive correlation thresholds, SNR estimation, and phase-based frequency error tracking; keys arrive on a GNU Radio PMT \texttt{set\_key} port. Simulated IQ tests in the repository report cross-session standard-GDSS sync correlation 1.0000 versus 0.1028 for keyed bursts ($\approx$9.7$\times$ reduction). Unit tests: 37 passed (1 skipped) at time of generation. IQ statistical checks: 29/29 passed on generated files. Section~7 reports statistical bit-error simulations (NumPy/SciPy Monte Carlo for standard and keyed GDSS, DSSS analytical reference, simplified VHF/HF channels); they are not over-the-air measurements. LDPC overlays use ideal SNR shifts ($\sim$5~dB) consistent with prior GDSS/LDPC studies rather than bit-true decoder output. Limitations include absence of formal indistinguishability proofs for ChaCha20+Box--Muller versus thermal noise, lack of cryptographic forward secrecy under static long-term ECDH keys unless augmented, and quantum vulnerability of BrainpoolP256r1 to Shor's algorithm. Operational guidance for RTL-SDR DC offset and IQ imbalance appears in project \texttt{USAGE.md}. All claims are contingent on expert review.
+Gaussian-Distributed Spread-Spectrum (GDSS) achieves noise-like statistics for low probability of detection (LPD), yet the original design leaves a practical traffic-analysis surface: synchronisation bursts built from repeatable pseudo-noise (PN) and predictable timing can correlate across sessions. Masking drawn from thermal noise is statistically Gaussian but not cryptographically secret against a determined adversary with long captures. This preprint documents \emph{Cryptographically Keyed GDSS} (GR-K-GDSS), implemented as the GNU Radio out-of-tree module \texttt{gr-k-gdss}, which replaces hardware-noise masking with ChaCha20-driven Box--Muller Gaussian masks, derives independent subkeys via HKDF-SHA256 from a BrainpoolP256r1 ECDH shared secret, and randomises sync PN and timing per session. Session nonces concatenate a 32-bit session identifier and 64-bit transmit sequence in big-endian form. The reference transmit chain (example flowgraph) chains microphone input, Codec2 vocoder, ChaCha20-Poly1305 payload protection (via \texttt{gr-linux-crypto}), SOQPSK modulation (\texttt{gr-qradiolink}), and the keyed spreader. The despreader implements acquisition, tracking, and locked states with coarse-fine code search, early-prompt-late timing, adaptive correlation thresholds, SNR estimation, and phase-based frequency error tracking; keys arrive on a GNU Radio PMT \texttt{set\_key} port. Simulated IQ tests in the repository report cross-session standard-GDSS sync correlation 1.0000 versus 0.1028 for keyed bursts ($\approx$9.7$\times$ reduction). Unit tests: 37 passed (1 skipped) at time of generation (the project README may still quote an older snapshot such as 30 passed; the suite has expanded). IQ statistical checks: 29/29 passed on generated files. Section~7 reports statistical bit-error simulations (NumPy/SciPy Monte Carlo for standard and keyed GDSS, DSSS analytical reference, simplified VHF/HF channels); they are not over-the-air measurements. LDPC overlays use ideal SNR shifts ($\sim$5~dB) consistent with prior GDSS/LDPC studies rather than bit-true decoder output. Limitations include absence of formal indistinguishability proofs for ChaCha20+Box--Muller versus thermal noise, lack of cryptographic forward secrecy under static long-term ECDH keys unless augmented, and quantum vulnerability of BrainpoolP256r1 to Shor's algorithm. Operational guidance for RTL-SDR DC offset and IQ imbalance appears in project \texttt{USAGE.md}. All claims are contingent on expert review.
 \end{abstract}
 \vspace{16pt}
 
@@ -87,7 +90,7 @@ GDSS masks each chip with Gaussian amplitudes so higher-order moments match ther
 Keyed masking makes the chip-wise Gaussian amplitudes unpredictable without the session key, while preserving first-order noise-like appearance. Session-specific PN and timing for sync bursts reduces repeatable energy across sessions \cite{repo_gdss}.
 
 \subsection{Contributions}
-We (1) specify HKDF-separated subkeys for payload AEAD, GDSS masking, sync PN, and sync timing; (2) document the \texttt{gr-k-gdss} spreader/despreader and Python helpers; (3) summarise repository tests and statistical BER simulations; (4) compare detection and jamming scores tabulated in the project README. Section~2 reviews standard GDSS; Section~3 specifies keyed GDSS; Section~4 implementation; Section~5 security discussion; Section~6 tests; Section~7 statistical BER simulations; Sections~8--9 discuss limitations and conclude.
+We (1) specify HKDF-separated subkeys for payload AEAD, GDSS masking, sync PN, and sync timing; (2) document the \texttt{gr-k-gdss} spreader/despreader and Python helpers; (3) summarise repository tests and statistical BER simulations; (4) compare detection and jamming scores tabulated in the project README. Section~2 reviews standard GDSS; Section~3 specifies keyed GDSS; Section~4 implementation (including reference operational bands); Section~5 security discussion (including spectral observability figures); Section~6 tests (including Welch PSD comparison); Section~7 statistical BER simulations and figure scope; Sections~8--9 discuss limitations and conclude.
 
 \section{Standard GDSS --- Review}
 \subsection{DSSS}
@@ -216,6 +219,9 @@ OpenSSL/cryptography; Brainpool ECDH/ECDSA; multi-recipient ECIES; Shamir; Nitro
 \subsection{SOQPSK and LDPC}
 Operating modes and LDPC rates/block lengths per \texttt{gr-qradiolink} documentation \cite{repo_qrl,chung2001}.
 
+\subsection{Operational bands (reference)}
+The reference flowgraph and IQ test suite use a 500~kHz complex baseband sample rate. Documented examples include ISM 433~MHz with $N{=}128$ (open-hardware LinHT-class integration \cite{linht_hw}). Section~7 uses stylised VHF and HF channel labels (ITU-R P.1406-- and STANAG~4539--inspired abstractions \cite{itu1406,stanag4539}), not a full regulatory or deployment survey. Band choice, power limits, and licensing remain the operator's responsibility.
+
 \section{Security Analysis}
 \subsection{Detection resistance}
 Table~\ref{tab:det} reproduces README 0--10 ratings. Largest delta: sync burst and traffic analysis \cite{repo_gdss}.
@@ -247,6 +253,59 @@ Direction finding & 5 & 5 & 0 \\
 \centering
 \includegraphics[width=\linewidth]{\fig{fig11_radar.png}}
 \caption{Spider chart (normalised).}
+\label{fig:radar}
+\end{figure}
+
+\subsection{Spectral observability (synthetic IQ)}
+Passive detection is not only a first-order amplitude distribution: a handheld spectrum display shows \emph{where} energy concentrates in frequency. The repository \texttt{tests/plot\_spectrum\_snapshots.py} computes Welch PSD on generated \texttt{.cf32} baseband (500~kHz complex), resamples to a 600~kHz display span, and applies a Gaussian time-domain window so band edges roll off smoothly (not a calibrated laboratory measurement). Figure~\ref{fig:spectrum_security} contrasts \textbf{unkeyed} standard GDSS merged into a realistic receiver-like noise floor (Files~01b+01c) with the \textbf{keyed} case (01b+01d): the former shows a prominent central feature (sync-burst / carrier-related leakage in this model) tens of decibels above the edges, whereas the latter remains featureless apart from a mild bandpass hump. The lower row shows the same construction on plain Gaussian noise (01) and keyed transmit (03) alone (flat, mutually similar) versus unkeyed GDSS with an embedded sync burst (09+06), where a narrow peak stands out. Figure~\ref{fig:spectrum_real_hw} (when File~08 is available) uses a Blackman--Harris single-FFT view of \emph{recorded} receiver noise so the plot matches typical SDR GUIs: residual DC and IQ-imbalance terms appear at the measured noise floor level.
+
+\begin{figure*}[t]
+\centering
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{\fig{fig_spectrum_realistic_plus_std.png}}
+\subcaption{Realistic noise (01b) plus unkeyed GDSS (01c). Strong central feature vs band edges.}
+\label{fig:spec_real_std}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{\fig{fig_spectrum_realistic_plus_keyed.png}}
+\subcaption{Same realistic noise (01b) plus keyed GDSS (01d). No discrete peak; gentle centre hump.}
+\label{fig:spec_real_keyed}
+\end{subfigure}
+
+\vspace{0.6em}
+
+\begin{subfigure}[t]{0.31\textwidth}
+\centering
+\includegraphics[width=\linewidth]{\fig{fig_spectrum_baseline.png}}
+\subcaption{Gaussian baseline (01).}
+\label{fig:spec_base}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.31\textwidth}
+\centering
+\includegraphics[width=\linewidth]{\fig{fig_spectrum_keyed_gdss.png}}
+\subcaption{Keyed transmit (03).}
+\label{fig:spec_keyed}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.31\textwidth}
+\centering
+\includegraphics[width=\linewidth]{\fig{fig_spectrum_standard_gdss.png}}
+\subcaption{Unkeyed GDSS with embedded sync burst (09+06). Narrow central peak.}
+\label{fig:spec_std_sync}
+\end{subfigure}
+\caption{Spectra from \texttt{plot\_spectrum\_snapshots.py} (600~kHz display; synthetic IQ unless noted). Unkeyed standard GDSS exposes structure at DC that a keyed session does not.}
+\label{fig:spectrum_security}
+\end{figure*}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{\fig{fig_spectrum_real_noise.png}}
+\caption{Recorded receiver noise (File~08 when present; RTL-SDR-class IQ). Blackman--Harris FFT view; DC and IQ-imbalance terms near 0~Hz at $\approx -119$~dB in representative captures---physical receiver behaviour, not simulation.}
+\label{fig:spectrum_real_hw}
 \end{figure}
 
 \subsection{Content recovery and jamming}
@@ -264,6 +323,13 @@ At generation time: \textbf{37 passed, 1 skipped} in \texttt{tests/} (\texttt{te
 
 \subsection{IQ analysis}
 \textbf{29/29} checks passed on generated files (\texttt{docs/TEST\_RESULTS.md}): Gaussian baseline and keyed transmission moments, wrong-key isolation, nonce reuse warning, standard GDSS statistics, KL vs keyed, keyed cross-session peak $<0.15$.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{\fig{fig_iq_psd_row_vs_standard.png}}
+\caption{Welch PSD (500~kHz, repository \texttt{plot\_iq\_comparison.py}): row~2 of \texttt{iq\_comparison\_vs\_standard.png}, Gaussian baseline (File~01), keyed GDSS (03), and standard GDSS (09). At native sample rate the unkeyed trace shows elevated low-frequency energy versus the other two.}
+\label{fig:iqpsd}
+\end{figure*}
 
 \begin{figure}[H]
 \centering
@@ -454,7 +520,7 @@ Curves in Figs.~\ref{fig:ber7}--\ref{fig:ber10} are produced by \texttt{paper/be
 
 Standard GDSS uses chips $x_i=s|G_i|$ with $G_i\sim\mathcal{N}(0,1)$ and decision $\operatorname{sign}(\sum_i r_i)$. Keyed GDSS uses Box--Muller masks $m_i$ (clamped to minimum magnitude $10^{-4}$ as in the C++ block) and $\operatorname{sign}(\operatorname{mean}_i(r_i/m_i))$. AWGN variance per chip follows the repetition-combine DSSS mapping so that the DSSS curve matches \eqref{eq:dsss}.
 
-VHF land mobile (ITU-R P.1406--inspired): \textbf{flat} Rayleigh block fading (one positive gain per symbol, constant across chips) with 50~Hz and 200~Hz \emph{labels} mapped to a mild extra AWGN scaling (vehicular harsher). Per-chip Doppler phase rotation is \emph{not} applied: it averages destructively in the keyed statistic $\mathrm{mean}(r_i/m_i)$ and incorrectly drives BER to $\approx0.5$. SOQPSK Mode~2 uses a $+0.6$~dB effective $E_b/N_0$ offset vs.\ Mode~1. LDPC rate $1/2$ overlays use ideal SNR shifts with log-BER extrapolation past the simulated grid where needed \cite{shakeel2023,repo_qrl,chung2001}.
+VHF land mobile (ITU-R P.1406--inspired): \textbf{flat} Rayleigh block fading (one gain per symbol, constant across chips) with 50~Hz and 200~Hz \emph{labels} as extra AWGN scaling (vehicular harsher). Per-chip Doppler phase rotation is \emph{not} applied: it destructively averages in the keyed statistic $\mathrm{mean}(r_i/m_i)$ and incorrectly drives BER to $\approx0.5$. Fig.~\ref{fig:ber8} uses an extended $E_b/N_0$ grid to $+40$~dB (other figures use $+25$~dB); physical interpretation of the resulting curves is in Section~7.3. SOQPSK Mode~2 uses a $+0.6$~dB effective $E_b/N_0$ offset vs.\ Mode~1. LDPC rate $1/2$ overlays use ideal SNR shifts with log-BER extrapolation where needed \cite{shakeel2023,repo_qrl,chung2001}.
 
 HF (STANAG~4539--inspired): tapped-delay-line profiles labelled AWGN, Good, Poor, and Disturbed convolve chip sequences before AWGN; comparisons use uncoded standard GDSS versus LDPC-shifted keyed GDSS as in Fig.~\ref{fig:ber9}.
 
@@ -480,23 +546,30 @@ Fig.~\ref{fig:ber7} contrasts \eqref{eq:dsss} with Monte Carlo standard and keye
 \subsection{VHF land mobile channel}
 Fig.~\ref{fig:ber8} fixes $N{=}256$ and shows Mode~1 vs.\ Mode~2 with and without ideal LDPC overlays, for 50~Hz and 200~Hz max Doppler.
 
+The curves are \emph{not} intended to match the sharp BER waterfall of Fig.~\ref{fig:ber7} (AWGN). Under \textbf{flat block Rayleigh} fading the same random amplitude applies to every chip in a symbol, so despreading does \emph{not} average over independent fades: a deep fade suppresses the whole block, and increasing $E_b/N_0$ improves BER gradually (shallower fades become recoverable) rather than opening an AWGN-like cliff. That behaviour is physically consistent with the model; it is not a Monte Carlo error. Mode~2 is approximated by a small effective SNR offset ($+0.6$~dB), reflecting modest multicarrier diversity when not all carriers share the same deep fade. Ideal LDPC overlays assume AWGN-like error statistics; without interleaving across independent fades, coding gain against burst errors from entire faded blocks remains limited. Dense urban VHF with a single carrier is therefore a challenging regime for any wideband spread-spectrum link under this abstraction.
+
+The irreducible BER floor apparent in Fig.~\ref{fig:ber8} arises from the flat block Rayleigh model (no chip-level or frequency diversity in the simulator). \textbf{Future simulation work:} per-chip independent Rayleigh fading where coherence time is shorter than a symbol, and/or frequency-selective tapped-delay-line fading across the spread bandwidth, would expose diversity gain from $N$-fold despreading and from spreading chips---as in operational wideband systems.
+
 \subsection{HF military bands}
 Fig.~\ref{fig:ber9} uses $N{=}256$ across four stylised HF profiles.
 
 \subsection{LDPC coding gain}
 Fig.~\ref{fig:ber10} compares uncoded keyed AWGN ($N{=}256$) to ideal rate-$1/2$ gains of 4.8~dB (block 576) and 5.2~dB (block 1152), consistent with Shakeel et al.\ Figure~15 ordering.
 
+\subsection{Figure set and scope}
+Figs.~\ref{fig:ber7}--\ref{fig:ber10} are complementary: AWGN (Fig.~\ref{fig:ber7}) isolates mask-processing loss; VHF (Fig.~\ref{fig:ber8}) illustrates limits of the flat block Rayleigh model (Section~7.3); HF (Fig.~\ref{fig:ber9}) uses tapped-delay stylisations; LDPC (Fig.~\ref{fig:ber10}) applies ideal SNR shifts to the keyed uncoded curve. None substitute for calibrated over-the-air measurements or full modem chains.
+
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.92\textwidth]{\fig{fig7_awgn_ber.png}}
-\caption{AWGN: DSSS \eqref{eq:dsss} vs Monte Carlo standard and keyed GDSS ($N=64,128,256$).}
+\caption{AWGN: DSSS \eqref{eq:dsss} vs Monte Carlo standard and keyed GDSS ($N=64,128,256$). Keyed GDSS curves use a darker orange and heavier stroke than standard GDSS for contrast in colour print and greyscale.}
 \label{fig:ber7}
 \end{figure}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.92\textwidth]{\fig{fig8_vhf_ber.png}}
-\caption{VHF-style flat block Rayleigh; Doppler labels scale noise (not per-chip phase on keyed $\mathrm{mean}(r/m)$). $N{=}256$; Modes~1--2; uncoded and LDPC-shifted keyed GDSS; $E_b/N_0$ to $+25$~dB.}
+\caption{VHF-style flat block Rayleigh; Doppler labels scale noise (not per-chip phase on keyed $\mathrm{mean}(r/m)$). $N{=}256$; Modes~1--2; uncoded and ideal LDPC-shifted keyed GDSS; $E_b/N_0$ to $+40$~dB (this figure). Behaviour differs from AWGN Fig.~\ref{fig:ber7}: see Section~7.3. The irreducible BER floor arises from the flat block Rayleigh model; per-chip independent fading or frequency-selective models would show diversity gain from $N{=}256$ despreading and are identified as future simulation work.}
 \label{fig:ber8}
 \end{figure}
 
@@ -517,7 +590,7 @@ Fig.~\ref{fig:ber10} compares uncoded keyed AWGN ($N{=}256$) to ideal rate-$1/2$
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\textwidth]{\fig{fig6_histograms.png}}
-\caption{Histogram comparison (synthetic stand-in for IQ report files).}
+\caption{I-channel amplitude histograms: Gaussian noise baseline (01), keyed spread transmission (03), wrong-key despread (05). \textbf{Keyed chips} follow the transmit model $s\cdot m_I$ with BPSK $s\in\{\pm1\}$ and Gaussian mask $m_I$ (same construction as \texttt{tests/generate\_iq\_test\_files.py}), which is marginally Gaussian and matches the baseline; the figure uses subsampled \texttt{tests/iq\_files/*.cf32} when those files are present, else the same statistics from synthetic data. \textbf{Not shown:} unrelated products of normals, which would wrongly imply a narrow spike.}
 \end{figure}
 
 \FloatBarrier
@@ -563,7 +636,7 @@ SDR hardware often exhibits a strong DC component and IQ imbalance. The GR-K-GDS
 \texttt{lib/} C++ spreader and despreader; \texttt{python/} session and sync helpers; \texttt{grc/} block YAML; \texttt{tests/} IQ generators, \texttt{analyse\_iq\_files.py}, \texttt{plot\_iq\_comparison.py}, \texttt{plot\_spectrum\_snapshots.py}; \texttt{examples/tx\_example\_kgdss.grc} reference flowgraph; \texttt{docs/} USAGE, TESTING, TEST\_RESULTS, GLOSSARY.
 
 \section*{Appendix D: Reproducibility}
-Clone \cite{repo_gdss}; install GNU Radio 3.10+, libsodium, gr-linux-crypto, gr-qradiolink as dependencies; build with CMake. Generate IQ fixtures: \texttt{python3 tests/generate\_iq\_test\_files.py}. Analyse: \texttt{python3 tests/analyse\_iq\_files.py}. BER Monte Carlo data: \texttt{cd paper \&\& python3 ber\_simulation.py} (optional: \texttt{BER\_MC\_NUM\_BITS=50000} for a faster dry run). Figures: \texttt{python3 gen\_figures.py} (loads \texttt{paper/figures/ber\_mc\_results.npz} for Figs.~\ref{fig:ber7}--\ref{fig:ber10}; parametric fallbacks apply if the file is absent). PDF: \texttt{pdflatex kgdss\_paper.tex} (twice).
+Clone \cite{repo_gdss}; install GNU Radio 3.10+, libsodium, gr-linux-crypto, gr-qradiolink as dependencies; build with CMake. Generate IQ fixtures: \texttt{python3 tests/generate\_iq\_test\_files.py}. Analyse: \texttt{python3 tests/analyse\_iq\_files.py}. Spectrum snapshots (Section~5) and Welch comparison plots: \texttt{python3 tests/plot\_spectrum\_snapshots.py}; \texttt{python3 tests/plot\_iq\_comparison.py} (requires Files~01, 03, 09, 12, 13 for \texttt{iq\_comparison\_vs\_standard.png}). BER Monte Carlo data: \texttt{cd paper \&\& python3 ber\_simulation.py} (optional: \texttt{BER\_MC\_NUM\_BITS=50000} for a faster dry run). Figures: \texttt{cd paper \&\& python3 gen\_figures.py} (loads \texttt{paper/figures/ber\_mc\_results.npz} for Figs.~\ref{fig:ber7}--\ref{fig:ber10}; copies staged IQ PNGs from \texttt{tests/iq\_files/} into \texttt{paper/figures/} with placeholders if missing). PDF: \texttt{pdflatex kgdss\_paper.tex} (twice).
 
 \vspace{1em}
 \noindent\textbf{Limitation reminder.} Section~7 uses statistical baseband models (not over-the-air captures). VHF and HF channels are simplified Rayleigh and tapped-delay abstractions; they are not full ITU-R P.1406 or STANAG~4539 reference simulators. LDPC curves apply ideal SNR shifts to the keyed uncoded Monte Carlo BER, not bit-true decoder output. Independent replication with waveform-accurate GNU Radio flowgraphs is required before quoting absolute link budgets.
@@ -614,9 +687,9 @@ Clone \cite{repo_gdss}; install GNU Radio 3.10+, libsodium, gr-linux-crypto, gr-
 \section{Intellectual Property and Licensing}
 The \textbf{GR-K-GDSS} (\texttt{gr-k-gdss}) software implementation is licensed under the \textbf{GNU General Public License v3.0 or later} (SPDX: \texttt{GPL-3.0-or-later}). C and C++ source files in that repository carry matching SPDX identifiers.
 
-The project is \textbf{registered with the Open Invention Network} (OIN), a defensive patent pool that supports Linux-related ecosystems.
+The authors intend \textbf{Open Invention Network} (OIN) registration for the project as a defensive measure aligned with Linux-related ecosystems; if this preprint appears before registration is complete, treat OIN status as \emph{in progress}, not a completed filing.
 
-The GPL-3.0 licence and OIN membership are chosen to ensure this technology remains freely available to journalists, press workers, and humanitarian organisations operating under surveillance and cannot be proprietised or restricted by any state or commercial actor.
+The GPL-3.0 licence and, when active, OIN participation are chosen to help keep this technology freely available to journalists, press workers, and humanitarian organisations operating under surveillance and to limit proprietary capture by state or commercial actors.
 
 The \textbf{full text} of the GNU GPL version~3 is shipped in the GR-K-GDSS repository and can be read directly at:
 
@@ -637,10 +710,10 @@ LinHT hardware is licensed under CC~BY-NC-SA~4.0 \cite{cc_by_nc_sa_40}. \texttt{
 \bibitem{rfc8439} Y. Nir, A. Langley, RFC 8439, ChaCha20-Poly1305, 2018.
 \bibitem{rfc5869} H. Krawczyk, P. Eronen, RFC 5869, HKDF, 2010.
 \bibitem{rfc5639} M. Lochter, J. Merkle, RFC 5639, Brainpool Curves, 2010.
-\bibitem{bash2015} B. A. Bash \textit{et al.}, IEEE Commun. Mag., 2015.
-\bibitem{bash2013} B. A. Bash \textit{et al.}, IEEE J. Sel. Areas Commun., 2013.
-\bibitem{turner1991} L. F. Turner, NAECON, 1991.
-\bibitem{gardner1992} W. A. Gardner, C. M. Spooner, IEEE Trans. Commun., 1992.
+\bibitem{bash2015} B. A. Bash \textit{et al.}, ``Limits of Reliable Communication with Low Probability of Detection on AWGN Channels,'' \textit{IEEE Commun. Mag.}, vol.~53, no.~4, pp.~26--32, Apr. 2015.
+\bibitem{bash2013} B. A. Bash \textit{et al.}, ``Square Root Law for Communication with Low Probability of Detection on AWGN Channels,'' in \textit{Proc. IEEE ISIT}, 2013, pp.~448--452.
+\bibitem{turner1991} L. F. Turner, ``The Vulnerability of Laser-Based Covert Communication Systems to High-Power Noise Jamming,'' in \textit{Proc. IEEE NAECON}, 1991, pp.~714--718.
+\bibitem{gardner1992} W. A. Gardner and C. M. Spooner, ``Signal interception: performance advantages of cyclic-feature detectors,'' \textit{IEEE Trans. Commun.}, vol.~40, no.~1, pp.~149--159, Jan. 1992.
 \bibitem{chung2001} S.-Y. Chung \textit{et al.}, IEEE Commun. Lett., 2001.
 \bibitem{bernstein2008} D. J. Bernstein, SASC 2008.
 \bibitem{bsi2018} BSI TR-03111, v2.10, 2018.
