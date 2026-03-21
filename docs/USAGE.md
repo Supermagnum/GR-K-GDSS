@@ -1,3 +1,5 @@
+![Open Invention Network member](oin-member-horiz.jpg)
+
 # GR-K-GDSS Usage
 
 This document describes how to use the keyed GDSS blocks (spreader, despreader, and key injector), their inputs and outputs, and how to connect them with gr-linux-crypto and SOQPSK (gr-qradiolink) for TX/RX.

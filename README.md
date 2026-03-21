@@ -1,3 +1,5 @@
+![Open Invention Network member](docs/oin-member-horiz.jpg)
+
 # GR-K-GDSS
 A highly experimental Cryptographically keyed GDSS proposal.
 
@@ -38,7 +40,8 @@ The developer used curiosity to piece the suggested improvements in this project
 14. [Testing](docs/TESTING.md)
 15. [Test results](docs/TEST_RESULTS.md)
 16. [Technical terms index](docs/GLOSSARY.md)
-17. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
+17. [KGDSS preprint](paper/kgdss_paper.tex)
+18. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
 
 ---
 

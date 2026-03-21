@@ -1,0 +1,631 @@
+% Cryptographically Keyed GDSS -- AI-generated preprint
+% Compile: cd paper && pdflatex -interaction=nonstopmode kgdss_paper.tex && pdflatex kgdss_paper.tex
+\documentclass[10pt,a4paper,twocolumn]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{dblfloatfix}
+\usepackage[margin=2.5cm]{geometry}
+
+\definecolor{mdpiblue}{HTML}{004E8F}
+\titleformat{\section}{\normalfont\bfseries\color{mdpiblue}\large}{\thesection.}{0.4em}{}
+\titleformat{\subsection}{\normalfont\bfseries\normalsize}{\thesubsection}{0.4em}{}
+\captionsetup{font=small,labelfont=bf}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Sensors 2025, xx(xx), xxxx}
+\fancyhead[R]{\small doi:10.3390/xxxx (placeholder)}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\hypersetup{colorlinks=true,linkcolor=mdpiblue,urlcolor=mdpiblue}
+
+\newcommand{\fig}[1]{figures/#1}
+\linespread{1.12}
+
+\begin{document}
+
+\onecolumn
+\noindent\setlength{\fboxrule}{1.5pt}\setlength{\fboxsep}{8pt}%
+\fcolorbox{black}{yellow!85!white}{%
+\parbox{\dimexpr\textwidth-2\fboxsep-2\fboxrule\relax}{%
+\textbf{DISCLAIMER:} This paper was generated in its entirety by an artificial
+intelligence system (Claude, by Anthropic) from source code, test results,
+and design documentation. It has not been reviewed by a professional
+cryptographer, signals intelligence specialist, or academic peer reviewer.
+The theoretical and security claims presented here are based on logical
+reasoning from published sources and should be treated with appropriate
+scepticism. This paper is provided for research and discussion purposes
+only. Independent expert review is strongly recommended before any
+practical application.}%
+}
+\vspace{14pt}
+\begin{center}
+{\Large\bfseries Cryptographically Keyed Gaussian-Distributed Spread-Spectrum\\
+for Enhanced Covert Communications: Design, Implementation,\\
+and Simulated Performance in ITU Channel Models}\\[10pt]
+{\normalsize\textbf{Status:} Preprint --- AI-generated, unreviewed}\\[6pt]
+{\small\textit{Journal style only: Sensors (MDPI), Section: Communications --- not a submission.}}\\[4pt]
+{\small ISSN 1424-8220 (style placeholder)}\\[8pt]
+{\small\textbf{Keywords:} covert communications; spread-spectrum; low probability of detection;
+cryptographic key derivation; ECDH; ChaCha20; SOQPSK; GNU Radio; LDPC;
+Brainpool curves; Shamir secret sharing; hardware security module;
+software-defined radio}
+\end{center}
+\vspace{10pt}
+\begin{abstract}
+\noindent
+Gaussian-Distributed Spread-Spectrum (GDSS) achieves noise-like statistics for low probability of detection (LPD), yet the original design leaves a practical traffic-analysis surface: synchronisation bursts built from repeatable pseudo-noise (PN) and predictable timing can correlate across sessions. Masking drawn from thermal noise is statistically Gaussian but not cryptographically secret against a determined adversary with long captures. This preprint documents \emph{Cryptographically Keyed GDSS} (GR-K-GDSS), implemented as the GNU Radio out-of-tree module \texttt{gr-k-gdss}, which replaces hardware-noise masking with ChaCha20-driven Box--Muller Gaussian masks, derives independent subkeys via HKDF-SHA256 from a BrainpoolP256r1 ECDH shared secret, and randomises sync PN and timing per session. Session nonces concatenate a 32-bit session identifier and 64-bit transmit sequence in big-endian form. The reference transmit chain (example flowgraph) chains microphone input, Codec2 vocoder, ChaCha20-Poly1305 payload protection (via \texttt{gr-linux-crypto}), SOQPSK modulation (\texttt{gr-qradiolink}), and the keyed spreader. The despreader implements acquisition, tracking, and locked states with coarse-fine code search, early-prompt-late timing, adaptive correlation thresholds, SNR estimation, and phase-based frequency error tracking; keys arrive on a GNU Radio PMT \texttt{set\_key} port. Simulated IQ tests in the repository report cross-session standard-GDSS sync correlation 1.0000 versus 0.1028 for keyed bursts ($\approx$9.7$\times$ reduction). Unit tests: 37 passed (1 skipped) at time of generation. IQ statistical checks: 29/29 passed on generated files. Section~7 reports statistical bit-error simulations (NumPy/SciPy Monte Carlo for standard and keyed GDSS, DSSS analytical reference, simplified VHF/HF channels); they are not over-the-air measurements. LDPC overlays use ideal SNR shifts ($\sim$5~dB) consistent with prior GDSS/LDPC studies rather than bit-true decoder output. Limitations include absence of formal indistinguishability proofs for ChaCha20+Box--Muller versus thermal noise, lack of cryptographic forward secrecy under static long-term ECDH keys unless augmented, and quantum vulnerability of BrainpoolP256r1 to Shor's algorithm. Operational guidance for RTL-SDR DC offset and IQ imbalance appears in project \texttt{USAGE.md}. All claims are contingent on expert review.
+\end{abstract}
+\vspace{16pt}
+
+\twocolumn
+
+\section{Introduction}
+\subsection{Background}
+Covert or LPD communications seek to hide the presence of transmissions from passive observers, not only ciphertext from eavesdroppers \cite{bash2015,bash2013,turner1991}.
+
+\subsection{Standard DSSS detectability}
+Direct-sequence spread spectrum reduces power spectral density but retains cyclostationary structure exploitable by cyclic feature detectors \cite{gardner1992}. Shakeel et al.\ summarise DSSS limitations and propose GDSS \cite{shakeel2023}.
+
+\subsection{Standard GDSS and residual issues}
+GDSS masks each chip with Gaussian amplitudes so higher-order moments match thermal noise \cite{shakeel2023}. Standard GDSS draws masks from transmitter thermal noise; the algorithm is public and masking is statistically constrained but not key-secret. Sync bursts in the reference design can reuse PN and timing, enabling cross-session correlation (traffic analysis).
+
+\subsection{Motivation for cryptographic keying}
+Keyed masking makes the chip-wise Gaussian amplitudes unpredictable without the session key, while preserving first-order noise-like appearance. Session-specific PN and timing for sync bursts reduces repeatable energy across sessions \cite{repo_gdss}.
+
+\subsection{Contributions}
+We (1) specify HKDF-separated subkeys for payload AEAD, GDSS masking, sync PN, and sync timing; (2) document the \texttt{gr-k-gdss} spreader/despreader and Python helpers; (3) summarise repository tests and statistical BER simulations; (4) compare detection and jamming scores tabulated in the project README. Section~2 reviews standard GDSS; Section~3 specifies keyed GDSS; Section~4 implementation; Section~5 security discussion; Section~6 tests; Section~7 statistical BER simulations; Sections~8--9 discuss limitations and conclude.
+
+\section{Standard GDSS --- Review}
+\subsection{DSSS}
+Symbols are multiplied by a spreading sequence; processing gain scales with spreading factor $N$ \cite{shakeel2023}.
+
+\subsection{GDSS masking}
+For complex symbol $S$ and independent Gaussian $U,V$,
+\begin{equation}
+I = \mathrm{Re}(S)\,|U|,\quad Q = \mathrm{Im}(S)\,|V|.
+\label{eq:gdssmask}
+\end{equation}
+Quadrant information remains in the sign of $\mathrm{Re}(S)$ and $\mathrm{Im}(S)$ while amplitudes follow folded-Gaussian statistics \cite{shakeel2023}.
+
+\subsection{Gaussianity (Table~\ref{tab:moments})}
+Shakeel et al.\ match even moments through order 20 between GDSS and theoretical Gaussian; DSSS deviates (Table~\ref{tab:moments}).
+
+\begin{table*}[t]
+\centering
+\caption{Moments of noise-free signals ($N{=}256$), after Shakeel et al.\ \cite{shakeel2023}.}
+\label{tab:moments}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Moment & SGD (theory) & GDSS & DSSS \\
+\midrule
+2nd & 1 & 1 & 1 \\
+4th & 3 & 3 & 1 \\
+6th & 15 & 15 & 1 \\
+8th & 105 & 105 & 1 \\
+10th & 945 & 947 & 1 \\
+12th & 10{,}395 & 10{,}428 & 1 \\
+14th & 135{,}135 & 135{,}524 & 1 \\
+16th & 2{,}027{,}025 & 2{,}025{,}880 & 1 \\
+18th & 34{,}459{,}425 & 34{,}102{,}797 & 1 \\
+20th & 654{,}729{,}075 & 634{,}790{,}833 & 1 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Detectability}
+Moment tests, modulation stripping, and cyclostationary analysis favour GDSS over DSSS at low SNR \cite{shakeel2023}.
+
+\subsection{Sync burst vulnerability}
+Fixed PN and timing let a long-term observer align bursts across sessions (correlation $\approx 1$ in software simulation).
+
+\section{Proposed Keyed GDSS Scheme}
+\subsection{Goals}
+Maintain noise-like statistics while making masks, sync PN, and timing cryptographically session-specific.
+
+\subsection{Key derivation}
+BrainpoolP256r1 ECDH yields a shared secret; HKDF-SHA256 \cite{rfc5869} expands four 32-byte keys with distinct \texttt{info} strings (Table~\ref{tab:hkdf}).
+
+\begin{table}[H]
+\centering
+\caption{HKDF subkeys (\texttt{session\_key\_derivation.py}).}
+\label{tab:hkdf}
+\small
+\begin{tabular}{@{}llp{4.2cm}@{}}
+\toprule
+Name & Info string & Purpose \\
+\midrule
+\texttt{payload\_enc} & \texttt{payload-chacha20poly1305-v1} & Payload AEAD \\
+\texttt{gdss\_masking} & \texttt{gdss-chacha20-masking-v1} & Chip masks \\
+\texttt{sync\_pn} & \texttt{sync-dsss-pn-sequence-v1} & Sync PN \\
+\texttt{sync\_timing} & \texttt{sync-burst-timing-offset-v1} & Timing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{\fig{fig2_key_derivation.png}}
+\caption{Key derivation hierarchy (conceptual).}
+\end{figure*}
+
+\subsection{Cryptographic masking}
+Sixteen ChaCha20 bytes per chip provide four 32-bit uniforms; Box--Muller yields two Gaussian masks:
+\begin{equation}
+z=\sqrt{-2\ln u_1}\cos(2\pi u_2).
+\end{equation}
+Minimum magnitude clamp $\mathrm{MIN\_MASK}=10^{-4}$ avoids division instability. Transmitted chip (conceptually) follows \eqref{eq:gdssmask} with keyed Gaussians; receiver divides by the same masks then sums:
+\begin{equation}
+\hat{z}=\frac{1}{N}\sum_{i=1}^{N}\frac{r_i}{m_i}.
+\end{equation}
+Implementation matches \texttt{kgdss\_spreader\_cc} / \texttt{kgdss\_despreader\_cc} and libsodium ChaCha20 IETF interface \cite{rfc8439,bernstein2008}.
+
+\subsection{Session-unique sync}
+\texttt{derive\_sync\_pn\_sequence}: HMAC-SHA256(\texttt{sync\_pn}, \texttt{sync-pn-v1}$\Vert$\texttt{session\_id}) derives material expanded by ChaCha20 to $\pm1$ chips \cite{repo_gdss}.\\
+\texttt{derive\_sync\_schedule}: derives per-epoch offsets in $[-w,w]$ ms via ChaCha20-indexed uniforms \cite{repo_gdss}.\\
+\texttt{gaussian\_envelope}: rise/fall $\exp(-x^2/2)$ on flanks, \texttt{rise\_fraction}=0.1.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{\fig{fig4_sync_burst.png}}
+\caption{Conceptual standard vs keyed sync placement.}
+\end{figure*}
+
+\subsection{Signal chain}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{\fig{fig1_block_diagram.png}}
+\caption{Transmit stack and keying path (after \texttt{tx\_example\_kgdss.grc}).}
+\end{figure*}
+
+\section{Implementation}
+\subsection{Modules}
+\texttt{gr-k-gdss}: C++ spreader/despreader/key injector; Python bindings.\\
+\texttt{gr-qradiolink}: SOQPSK, legacy GDSS, LDPC.\\
+\texttt{gr-linux-crypto}: ECDH, AEAD, ECIES, Shamir, keyring, Nitrokey hooks \cite{repo_crypto}.
+
+\subsection{Despreader}
+States \texttt{ACQUISITION}, \texttt{TRACKING}, \texttt{LOCKED}; \texttt{COARSE\_SEARCH\_BINS}=32; \texttt{LOCK\_THRESHOLD}=10; \texttt{ADAPTIVE\_THRESHOLD\_MIN}=0.2; early-prompt-late timing error scaled by 0.1; SNR IIR $\alpha=0.05$; frequency error from correlation phase diffs with $\alpha=0.1$; mutexes \texttt{d\_mutex}, \texttt{d\_key\_mutex}; PMT \texttt{set\_key} \cite{repo_gdss}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{\fig{fig3_state_machine.png}}
+\caption{Despreader state machine (simplified).}
+\end{figure}
+
+\subsection{Python helpers}
+\texttt{derive\_session\_keys}, \texttt{store\_session\_keys}, \texttt{gdss\_nonce}, \texttt{payload\_nonce}, \texttt{get\_shared\_secret\_from\_gnupg} \cite{repo_gdss}.
+
+\subsection{Cryptographic substrate}
+OpenSSL/cryptography; Brainpool ECDH/ECDSA; multi-recipient ECIES; Shamir; Nitrokey interface; Linux keyring storage \cite{repo_crypto,bsi2018}.
+
+\subsection{SOQPSK and LDPC}
+Operating modes and LDPC rates/block lengths per \texttt{gr-qradiolink} documentation \cite{repo_qrl,chung2001}.
+
+\section{Security Analysis}
+\subsection{Detection resistance}
+Table~\ref{tab:det} reproduces README 0--10 ratings. Largest delta: sync burst and traffic analysis \cite{repo_gdss}.
+
+\begin{table}[H]
+\centering
+\caption{Detection resistance (README).}
+\label{tab:det}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Aspect & Std & Keyed & $\Delta$ \\
+\midrule
+Passive detection & 7 & 7 & 0 \\
+Cyclostationary & 8 & 8 & 0 \\
+Moments & 8 & 8 & 0 \\
+Mod.\ stripping & 8 & 8 & 0 \\
+Sync burst & 4 & 8 & +4 \\
+Traffic analysis & 5 & 8 & +3 \\
+Noise floor & 5 & 6 & +1 \\
+Direction finding & 5 & 5 & 0 \\
+\midrule
+\textbf{Overall} & \textbf{6} & \textbf{7.5} & \textbf{+1.5} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{\fig{fig11_radar.png}}
+\caption{Spider chart (normalised).}
+\end{figure}
+
+\subsection{Content recovery and jamming}
+See README tables (decryption/masking strip; broadband and sync-targeted jamming).
+
+\subsection{Keys and forward secrecy}
+Static long-term ECDH keys imply no formal forward secrecy; Nitrokey PIN, brick policy, and physical destruction mitigate compromise \cite{repo_gdss}. Ephemeral ECDH authenticated by long-term keys is recommended.
+
+\subsection{Quantum}
+BrainpoolP256r1 is Shor-vulnerable; symmetric layers degrade under Grover; PQ KEM hook raises \texttt{NotImplementedError} until enabled \cite{repo_crypto}.
+
+\section{Verification and Tests}
+\subsection{Unit tests}
+At generation time: \textbf{37 passed, 1 skipped} in \texttt{tests/} (\texttt{test\_cross\_layer}, \texttt{test\_t1\_spreader\_despreader}, \texttt{test\_t2\_sync\_burst}, \texttt{test\_t3\_key\_derivation}). README snapshots previously cited 30 tests; the suite has since expanded.
+
+\subsection{IQ analysis}
+\textbf{29/29} checks passed on generated files (\texttt{docs/TEST\_RESULTS.md}): Gaussian baseline and keyed transmission moments, wrong-key isolation, nonce reuse warning, standard GDSS statistics, KL vs keyed, keyed cross-session peak $<0.15$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{\fig{fig5_cross_session_bar.png}}
+\caption{Cross-session sync correlation (repository generator output).}
+\label{fig:cross}
+\end{figure}
+
+\subsection{gr-linux-crypto}
+NIST CAVP vectors (AES-GCM, ChaCha20-Poly1305), Wycheproof ECDH/ECDSA on Brainpool curves, BSI TR-03111 (20/20), ECTester (24 passed, 1 skipped), 805M+ LibFuzzer executions without crash, CBMC checks, dudect timing, microsecond-level AEAD latency \cite{repo_crypto_results}.
+
+\subsection{gr-qradiolink}
+C++ and MMDVM tests and fuzzing summarised in project documentation \cite{repo_qrl}.
+
+\begin{table}[H]
+\centering
+\caption{Illustrative crypto validation snapshot (see gr-linux-crypto TEST\_RESULTS).}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Suite & Result \\
+\midrule
+NIST AES-128-GCM & 4/4 \\
+NIST AES-256-GCM & 4/4 \\
+RFC8439 ChaCha20-Poly1305 & 3/3 \\
+Wycheproof Brainpool ECDH & 2534+ vectors pass \\
+BSI TR-03111 & 20/20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Decryption/content recovery resistance (README).}
+\scriptsize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Aspect & Std & Keyed & $\Delta$ \\
+\midrule
+Payload decryption & 9 & 9 & 0 \\
+Masking strip attack & 4 & 9 & +5 \\
+Statistical masking recovery & 5 & 9 & +4 \\
+Forward secrecy (rated) & 7 & 9 & +2 \\
+Key compromise blast radius & 6 & 8 & +2 \\
+\midrule
+\textbf{Overall} & \textbf{6} & \textbf{9} & \textbf{+3} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Jamming resistance (README).}
+\scriptsize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Aspect & Std & Keyed & $\Delta$ \\
+\midrule
+Broadband noise jamming & 6 & 6 & 0 \\
+Targeted carrier jamming & 8 & 8 & 0 \\
+Protocol-aware jamming & 5 & 7 & +2 \\
+Sync burst jamming & 4 & 7 & +3 \\
+Replay jamming & 5 & 7 & +2 \\
+\midrule
+\textbf{Overall} & \textbf{5.5} & \textbf{7} & \textbf{+1.5} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Key compromise scenarios (README).}
+\scriptsize
+\begin{tabular}{@{}p{3.2cm}p{3.5cm}p{3.8cm}@{}}
+\toprule
+Scenario & Protection & Outcome \\
+\midrule
+Device seized locked & PIN + auto-brick & Key inaccessible \\
+Device active/unlocked & Keyring in use & Session exposure risk \\
+Compelled PIN + disposal option & Physical destruction & Key destroyed \\
+Destroyed before seizure & None left & Past sessions unrecoverable \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table*}[t]
+\centering
+\caption{SOQPSK operating parameters (representative; see gr-qradiolink README).}
+\small
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Mode & Application & Data rate & BW / spacing & Notes \\
+\midrule
+VHF Mode 1 & Land mobile & 14.4 kbps & $\sim$10 kHz / 12.5 kHz ch. & Single carrier \\
+VHF Mode 2 & Multipath & $3\times$4.8 kbps & 4 kHz carrier spacing & Multicarrier \\
+HF standard & Narrow HF & 4 kbps/carrier & 2.7 kHz & STANAG-style bands \\
+HF 10m & Wide HF & 9 kbps/carrier & 6 kHz & Higher-rate option \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{gr-linux-crypto cross-validation (summary from TEST\_RESULTS.md).}
+\scriptsize
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+Suite & Algorithm / scope & Vectors & Passed & Rate \\
+\midrule
+NIST CAVP & AES-128-GCM & 4 & 4 & 100\% \\
+NIST CAVP & AES-256-GCM & 4 & 4 & 100\% \\
+NIST CAVP & RFC 8439 ChaCha20-Poly1305 & 3 & 3 & 100\% \\
+Wycheproof & ECDH Brainpool P-256r1 & 2534+ & 2534+ & 100\% \\
+Wycheproof & ECDH Brainpool P-384r1 & (set) & all & 100\% \\
+Wycheproof & ECDH Brainpool P-512r1 & (set) & all & 100\% \\
+Wycheproof & ECDSA per Brainpool curve & 475+ each & 475+ & 100\% \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table}[H]
+\centering
+\caption{Representative AEAD latency (gr-linux-crypto benchmarks, $\mu$s).}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Algorithm & Mean & p50 & p95 & Thr. \\
+\midrule
+AES-128-GCM & 8.8 & -- & -- & $<$100 \\
+AES-256-GCM & 9.3 & -- & -- & $<$100 \\
+ChaCha20-Poly1305 & 11.5 & -- & -- & $<$100 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table*}[t]
+\centering
+\caption{IQ file analysis outcomes (\texttt{analyse\_iq\_files.py}, 29 checks PASS).}
+\scriptsize
+\begin{tabular}{@{}ll@{}}
+\toprule
+File / comparison & Tests (all PASS) \\
+\midrule
+\texttt{01\_gaussian\_noise\_baseline.cf32} & Mean I/Q, variance symmetry, kurtosis I/Q, skewness I/Q, autocorr. \\
+\texttt{03\_keyed\_gdss\_transmission.cf32} & Same eight statistics \\
+\texttt{04\_keyed\_gdss\_despread\_correct\_key.cf32} & Round-trip correlation \\
+\texttt{05\_keyed\_gdss\_despread\_wrong\_key.cf32} & Key isolation \\
+\texttt{07\_nonce\_reuse} & XOR correlation / reuse warning \\
+\texttt{09\_standard\_gdss\_transmission.cf32} & Eight noise-like tests \\
+\texttt{09\_vs\_03} & KL divergence (I) \\
+\texttt{13\_keyed\_gdss\_crosscorr} & Cross-session peak $<0.15$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{gr-k-gdss pytest modules (snapshot: 37 passed, 1 skipped).}
+\scriptsize
+\begin{tabular}{@{}ll@{}}
+\toprule
+Module / test & Status \\
+\midrule
+\texttt{test\_cross\_layer.py::test\_full\_stack\_round\_trip} & PASSED \\
+\texttt{test\_t1\_spreader\_despreader.py} (14 tests: round\_trip, keystream, key/nonce sensitivity, invalid sizes, Gaussian, masks, boundary, set\_key) & PASSED \\
+\texttt{test\_t2\_sync\_burst.py} (12 tests: PN, timing, envelope, masking) & PASSED \\
+\texttt{test\_t3\_key\_derivation.py} (10 tests: HKDF, nonces, keyring) & PASSED \\
+Optional keyring / environment & 1 skipped \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\section{BER Performance (Statistical Simulation)}
+\subsection{Simulation methodology}
+Following Shakeel et al., the DSSS reference is
+\begin{equation}
+P_b = \tfrac12\operatorname{erfc}\!\sqrt{N E_s/(2N_0)}.
+\label{eq:dsss}
+\end{equation}
+Curves in Figs.~\ref{fig:ber7}--\ref{fig:ber10} are produced by \texttt{paper/ber\_simulation.py} (NumPy/SciPy), aligned with the GNU Radio stack conceptually but without invoking the SDR runtime. Spreading factors $N\in\{64,128,256\}$ match the implementation. The SNR axis is $E_b/N_0$ in dB from $-20$ to $+5$ in 1~dB steps. Unless overridden by the environment variable \texttt{BER\_MC\_NUM\_BITS}, each plotted point uses $10^6$ simulated bits per receiver condition.
+
+Standard GDSS uses chips $x_i=s|G_i|$ with $G_i\sim\mathcal{N}(0,1)$ and decision $\operatorname{sign}(\sum_i r_i)$. Keyed GDSS uses Box--Muller masks $m_i$ (clamped to minimum magnitude $10^{-4}$ as in the C++ block) and $\operatorname{sign}(\operatorname{mean}_i(r_i/m_i))$. AWGN variance per chip follows the repetition-combine DSSS mapping so that the DSSS curve matches \eqref{eq:dsss}.
+
+VHF land mobile (ITU-R P.1406--inspired): Rayleigh amplitude per symbol, Doppler-induced phase walk across chips at 50~Hz (pedestrian) and 200~Hz (vehicular); SOQPSK Mode~2 is approximated by a $+0.6$~dB effective $E_b/N_0$ offset relative to Mode~1 (multicarrier diversity placeholder). LDPC rate $1/2$ overlays use ideal waterfall shifts ($\approx$5~dB on keyed curves) consistent with \cite{shakeel2023} and gr-qradiolink usage \cite{repo_qrl,chung2001}.
+
+HF (STANAG~4539--inspired): tapped-delay-line profiles labelled AWGN, Good, Poor, and Disturbed convolve chip sequences before AWGN; comparisons use uncoded standard GDSS versus LDPC-shifted keyed GDSS as in Fig.~\ref{fig:ber9}.
+
+Semi-analytical keyed extension (conceptual):
+\begin{equation}
+P_b \approx \int_{-\infty}^{0} p_{\hat{Z}}(z)\,dz,
+\end{equation}
+with $\hat{Z}$ the $N$-fold combination after per-chip division by Gaussian masks; closed forms are not used here---Monte Carlo estimates $P_b$ directly.
+
+HKDF expand (RFC~5869) satisfies
+\begin{equation}
+T(i)=\mathrm{HMAC\text{-}SHA256}(\mathrm{PRK},\,T(i{-}1)\,\Vert\,\mathrm{info}\,\Vert\,i),\quad \mathrm{OKM}=T(1)\,\Vert\,T(2)\,\Vert\cdots
+\end{equation}
+(first $L$ octets). GDSS ChaCha20 nonce:
+\begin{equation}
+\mathrm{nonce}=\mathrm{BE}_{4}(\mathrm{session\_id})\,\Vert\,\mathrm{BE}_{8}(\mathrm{tx\_seq}).
+\end{equation}
+Envelope flank samples use $x\in[-3,0]$ linearly spaced with $\exp(-x^2/2)$ normalised; adaptive lock threshold $\theta_{\mathrm{adaptive}}=\max(0.2,\,\theta\cdot C_{\mathrm{avg}}/C_{\mathrm{peak}})$ with $C_{\mathrm{avg}}$ IIR-smoothed correlation magnitude.
+
+\subsection{AWGN baseline}
+Fig.~\ref{fig:ber7} contrasts \eqref{eq:dsss} with Monte Carlo standard and keyed GDSS. At mid-BER, keyed GDSS typically sits $\sim$2--2.5~dB to the right of standard GDSS, in line with Shakeel et al.\ Figure~14-style mask-processing loss.
+
+\subsection{VHF land mobile channel}
+Fig.~\ref{fig:ber8} fixes $N{=}256$ and shows Mode~1 vs.\ Mode~2 with and without ideal LDPC overlays, for 50~Hz and 200~Hz max Doppler.
+
+\subsection{HF military bands}
+Fig.~\ref{fig:ber9} uses $N{=}256$ across four stylised HF profiles.
+
+\subsection{LDPC coding gain}
+Fig.~\ref{fig:ber10} compares uncoded keyed AWGN ($N{=}256$) to ideal rate-$1/2$ gains of 4.8~dB (block 576) and 5.2~dB (block 1152), consistent with Shakeel et al.\ Figure~15 ordering.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{\fig{fig7_awgn_ber.png}}
+\caption{AWGN: DSSS \eqref{eq:dsss} vs Monte Carlo standard and keyed GDSS ($N=64,128,256$).}
+\label{fig:ber7}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{\fig{fig8_vhf_ber.png}}
+\caption{VHF-style Rayleigh fading with Doppler phase walk; $N{=}256$, SOQPSK Mode~1 vs.\ Mode~2, uncoded and LDPC-shifted keyed GDSS.}
+\label{fig:ber8}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{\fig{fig9_hf_ber.png}}
+\caption{HF-style tapped-delay profiles (AWGN, Good, Poor, Disturbed): uncoded standard GDSS vs LDPC-coded keyed GDSS ($N{=}256$).}
+\label{fig:ber9}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{\fig{fig10_ldpc.png}}
+\caption{Keyed GDSS on AWGN: uncoded vs ideal LDPC rate $1/2$ with 576- and 1152-bit block gain anchors ($N{=}256$).}
+\label{fig:ber10}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{\fig{fig6_histograms.png}}
+\caption{Histogram comparison (synthetic stand-in for IQ report files).}
+\end{figure*}
+
+\section{Discussion}
+\subsection{Comparison to standard GDSS}
+Keyed GDSS closes the masking-strip gap and strengthens sync obscurity; PAPR remains high as in standard GDSS (Gaussian amplitudes). Operational security (short transmissions, mobility) complements physics limits (direction finding).
+
+\subsection{Literature positioning}
+Featureless-waveform concepts date to early LPI research \cite{turner1991}; cyclostationary countermeasures \cite{gardner1992} motivate the GDSS masking approach \cite{shakeel2023}. Chaos-based and artificial-noise schemes \cite{kaddoum2016,soltani2018} pursue alternative statistical hides. GR-K-GDSS is closest in spirit to GDSS but swaps thermal-noise draws for ChaCha20-Box--Muller outputs and adds sessionised sync.
+
+\subsection{PAPR and hardware}
+Gaussian chip amplitudes imply high peak-to-average power ratio relative to constant-envelope modulations. Power amplifiers may clip unless backed off, reintroducing distortion features; this mirrors standard GDSS hardware constraints \cite{shakeel2023}.
+
+\subsection{Open problems}
+Formal indistinguishability games for ChaCha20-derived masks, complete OTA validation with Nitrokey-backed keys, and integration of ephemeral ECDH for forward secrecy remain outstanding \cite{repo_gdss}.
+
+\section{Conclusions}
+GR-K-GDSS integrates HKDF-separated keys, ChaCha20 Box--Muller masking, and sessionised sync helpers into GNU Radio. Repository tests support functional correctness and large cross-session correlation reduction in simulation. Future work: ephemeral ECDH, PQ KEM integration, OTA validation with hardware tokens, formal statistical analysis of ChaCha20-Gaussian outputs.
+
+\clearpage
+\onecolumn
+\section*{Appendix A: Literature context for LPD and covert waveforms}
+Chaos-based and artificial-noise assisted covert schemes \cite{kaddoum2016,soltani2018} illustrate alternative routes to hiding power or structure; GDSS instead matches thermal statistics directly. Surveys such as \cite{makhdoom2022} catalogue detection metrics relevant when evaluating keyed versus standard masking. Fundamental limits from information-theoretic covert communication \cite{bash2013,bash2015} bound how much data can be sent covertly under warden models; this engineering design does not claim to meet those bounds but inherits spread-spectrum processing gain.
+
+\section*{Appendix B: Operational notes from repository documentation}
+SDR hardware often exhibits a strong DC component and IQ imbalance. The GR-K-GDSS blocks do not correct these; GNU Radio users should apply offset tuning, DC blocking, and IQ balance blocks ahead of the despreader, as summarised in \texttt{docs/USAGE.md}. Plot scripts subtract means for visualisation only.
+
+\section*{Appendix C: Repository map}
+\texttt{lib/} C++ spreader and despreader; \texttt{python/} session and sync helpers; \texttt{grc/} block YAML; \texttt{tests/} IQ generators, \texttt{analyse\_iq\_files.py}, \texttt{plot\_iq\_comparison.py}, \texttt{plot\_spectrum\_snapshots.py}; \texttt{examples/tx\_example\_kgdss.grc} reference flowgraph; \texttt{docs/} USAGE, TESTING, TEST\_RESULTS, GLOSSARY.
+
+\section*{Appendix D: Reproducibility}
+Clone \cite{repo_gdss}; install GNU Radio 3.10+, libsodium, gr-linux-crypto, gr-qradiolink as dependencies; build with CMake. Generate IQ fixtures: \texttt{python3 tests/generate\_iq\_test\_files.py}. Analyse: \texttt{python3 tests/analyse\_iq\_files.py}. BER Monte Carlo data: \texttt{cd paper \&\& python3 ber\_simulation.py} (optional: \texttt{BER\_MC\_NUM\_BITS=50000} for a faster dry run). Figures: \texttt{python3 gen\_figures.py} (loads \texttt{paper/figures/ber\_mc\_results.npz} for Figs.~\ref{fig:ber7}--\ref{fig:ber10}; parametric fallbacks apply if the file is absent). PDF: \texttt{pdflatex kgdss\_paper.tex} (twice).
+
+\vspace{1em}
+\noindent\textbf{Limitation reminder.} Section~7 uses statistical baseband models (not over-the-air captures). VHF and HF channels are simplified Rayleigh and tapped-delay abstractions; they are not full ITU-R P.1406 or STANAG~4539 reference simulators. LDPC curves apply ideal SNR shifts to the keyed uncoded Monte Carlo BER, not bit-true decoder output. Independent replication with waveform-accurate GNU Radio flowgraphs is required before quoting absolute link budgets.
+
+\vspace{0.8em}
+\noindent\textbf{Channel simulation disclaimer.} ITU-R P.1406 models terrestrial land-mobile propagation with height, clutter, and frequency-dependent path loss \cite{itu1406}. A faithful implementation couples geometry databases, antenna patterns, and time-varying mobile routes. Section~7.3 uses Rayleigh fading with chip-wise Doppler phase rotation at labelled max Doppler (50~Hz and 200~Hz), not the standard's full scenario classes. STANAG~4539 HF models specify tapped-delay-line profiles for poor, good, and disturbed conditions \cite{stanag4539}; Fig.~\ref{fig:ber9} uses stylised normalised taps and real-baseband BPSK-on-$I$ chip ISI before AWGN, not a full STANAG modem chain.
+
+\vspace{0.5em}
+\noindent\textbf{Comparison to Shakeel et al.\ Figure~14--15.} The original GDSS paper contrasts DSSS, GDSS, and LDPC-coded GDSS using full waveform simulation \cite{shakeel2023}. This preprint adds Monte Carlo chip-level keyed GDSS and ideal LDPC overlays; aligning every decibel with \cite{shakeel2023} still requires bit-matching SOQPSK pulse shapes, resampler group delay, and LDPC interleaving as built in gr-qradiolink \cite{repo_qrl}.
+
+\vspace{0.5em}
+\noindent\textbf{Side-channel and fuzzing scope.} gr-linux-crypto aggregates NIST CAVP downloads, Wycheproof JSON vectors, BSI TR-03111 structural checks, ECTester compatibility suites, LibFuzzer targets with ASan/UBSan, CBMC slice verification, and dudect-style timing experiments \cite{repo_crypto_results,reparaz2017}. These results bound defects in OpenSSL/cryptography call paths wrapped by the module. They do not cover the fixed-point behaviour of VOLK kernels inside GNU Radio, analogue front-end leakage, or electromagnetic emanations from SDR hardware executing keyed GDSS.
+
+\vspace{0.5em}
+\noindent\textbf{Traffic-analysis residual.} Even with session-unique sync bursts, an adversary who knows the protocol family might search for energy events within the agreed epoch window. Keyed PN removes \emph{repeatable} correlation peaks across sessions (Figure~\ref{fig:cross}); it does not remove the existence of a physical transmission. Direction finding, TDOA, and power-change analytics remain in the ``physics-limited'' column of Table~\ref{tab:det}.
+
+\vspace{0.5em}
+\noindent\textbf{Post-quantum roadmap.} gr-linux-crypto exposes a hybrid KEM hook that currently raises \texttt{NotImplementedError} unless built with optional post-quantum support \cite{repo_crypto}. Migrating GR-K-GDSS session establishment from Brainpool ECDH to a PQ/classical hybrid would require new HKDF info labels, larger public keys on the wire (if sent), and updated latency budgets---none of which are exercised in the present repository state.
+
+\vspace{0.5em}
+\noindent\textbf{Regulatory and export context.} Covert waveforms may intersect spectrum-management and export-control rules depending on jurisdiction. This document contains no legal guidance; operators remain responsible for compliance, licensing, and dual-use classifications independent of the software licences of gr-k-gdss, gr-linux-crypto, and gr-qradiolink.
+
+\section*{Appendix E: Security stack (from project README, abridged)}
+\noindent\textbf{Layer 1 -- SOQPSK.} Continuous-phase modulation reduces discrete symbol transitions that would aid feature detectors.
+
+\noindent\textbf{Layer 2 -- GDSS spreading/masking.} Spreading factor $N{=}256$ yields processing gain; keyed Gaussian masking aims for thermal-like PDF while requiring the session key to strip masks.
+
+\noindent\textbf{Layer 3 -- LDPC.} Rates 1/2, 2/3, 3/4 with block lengths 576/1152/2304 bits (gr-qradiolink) recover part of the SNR penalty of GDSS relative to DSSS \cite{shakeel2023,chung2001}.
+
+\noindent\textbf{Layer 4 -- ChaCha20-Poly1305.} RFC~8439 AEAD protects payload confidentiality and integrity before spreading \cite{rfc8439}.
+
+\noindent\textbf{Layer 5 -- Brainpool ECDH.} BSI-influenced curve family; shared secret never sent on-air when public keys are authenticated out-of-band \cite{rfc5639,bsi2018}.
+
+\noindent\textbf{Layer 6 -- Web of trust.} GnuPG signing chains bind public keys to verified identities; mitigates MITM on long-term keys.
+
+\noindent\textbf{Layer 7 -- Kernel keyring.} Session subkeys may reside in the Linux keyring to limit user-space exposure; keys may clear when hardware tokens are removed \cite{repo_gdss}.
+
+\noindent\textbf{Layer 8 -- Nitrokey HSM.} Private signing/decryption keys can remain on-device; PIN and brick policies address physical seizure \cite{repo_gdss}.
+
+\noindent\textbf{Layer 9 -- Operations.} Mobility, short duty cycles, and traffic discipline raise the cost of long integrations against the noise floor \cite{repo_gdss}.
+
+\vspace{0.5em}
+\noindent\textbf{Appendix F: Fuzzing and formal methods (gr-linux-crypto).} The companion repository reports LibFuzzer campaigns exceeding 805 million executions without crashes, CBMC checks on core paths, and dudect-style timing experiments with $t$-statistics below published thresholds on representative MAC operations \cite{repo_crypto_results,reparaz2017}. These results validate the \emph{crypto library substrate}, not the radio-specific GDSS code path end-to-end.
+
+\vspace{0.5em}
+\noindent\textbf{Appendix G: IQ test artefacts.} The generator writes paired \texttt{.cf32} and metadata; analysis scripts check mean, variance symmetry, kurtosis, skewness, autocorrelation, KL divergence between standard and keyed transmissions, and cross-correlation of keyed sync bursts across synthetic sessions. All are software regressions; they do not replace calibrated laboratory spectrum measurements.
+
+\section{Intellectual Property and Licensing}
+The \textbf{GR-K-GDSS} (\texttt{gr-k-gdss}) software implementation is licensed under the \textbf{GNU General Public License v3.0 or later} (SPDX: \texttt{GPL-3.0-or-later}). C and C++ source files in that repository carry matching SPDX identifiers.
+
+The project is \textbf{registered with the Open Invention Network} (OIN), a defensive patent pool that supports Linux-related ecosystems.
+
+The \textbf{full text} of the GNU GPL version~3 is shipped in the GR-K-GDSS repository and can be read directly at:
+
+\noindent\url{https://raw.githubusercontent.com/Supermagnum/GR-K-GDSS/main/LICENSE}
+
+\noindent\textbf{Related repositories} (each documents its own license in-tree; comply with all applicable terms when building the stack):
+
+\begin{itemize}\setlength{\itemsep}{2pt}
+  \item \textbf{GR-K-GDSS:} \url{https://github.com/Supermagnum/GR-K-GDSS}
+  \item \textbf{gr-linux-crypto:} \url{https://github.com/Supermagnum/gr-linux-crypto}
+  \item \textbf{gr-qradiolink:} \url{https://github.com/Supermagnum/gr-qradiolink}
+\end{itemize}
+
+\begin{thebibliography}{99}
+\bibitem{shakeel2023} I. Shakeel et al., ``Gaussian-Distributed Spread-Spectrum for Covert Communications,'' \textit{Sensors} 2023, 23(8), 4081. doi:10.3390/s23084081
+\bibitem{rfc8439} Y. Nir, A. Langley, RFC 8439, ChaCha20-Poly1305, 2018.
+\bibitem{rfc5869} H. Krawczyk, P. Eronen, RFC 5869, HKDF, 2010.
+\bibitem{rfc5639} M. Lochter, J. Merkle, RFC 5639, Brainpool Curves, 2010.
+\bibitem{bash2015} B. A. Bash \textit{et al.}, IEEE Commun. Mag., 2015.
+\bibitem{bash2013} B. A. Bash \textit{et al.}, IEEE J. Sel. Areas Commun., 2013.
+\bibitem{turner1991} L. F. Turner, NAECON, 1991.
+\bibitem{gardner1992} W. A. Gardner, C. M. Spooner, IEEE Trans. Commun., 1992.
+\bibitem{chung2001} S.-Y. Chung \textit{et al.}, IEEE Commun. Lett., 2001.
+\bibitem{bernstein2008} D. J. Bernstein, SASC 2008.
+\bibitem{bsi2018} BSI TR-03111, v2.10, 2018.
+\bibitem{reparaz2017} O. Reparaz \textit{et al.}, CHES 2017 (dudect).
+\bibitem{kaddoum2016} G. Kaddoum, IEEE Access, 2016.
+\bibitem{itu1406} ITU-R P.1406, 2018.
+\bibitem{stanag4539} STANAG 4539, HF channel models.
+\bibitem{makhdoom2022} I. Makhdoom \textit{et al.}, Comput. Secur., 2022.
+\bibitem{soltani2018} R. Soltani \textit{et al.}, IEEE Trans. Wirel. Commun., 2018.
+\bibitem{repo_gdss} Supermagnum, ``gr-k-gdss,'' GitHub, 2025. \url{https://github.com/Supermagnum/GR-K-GDSS}
+\bibitem{repo_crypto} Supermagnum, ``gr-linux-crypto,'' GitHub, 2025. \url{https://github.com/Supermagnum/gr-linux-crypto}
+\bibitem{repo_crypto_results} gr-linux-crypto, \texttt{tests/TEST\_RESULTS.md}, 2026 snapshot.
+\bibitem{repo_qrl} Supermagnum, ``gr-qradiolink,'' GitHub, 2025. \url{https://github.com/Supermagnum/gr-qradiolink}
+\end{thebibliography}
+
+\end{document}

@@ -1,3 +1,5 @@
+![Open Invention Network member](../docs/oin-member-horiz.jpg)
+
 # gr-k-gdss unit tests
 
 Tests load `gnuradio.kgdss` from the system Python path (e.g. after `make install`). **You must install the module from your build directory before running tests**, or they will use an older installed version:
