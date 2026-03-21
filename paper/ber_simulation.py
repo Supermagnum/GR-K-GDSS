@@ -7,6 +7,7 @@ Models:
   - DSSS: Shakeel eq.1 theoretical reference.
   - Standard GDSS: BPSK chip x_i = s * |G_i|, receiver Z = sum_i r_i (unknown mask).
   - Keyed GDSS: x_i = s * m_i, m_i from Box-Muller, receiver Z = mean(r_i / m_i), MIN_MASK clamp.
+  - VHF Rayleigh: flat block fading (constant g per symbol); Doppler Hz labels scale noise only.
 """
 from __future__ import annotations
 
@@ -19,7 +20,8 @@ from scipy import special
 
 # Match gr-k-gdss spreader/despreader
 MIN_MASK = 1e-4
-SNR_DB_GRID = np.arange(-20, 6, 1.0, dtype=np.float64)
+# Upper end +25 dB: keyed mean(r/m) has strong noise enhancement; a short grid looked flat near 0.5 BER.
+SNR_DB_GRID = np.arange(-20, 26, 1.0, dtype=np.float64)
 N_VALUES = (64, 128, 256)
 
 # Bits per (SNR, scenario) for production; override with BER_MC_NUM_BITS for quick runs
@@ -112,6 +114,14 @@ def mc_ber_standard_gdss_awgn(
     return err / max(total, 1)
 
 
+def _rayleigh_doppler_noise_scale(fd_hz: float) -> float:
+    """
+    Stylised extra AWGN vs labelled max Doppler (pedestrian vs vehicular proxy).
+    Does not apply per-chip phase rotation (see keyed Rayleigh docstring).
+    """
+    return 1.0 + 0.35 * (fd_hz / 200.0)
+
+
 def mc_ber_keyed_rayleigh(
     n: int,
     eb_n0_db: float,
@@ -122,26 +132,27 @@ def mc_ber_keyed_rayleigh(
     chip_rate: float = 500_000.0,
 ) -> float:
     """
-    Rayleigh amplitude block fading (E[|h|^2]=1) with Doppler-induced phase rotation
-    across chips (ITU-R P.1406 land-mobile style, simplified baseband real model).
+    Flat Rayleigh block fading: one positive gain g per symbol, constant across all N chips
+    (slow fading vs symbol time). Then z = mean((s*g*m+n)/m) = s*g + mean(n/m), a coherent
+    keyed statistic.
+
+    Previous per-chip Doppler phase cos(phi_k) made mean(r/m) average the carrier to near
+    zero and drove BER to ~0.5 at all SNR. Doppler labels (50 Hz / 200 Hz) now enter only
+    via a mild noise scaling proxy, not chip-wise phase walk.
     """
-    sigma_n = _chip_noise_sigma(eb_n0_db, n)
+    _ = chip_rate  # retained for API / documentation (chip rate vs Doppler ratio)
+    sigma_n = _chip_noise_sigma(eb_n0_db, n) * _rayleigh_doppler_noise_scale(fd_hz)
     err = 0
     total = 0
-    dphi = 2.0 * math.pi * fd_hz / chip_rate
     while total < n_bits:
         b = min(batch, n_bits - total)
         s = rng.choice([-1.0, 1.0], size=b)
-        h = rng.rayleigh(scale=1.0 / math.sqrt(2.0), size=b)
-        phase0 = rng.uniform(0, 2 * math.pi, size=b)
+        g = rng.rayleigh(scale=1.0 / math.sqrt(2.0), size=(b, 1))
         u1 = rng.random((b, n))
         u2 = rng.random((b, n))
         m = _clamp_mask(_box_muller_pair(u1, u2))
-        k = np.arange(n, dtype=np.float64)[None, :]
-        phi = phase0[:, None] + dphi * k
-        h_eff = h[:, None] * np.cos(phi)
         noise = rng.standard_normal((b, n)) * sigma_n
-        r = s[:, None] * h_eff * m + noise
+        r = s[:, None] * g * m + noise
         z = np.mean(r / m, axis=1)
         err += int(np.sum(np.sign(z) != np.sign(s)))
         total += b
@@ -157,21 +168,17 @@ def mc_ber_standard_gdss_rayleigh(
     fd_hz: float = 50.0,
     chip_rate: float = 500_000.0,
 ) -> float:
-    sigma_n = _chip_noise_sigma(eb_n0_db, n)
+    _ = chip_rate
+    sigma_n = _chip_noise_sigma(eb_n0_db, n) * _rayleigh_doppler_noise_scale(fd_hz)
     err = 0
     total = 0
-    dphi = 2.0 * math.pi * fd_hz / chip_rate
     while total < n_bits:
         b = min(batch, n_bits - total)
         s = rng.choice([-1.0, 1.0], size=b)
-        h = rng.rayleigh(scale=1.0 / math.sqrt(2.0), size=b)
-        phase0 = rng.uniform(0, 2 * math.pi, size=b)
+        g = rng.rayleigh(scale=1.0 / math.sqrt(2.0), size=(b, 1))
         a = np.abs(rng.standard_normal((b, n)))
-        k = np.arange(n, dtype=np.float64)[None, :]
-        phi = phase0[:, None] + dphi * k
-        h_eff = h[:, None] * np.cos(phi)
         noise = rng.standard_normal((b, n)) * sigma_n
-        r = s[:, None] * h_eff * a + noise
+        r = s[:, None] * g * a + noise
         z = np.sum(r, axis=1)
         err += int(np.sum(np.sign(z) != np.sign(s)))
         total += b
@@ -262,12 +269,21 @@ def ldpc_effective_ber(
     coding_gain_db: float,
 ) -> np.ndarray:
     """Ideal rate-1/2: shift SNR axis by coding gain (equivalent Eb/N0 improvement)."""
-    # BER_u(Eb/N0) ~ BER_c(Eb/N0 + G)  =>  interpolate in log-BER vs SNR
     snr_axis = SNR_DB_GRID
     snr_shifted = snr_axis + coding_gain_db
-    # build uncoded curve as function of snr, sample at shifted points via interp on log ber
     logb = np.log10(np.clip(uncoded_ber, 1e-12, 0.49))
-    return np.clip(10 ** np.interp(snr_shifted, snr_axis, logb), 1e-12, 0.49)
+    log_out = np.interp(
+        np.clip(snr_shifted, snr_axis[0], snr_axis[-1]),
+        snr_axis,
+        logb,
+    )
+    # Extrapolate in log-BER when coding gain pushes past the simulated SNR grid (steep tail).
+    right = snr_shifted > snr_axis[-1]
+    if np.any(right):
+        slope = (logb[-1] - logb[-2]) / (snr_axis[-1] - snr_axis[-2] + 1e-30)
+        log_out = np.asarray(log_out, dtype=np.float64).copy()
+        log_out[right] = logb[-1] + slope * (snr_shifted[right] - snr_axis[-1])
+    return np.clip(10**log_out, 1e-12, 0.49)
 
 
 def run_awgn_curves(seed: int = 42) -> Dict[str, np.ndarray]:

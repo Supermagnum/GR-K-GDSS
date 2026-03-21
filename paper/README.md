@@ -11,7 +11,9 @@ This folder builds the Cryptographically Keyed GDSS academic-style preprint.
 
 ## Build
 
-BER figures (Figs. 7-10) read Monte Carlo results from `figures/ber_mc_results.npz`. Generate that file first (full paper default: `10^6` bits per SNR per curve; expect a long run):
+BER figures (Figs. 7-10) read Monte Carlo results from `figures/ber_mc_results.npz`. The SNR grid is $E_b/N_0$ from **-20 dB to +25 dB** (step 1 dB). The upper end is needed because keyed `mean(r/m)` has strong noise enhancement: a short grid can look like a stuck receiver near BER 0.5. VHF curves use **flat block Rayleigh** (constant gain per symbol); per-chip Doppler phase was removed because it collapses the keyed combiner.
+
+Generate `ber_mc_results.npz` first (full paper default: `10^6` bits per SNR per curve; expect a long run):
 
 ```bash
 cd paper
