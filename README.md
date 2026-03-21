@@ -5,6 +5,8 @@ A highly experimental Cryptographically keyed GDSS proposal.
 
 The developer used curiosity to piece the suggested improvements in this project together. AI assisted with documentation and coding.
 
+**Plain-language overview (no radio or math background required):** [GR-K-GDSS for Dummies](docs/GR-K-GDSS-for-Dummies.md).
+
 ---
 
 # Cryptographically Keyed GDSS — A Comparison with Standard GDSS
@@ -104,6 +106,7 @@ restricted by any state or commercial actor.
 
 - [Who built this and why](#who-built-this-and-why)
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
+- [GR-K-GDSS for Dummies (plain language)](docs/GR-K-GDSS-for-Dummies.md)
 
 1. [Background](#1-background)
 2. [What is GDSS?](#2-what-is-gdss)
@@ -116,14 +119,15 @@ restricted by any state or commercial actor.
 9. [What Remains Unresolved](#9-what-remains-unresolved)
 10. [Sources and Further Reading](#10-sources-and-further-reading)
 11. [Build and Install](#11-build-and-install)
-12. [Usage](docs/USAGE.md)
-13. [Examples](examples/)
-14. [Testing](docs/TESTING.md)
-15. [Test results](docs/TEST_RESULTS.md)
-16. [Technical terms index](docs/GLOSSARY.md)
-17. [KGDSS preprint](paper/kgdss_paper.tex) ([PDF on GitHub](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf))
-18. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
-19. [Publication and IP Protection](#publication-and-ip-protection)
+12. [GR-K-GDSS for Dummies (plain language)](docs/GR-K-GDSS-for-Dummies.md)
+13. [Usage](docs/USAGE.md)
+14. [Examples](examples/)
+15. [Testing](docs/TESTING.md)
+16. [Test results](docs/TEST_RESULTS.md)
+17. [Technical terms index](docs/GLOSSARY.md)
+18. [KGDSS preprint](paper/kgdss_paper.tex) ([PDF on GitHub](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf))
+19. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
+20. [Publication and IP Protection](#publication-and-ip-protection)
 
 ---
 
