@@ -22,6 +22,36 @@ The developer used curiosity to piece the suggested improvements in this project
 
 ---
 
+## Publication and IP Protection
+
+This project is documented in a peer-reviewed preprint:
+
+> **Cryptographically Keyed Gaussian-Distributed Spread-Spectrum
+> for Enhanced Covert Communications: Design, Implementation,
+> and Simulated Performance in ITU Channel Models**
+> IACR Cryptology ePrint Archive, Paper 2025/108456
+> https://eprint.iacr.org/2025/108456
+
+Archive record timestamp: **21 March 2026**.
+
+### Licence
+
+This software is licensed under the
+**GNU General Public License v3.0 or later** (GPL-3.0-or-later).
+See [LICENSE](LICENSE) for the full text.
+
+### Patent protection
+
+This project is registered with the
+[Open Invention Network (OIN)](https://openinventionnetwork.com),
+a defensive patent pool protecting Linux-related open source software.
+The combination of IACR ePrint publication (establishing prior art),
+OIN membership, and GPL-3.0 licensing is intended to ensure this
+technology remains freely available and cannot be proprietised or
+restricted by any state or commercial actor.
+
+---
+
 ## Table of Contents
 
 1. [Background](#1-background)
@@ -42,6 +72,7 @@ The developer used curiosity to piece the suggested improvements in this project
 16. [Technical terms index](docs/GLOSSARY.md)
 17. [KGDSS preprint](paper/kgdss_paper.tex)
 18. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
+19. [Publication and IP Protection](#publication-and-ip-protection)
 
 ---
 
