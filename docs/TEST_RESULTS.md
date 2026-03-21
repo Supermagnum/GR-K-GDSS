@@ -2,8 +2,9 @@
 
 This document records snapshot results from the gr-k-gdss test suite. For how to run the tests and what they do, see [TESTING.md](TESTING.md).
 
-**Last recorded run: 6 March 2026 03:49**
+**Last recorded run: 21 March 2026**
 
+- **pytest:** 37 passed, 1 skipped (38 collected). `TestT3KeyringRoundTrip::test_keyring_round_trip` is skipped when no keyring is available (expected in many environments).
 - **IQ file analysis:** 29 passed, 0 failed, 0 warnings. Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
 - **Preprint BER / channel simulations (not pytest):** Statistical Monte Carlo figures for [Section 7](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.tex) live under `paper/figures/` (`fig7_awgn_ber.png` through `fig10_ldpc.png`). Regenerate via [paper/README.md](../paper/README.md) (`ber_simulation.py`, `gen_figures.py`). See [Preprint BER and ITU/STANAG-style channel figures](#preprint-ber-and-itustanag-style-channel-figures) below.
 
@@ -24,50 +25,58 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
 
 ## Unit tests (pytest)
 
-Run: `pytest tests/ -v` from the repository root (after installing the module and gr-linux-crypto). Example result with keyring available (Linux, Python 3.12):
+Run: `pytest tests/ -v` from the repository root (after installing the module and gr-linux-crypto). Example result (Linux, Python 3.12):
 
 ```
-====================================================================================== test session starts =======================================================================================
-platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /home/haaken/gr-test-env/bin/python3
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0 -- /usr/bin/python3
 cachedir: .pytest_cache
-rootdir: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/GR-K-GDSS
-collected 30 items
+rootdir: /path/to/GR-K-GDSS
+collecting ... collected 38 items
 
-tests/test_cross_layer.py::TestCrossLayerFullStackRoundTrip::test_full_stack_round_trip PASSED                                                                                             [  3%]
-tests/test_t1_spreader_despreader.py::TestT1RoundTrip::test_round_trip PASSED                                                                                                              [  6%]
-tests/test_t1_spreader_despreader.py::TestT1KeystreamDeterminism::test_keystream_determinism PASSED                                                                                        [ 10%]
-tests/test_t1_spreader_despreader.py::TestT1KeySensitivity::test_key_sensitivity PASSED                                                                                                    [ 13%]
-tests/test_t1_spreader_despreader.py::TestT1WrongKeyDespreader::test_wrong_key_despreader PASSED                                                                                          [ 16%]
-tests/test_t1_spreader_despreader.py::TestT1NonceSensitivity::test_nonce_sensitivity PASSED                                                                                                [ 20%]
-tests/test_t1_spreader_despreader.py::TestT1InvalidKeySize::test_key_16_throws PASSED                                                                                                     [ 23%]
-tests/test_t1_spreader_despreader.py::TestT1InvalidKeySize::test_key_31_throws PASSED                                                                                                      [ 26%]
-tests/test_t1_spreader_despreader.py::TestT1InvalidKeySize::test_key_33_throws PASSED                                                                                                     [ 30%]
-tests/test_t1_spreader_despreader.py::TestT1InvalidNonceSize::test_nonce_11_throws PASSED                                                                                                   [ 33%]
-tests/test_t1_spreader_despreader.py::TestT1InvalidNonceSize::test_nonce_13_throws PASSED                                                                                                   [ 36%]
-tests/test_t1_spreader_despreader.py::TestT1GaussianDistribution::test_gaussian_distribution PASSED                                                                                        [ 40%]
-tests/test_t1_spreader_despreader.py::TestT1NoNearZeroMask::test_no_near_zero_mask PASSED                                                                                                  [ 43%]
-tests/test_t1_spreader_despreader.py::TestT1BlockBoundaryContinuity::test_block_boundary_continuity PASSED                                                                                 [ 46%]
-tests/test_t2_sync_burst.py::TestT2PNDeterminism::test_pn_determinism PASSED                                                                                                              [ 50%]
-tests/test_t2_sync_burst.py::TestT2PNKeySensitivity::test_pn_key_sensitivity PASSED                                                                                                        [ 53%]
-tests/test_t2_sync_burst.py::TestT2PNBalance::test_pn_balance PASSED                                                                                                                      [ 56%]
-tests/test_t2_sync_burst.py::TestT2TimingOffsetDeterminism::test_timing_determinism PASSED                                                                                                 [ 60%]
-tests/test_t2_sync_burst.py::TestT2TimingOffsetRange::test_timing_offset_range PASSED                                                                                                      [ 63%]
-tests/test_t2_sync_burst.py::TestT2TimingOffsetDistribution::test_timing_offset_distribution PASSED                                                                                        [ 66%]
-tests/test_t2_sync_burst.py::TestT2GaussianEnvelope::test_gaussian_envelope_shape PASSED                                                                                                   [ 70%]
-tests/test_t3_key_derivation.py::TestT3OutputLength::test_output_length PASSED                                                                                                             [ 73%]
-tests/test_t3_key_derivation.py::TestT3DomainSeparation::test_domain_separation PASSED                                                                                                    [ 76%]
-tests/test_t3_key_derivation.py::TestT3Determinism::test_determinism PASSED                                                                                                               [ 80%]
-tests/test_t3_key_derivation.py::TestT3InputSensitivity::test_input_sensitivity PASSED                                                                                                    [ 83%]
-tests/test_t3_key_derivation.py::TestT3NonceConstruction::test_different_tx_seq_different_nonce PASSED                                                                                     [ 86%]
-tests/test_t3_key_derivation.py::TestT3NonceConstruction::test_gdss_nonce_length PASSED                                                                                                    [ 90%]
-tests/test_t3_key_derivation.py::TestT3NonceConstruction::test_payload_nonce_length PASSED                                                                                                 [ 93%]
-tests/test_t3_key_derivation.py::TestT3NonceConstruction::test_session_tx_seq_collision_avoidance PASSED                                                                                    [ 96%]
-tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip PASSED                                                                                                    [100%]
+tests/test_cross_layer.py::TestCrossLayerFullStackRoundTrip::test_full_stack_round_trip PASSED [  2%]
+tests/test_t1_spreader_despreader.py::TestT1RoundTrip::test_round_trip PASSED [  5%]
+tests/test_t1_spreader_despreader.py::TestT1KeystreamDeterminism::test_keystream_determinism PASSED [  7%]
+tests/test_t1_spreader_despreader.py::TestT1KeySensitivity::test_key_sensitivity PASSED [ 10%]
+tests/test_t1_spreader_despreader.py::TestT1WrongKeyDespreader::test_wrong_key_despreader PASSED [ 13%]
+tests/test_t1_spreader_despreader.py::TestT1NonceSensitivity::test_nonce_sensitivity PASSED [ 15%]
+tests/test_t1_spreader_despreader.py::TestT1InvalidKeySize::test_key_16_throws PASSED [ 18%]
+tests/test_t1_spreader_despreader.py::TestT1InvalidKeySize::test_key_31_throws PASSED [ 21%]
+tests/test_t1_spreader_despreader.py::TestT1InvalidKeySize::test_key_33_throws PASSED [ 23%]
+tests/test_t1_spreader_despreader.py::TestT1InvalidNonceSize::test_nonce_11_throws PASSED [ 26%]
+tests/test_t1_spreader_despreader.py::TestT1InvalidNonceSize::test_nonce_13_throws PASSED [ 28%]
+tests/test_t1_spreader_despreader.py::TestT1GaussianDistribution::test_gaussian_distribution PASSED [ 31%]
+tests/test_t1_spreader_despreader.py::TestT1NoNearZeroMask::test_no_near_zero_mask PASSED [ 34%]
+tests/test_t1_spreader_despreader.py::TestT1BlockBoundaryContinuity::test_block_boundary_continuity PASSED [ 36%]
+tests/test_t1_spreader_despreader.py::TestT1SetKeyMessagePort::test_round_trip_via_set_key_message PASSED [ 39%]
+tests/test_t2_sync_burst.py::TestT2PNDeterminism::test_pn_determinism PASSED [ 42%]
+tests/test_t2_sync_burst.py::TestT2PNKeySensitivity::test_pn_key_sensitivity PASSED [ 44%]
+tests/test_t2_sync_burst.py::TestT2PNBalance::test_pn_balance PASSED     [ 47%]
+tests/test_t2_sync_burst.py::TestT2TimingOffsetDeterminism::test_timing_determinism PASSED [ 50%]
+tests/test_t2_sync_burst.py::TestT2TimingOffsetRange::test_timing_offset_range PASSED [ 52%]
+tests/test_t2_sync_burst.py::TestT2TimingOffsetDistribution::test_timing_offset_distribution PASSED [ 55%]
+tests/test_t2_sync_burst.py::TestT2GaussianEnvelope::test_gaussian_envelope_shape PASSED [ 57%]
+tests/test_t2_sync_burst.py::TestT2KeyedGaussianMask::test_mask_determinism PASSED [ 60%]
+tests/test_t2_sync_burst.py::TestT2KeyedGaussianMask::test_mask_different_nonce_different_output PASSED [ 63%]
+tests/test_t2_sync_burst.py::TestT2KeyedGaussianMask::test_mask_shape PASSED [ 65%]
+tests/test_t2_sync_burst.py::TestT2SyncBurstNonce::test_sync_burst_nonce_length PASSED [ 68%]
+tests/test_t2_sync_burst.py::TestT2SyncBurstNonce::test_sync_burst_nonce_per_session PASSED [ 71%]
+tests/test_t3_key_derivation.py::TestT3OutputLength::test_output_length PASSED [ 73%]
+tests/test_t3_key_derivation.py::TestT3DomainSeparation::test_domain_separation PASSED [ 76%]
+tests/test_t3_key_derivation.py::TestT3Determinism::test_determinism PASSED [ 78%]
+tests/test_t3_key_derivation.py::TestT3InputSensitivity::test_input_sensitivity PASSED [ 81%]
+tests/test_t3_key_derivation.py::TestT3NonceConstruction::test_different_tx_seq_different_nonce PASSED [ 84%]
+tests/test_t3_key_derivation.py::TestT3NonceConstruction::test_gdss_nonce_length PASSED [ 86%]
+tests/test_t3_key_derivation.py::TestT3NonceConstruction::test_payload_nonce_length PASSED [ 89%]
+tests/test_t3_key_derivation.py::TestT3NonceConstruction::test_session_tx_seq_collision_avoidance PASSED [ 92%]
+tests/test_t3_key_derivation.py::TestT3SyncBurstNonce::test_sync_burst_nonce_distinct_from_data_nonce PASSED [ 94%]
+tests/test_t3_key_derivation.py::TestT3SyncBurstNonce::test_sync_burst_nonce_length PASSED [ 97%]
+tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip SKIPPED [100%]
 
-======================================================================================= 30 passed in 0.20s ==============
+======================== 37 passed, 1 skipped in 0.43s =========================
 ```
 
-**Summary:** 30 passed, 0 failed. (With a build that supports empty key/nonce and key_injector, TestT1SetKeyMessagePort may run for 31 passed. The suite now also includes tests for sync-burst keyed masking and gdss_sync_burst_nonce; after a full install from current source, 33–38 tests may run depending on environment.)
+**Summary:** 37 passed, 1 skipped (38 collected). With a keyring available, the keyring round-trip test may run instead of skip (38 passed, 0 skipped).
 
 ---
 
@@ -77,7 +86,7 @@ Run `python3 tests/generate_iq_test_files.py`. Example output:
 
 ```
 VULNERABILITY CONFIRMED: Standard GDSS cross-session peak = 1.000
-PROTECTION CONFIRMED: Keyed GDSS cross-session peak = 0.107
+PROTECTION CONFIRMED: Keyed GDSS cross-session peak = 0.103
 Generated all IQ test files in /path/to/GR-K-GDSS/tests/iq_files
 ```
 
@@ -128,7 +137,7 @@ Keyed GDSS    (sessions A vs B):  0.1028  PROTECTED
 Improvement:  9.7x reduction in cross-session correlation
 ```
 
-**Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03; correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.103 PROTECTED, 9.7x improvement. The keyed residual (e.g. ~0.10) is a simulation artifact; in a real channel it would be lower and is not considered exploitable (see [TESTING.md](TESTING.md)).
+**Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03; correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.1028 PROTECTED, 9.7x improvement. The keyed residual (e.g. ~0.10) is a simulation artifact; in a real channel it would be lower and is not considered exploitable (see [TESTING.md](TESTING.md)).
 
 #### Explanation of analysis tests
 
