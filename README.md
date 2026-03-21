@@ -32,6 +32,8 @@ This project is documented in a peer-reviewed preprint:
 > IACR Cryptology ePrint Archive, Paper 2025/108456
 > https://eprint.iacr.org/2025/108456
 
+Archival PDF in this repository: [paper/kgdss_paper.pdf](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf).
+
 Archive record timestamp: **21 March 2026**.
 
 ### Licence
@@ -70,7 +72,7 @@ restricted by any state or commercial actor.
 14. [Testing](docs/TESTING.md)
 15. [Test results](docs/TEST_RESULTS.md)
 16. [Technical terms index](docs/GLOSSARY.md)
-17. [KGDSS preprint](paper/kgdss_paper.tex)
+17. [KGDSS preprint](paper/kgdss_paper.tex) ([PDF on GitHub](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf))
 18. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
 19. [Publication and IP Protection](#publication-and-ip-protection)
 
