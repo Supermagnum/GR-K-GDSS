@@ -5,6 +5,7 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
 **Last recorded run: 6 March 2026 03:49**
 
 - **IQ file analysis:** 29 passed, 0 failed, 0 warnings. Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
+- **Preprint BER / channel simulations (not pytest):** Statistical Monte Carlo figures for [Section 7](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.tex) live under `paper/figures/` (`fig7_awgn_ber.png` through `fig10_ldpc.png`). Regenerate via [paper/README.md](../paper/README.md) (`ber_simulation.py`, `gen_figures.py`). See [Preprint BER and ITU/STANAG-style channel figures](#preprint-ber-and-itustanag-style-channel-figures) below.
 
 ---
 
@@ -17,6 +18,7 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
   - [IQ comparison plots](#iq-comparison-plots)
   - [Spectrum snapshot plots](#spectrum-snapshot-plots)
   - [Real recorded noise (File 08): interpretation](#real-recorded-noise-file-08-interpretation)
+- [Preprint BER and ITU/STANAG-style channel figures](#preprint-ber-and-itustanag-style-channel-figures)
 
 ---
 
@@ -193,3 +195,41 @@ The updated real recorded noise spectrum is very informative. The Y-axis scale i
 ![Spectrum realistic + standard GDSS](../tests/iq_files/spectrum_realistic_plus_standard_gdss.png)
 
 ![Spectrum realistic + keyed GDSS](../tests/iq_files/spectrum_realistic_plus_keyed_gdss.png)
+
+---
+
+## Preprint BER and ITU/STANAG-style channel figures
+
+These plots are **not** part of the pytest or IQ analysis pipeline. They are **NumPy/SciPy Monte Carlo** outputs used in the KGDSS preprint ([`paper/kgdss_paper.tex`](../paper/kgdss_paper.tex), Section 7). Models are simplified statistical channels (not GNU Radio hardware runs): AWGN chip combining, **ITU-R P.1406-inspired** VHF land-mobile (Rayleigh fading with Doppler phase walk), **STANAG 4539-inspired** HF tapped-delay-line profiles, and ideal LDPC SNR shifts. Full methodology and build order: [`paper/README.md`](../paper/README.md).
+
+**Source scripts:** [`paper/ber_simulation.py`](../paper/ber_simulation.py) writes `paper/figures/ber_mc_results.npz`; [`paper/gen_figures.py`](../paper/gen_figures.py) renders PNGs. Override `BER_MC_NUM_BITS` for faster dry runs (default `10^6` bits per SNR point per curve for publication-style smoothness).
+
+| File | Role |
+|------|------|
+| `paper/figures/fig7_awgn_ber.png` | AWGN: DSSS (Shakeel eq.1) vs Monte Carlo standard and keyed GDSS, N = 64, 128, 256 |
+| `paper/figures/fig8_vhf_ber.png` | VHF-style Rayleigh + Doppler (50 Hz / 200 Hz); SOQPSK Mode 1 vs 2; N = 256; uncoded and LDPC-shifted keyed GDSS |
+| `paper/figures/fig9_hf_ber.png` | HF-style AWGN / Good / Poor / Disturbed taps; N = 256; uncoded standard GDSS vs LDPC-coded keyed GDSS |
+| `paper/figures/fig10_ldpc.png` | Keyed AWGN N = 256: uncoded vs ideal rate-1/2 LDPC (576 vs 1152 bit block gain anchors) |
+
+**GitHub (main branch) direct links to PNGs:**
+
+- [fig7_awgn_ber.png](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/figures/fig7_awgn_ber.png)
+- [fig8_vhf_ber.png](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/figures/fig8_vhf_ber.png)
+- [fig9_hf_ber.png](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/figures/fig9_hf_ber.png)
+- [fig10_ldpc.png](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/figures/fig10_ldpc.png)
+
+### Figure 7 (AWGN BER)
+
+![Figure 7 AWGN BER](../paper/figures/fig7_awgn_ber.png)
+
+### Figure 8 (VHF land mobile, ITU-inspired)
+
+![Figure 8 VHF BER](../paper/figures/fig8_vhf_ber.png)
+
+### Figure 9 (HF STANAG-inspired)
+
+![Figure 9 HF BER](../paper/figures/fig9_hf_ber.png)
+
+### Figure 10 (LDPC coding gain)
+
+![Figure 10 LDPC BER](../paper/figures/fig10_ldpc.png)
