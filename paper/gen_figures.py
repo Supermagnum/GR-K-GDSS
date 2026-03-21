@@ -243,7 +243,7 @@ def _ber_clip_plot(y: np.ndarray) -> np.ndarray:
 
 
 def fig7_awgn_ber_fallback():
-    snr = np.arange(-20, 6, 1.0)
+    snr = np.arange(-20, 26, 1.0)
     fig, ax = plt.subplots(figsize=(7, 4.5), dpi=150)
     styles = {"64": ("--", 1.0), "128": ("--", 0.7), "256": ("--", 0.4)}
     for n, (ls, al) in styles.items():
@@ -336,7 +336,7 @@ def fig8_vhf():
     ax1.semilogy(snr, _ber_clip_plot(d["vhf_ped_50_m1_coded"]), "--", color=MDPI_BLUE, lw=1.0, alpha=0.85, label="Mode 1 + LDPC r=1/2")
     ax1.semilogy(snr, _ber_clip_plot(d["vhf_ped_50_m2_unc"]), "-.", color=GREEN, lw=1.2, label="Mode 2 uncoded")
     ax1.semilogy(snr, _ber_clip_plot(d["vhf_ped_50_m2_coded"]), ":", color=GREEN, lw=1.5, label="Mode 2 + LDPC r=1/2")
-    ax1.set_title("Pedestrian, max Doppler 50 Hz (Rayleigh + phase walk)")
+    ax1.set_title("Pedestrian label (50 Hz); flat block Rayleigh")
     ax1.set_xlabel(r"$E_b/N_0$ (dB)")
     ax1.set_ylabel("BER")
     ax1.grid(True, which="both", alpha=0.3)
@@ -351,8 +351,14 @@ def fig8_vhf():
     ax2.legend(fontsize=5, loc="upper right")
     nbits = int(d["meta_bits"][0]) if "meta_bits" in d.files else 0
     sub = f", N=256, {nbits} bits/SNR" if nbits else ", N=256"
-    fig.suptitle(f"Figure 8. VHF land mobile (simplified ITU-R P.1406-style Rayleigh){sub}", fontsize=9, fontweight="bold", color=MDPI_BLUE)
-    fig.tight_layout()
+    fig.suptitle(
+        f"Figure 8. VHF land mobile (ITU-R P.1406-inspired): flat block Rayleigh; "
+        f"Doppler as noise scaling (not per-chip phase on keyed mean(r/m)). Eb/N0 to +25 dB.{sub}",
+        fontsize=8,
+        fontweight="bold",
+        color=MDPI_BLUE,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
     fig.savefig(os.path.join(FIG, "fig8_vhf_ber.png"), bbox_inches="tight")
     plt.close(fig)
 
@@ -457,7 +463,13 @@ def fig10_ldpc():
     ax.legend(fontsize=6)
     nbits = int(d["meta_bits"][0]) if "meta_bits" in d.files else 0
     sub = f" ({nbits} bits/SNR on uncoded MC)" if nbits else ""
-    ax.set_title(f"Figure 10. LDPC coding gain vs block length (AWGN keyed GDSS){sub}", fontsize=9, fontweight="bold", color=MDPI_BLUE)
+    ax.set_title(
+        f"Figure 10. LDPC coding gain (ideal SNR shift); keyed uncoded MC to +25 dB Eb/N0 "
+        f"(mask division limits steepness vs standard GDSS){sub}",
+        fontsize=8,
+        fontweight="bold",
+        color=MDPI_BLUE,
+    )
     fig.tight_layout()
     fig.savefig(os.path.join(FIG, "fig10_ldpc.png"), bbox_inches="tight")
     plt.close(fig)

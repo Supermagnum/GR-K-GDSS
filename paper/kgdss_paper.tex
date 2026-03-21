@@ -15,6 +15,8 @@
 \usepackage{caption}
 \usepackage{float}
 \usepackage{dblfloatfix}
+\usepackage{placeins}
+\usepackage{cuted}
 \usepackage[margin=2.5cm]{geometry}
 
 \definecolor{mdpiblue}{HTML}{004E8F}
@@ -155,11 +157,11 @@ Name & Info string & Purpose \\
 \end{tabular}
 \end{table}
 
-\begin{figure*}[t]
+\begin{strip}
 \centering
 \includegraphics[width=0.92\textwidth]{\fig{fig2_key_derivation.png}}
-\caption{Key derivation hierarchy (conceptual).}
-\end{figure*}
+\captionof{figure}{Key derivation hierarchy (conceptual).}
+\end{strip}
 
 \subsection{Cryptographic masking}
 Sixteen ChaCha20 bytes per chip provide four 32-bit uniforms; Box--Muller yields two Gaussian masks:
@@ -177,18 +179,18 @@ Implementation matches \texttt{kgdss\_spreader\_cc} / \texttt{kgdss\_despreader\
 \texttt{derive\_sync\_schedule}: derives per-epoch offsets in $[-w,w]$ ms via ChaCha20-indexed uniforms \cite{repo_gdss}.\\
 \texttt{gaussian\_envelope}: rise/fall $\exp(-x^2/2)$ on flanks, \texttt{rise\_fraction}=0.1.
 
-\begin{figure*}[t]
+\begin{strip}
 \centering
 \includegraphics[width=0.88\textwidth]{\fig{fig4_sync_burst.png}}
-\caption{Conceptual standard vs keyed sync placement.}
-\end{figure*}
+\captionof{figure}{Conceptual standard vs keyed sync placement.}
+\end{strip}
 
 \subsection{Signal chain}
-\begin{figure*}[t]
+\begin{strip}
 \centering
 \includegraphics[width=0.95\textwidth]{\fig{fig1_block_diagram.png}}
-\caption{Transmit stack and keying path (after \texttt{tx\_example\_kgdss.grc}).}
-\end{figure*}
+\captionof{figure}{Transmit stack and keying path (after \texttt{tx\_example\_kgdss.grc}).}
+\end{strip}
 
 \section{Implementation}
 \subsection{Modules}
@@ -335,7 +337,9 @@ Replay jamming & 5 & 7 & +2 \\
 \centering
 \caption{Key compromise scenarios (README).}
 \scriptsize
-\begin{tabular}{@{}p{3.2cm}p{3.5cm}p{3.8cm}@{}}
+\setlength{\tabcolsep}{3pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}p{0.28\columnwidth}p{0.34\columnwidth}p{0.36\columnwidth}@{}}
 \toprule
 Scenario & Protection & Outcome \\
 \midrule
@@ -344,12 +348,13 @@ Device active/unlocked & Keyring in use & Session exposure risk \\
 Compelled PIN + disposal option & Physical destruction & Key destroyed \\
 Destroyed before seizure & None left & Past sessions unrecoverable \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
-\begin{table*}[t]
+\begin{strip}
 \centering
-\caption{SOQPSK operating parameters (representative; see gr-qradiolink README).}
+\captionof{table}{SOQPSK operating parameters (representative; see gr-qradiolink README).}
 \small
 \begin{tabular}{@{}lllll@{}}
 \toprule
@@ -361,11 +366,11 @@ HF standard & Narrow HF & 4 kbps/carrier & 2.7 kHz & STANAG-style bands \\
 HF 10m & Wide HF & 9 kbps/carrier & 6 kHz & Higher-rate option \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{strip}
 
-\begin{table*}[t]
+\begin{strip}
 \centering
-\caption{gr-linux-crypto cross-validation (summary from TEST\_RESULTS.md).}
+\captionof{table}{gr-linux-crypto cross-validation (summary from TEST\_RESULTS.md).}
 \scriptsize
 \begin{tabular}{@{}llrrr@{}}
 \toprule
@@ -380,7 +385,7 @@ Wycheproof & ECDH Brainpool P-512r1 & (set) & all & 100\% \\
 Wycheproof & ECDSA per Brainpool curve & 475+ each & 475+ & 100\% \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{strip}
 
 \begin{table}[H]
 \centering
@@ -397,9 +402,9 @@ ChaCha20-Poly1305 & 11.5 & -- & -- & $<$100 \\
 \end{tabular}
 \end{table}
 
-\begin{table*}[t]
+\begin{strip}
 \centering
-\caption{IQ file analysis outcomes (\texttt{analyse\_iq\_files.py}, 29 checks PASS).}
+\captionof{table}{IQ file analysis outcomes (\texttt{analyse\_iq\_files.py}, 29 checks PASS).}
 \scriptsize
 \begin{tabular}{@{}ll@{}}
 \toprule
@@ -415,11 +420,11 @@ File / comparison & Tests (all PASS) \\
 \texttt{13\_keyed\_gdss\_crosscorr} & Cross-session peak $<0.15$ \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{strip}
 
-\begin{table*}[t]
+\begin{strip}
 \centering
-\caption{gr-k-gdss pytest modules (snapshot: 37 passed, 1 skipped).}
+\captionof{table}{gr-k-gdss pytest modules (snapshot: 37 passed, 1 skipped).}
 \scriptsize
 \begin{tabular}{@{}ll@{}}
 \toprule
@@ -432,20 +437,24 @@ Module / test & Status \\
 Optional keyring / environment & 1 skipped \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{strip}
 
+\FloatBarrier
+\clearpage
 \section{BER Performance (Statistical Simulation)}
+% Full-width BER figures overlap twocolumn body text if kept as figure*[t]; use onecolumn here.
+\onecolumn
 \subsection{Simulation methodology}
 Following Shakeel et al., the DSSS reference is
 \begin{equation}
 P_b = \tfrac12\operatorname{erfc}\!\sqrt{N E_s/(2N_0)}.
 \label{eq:dsss}
 \end{equation}
-Curves in Figs.~\ref{fig:ber7}--\ref{fig:ber10} are produced by \texttt{paper/ber\_simulation.py} (NumPy/SciPy), aligned with the GNU Radio stack conceptually but without invoking the SDR runtime. Spreading factors $N\in\{64,128,256\}$ match the implementation. The SNR axis is $E_b/N_0$ in dB from $-20$ to $+5$ in 1~dB steps. Unless overridden by the environment variable \texttt{BER\_MC\_NUM\_BITS}, each plotted point uses $10^6$ simulated bits per receiver condition.
+Curves in Figs.~\ref{fig:ber7}--\ref{fig:ber10} are produced by \texttt{paper/ber\_simulation.py} (NumPy/SciPy), aligned with the GNU Radio stack conceptually but without invoking the SDR runtime. Spreading factors $N\in\{64,128,256\}$ match the implementation. The SNR axis is $E_b/N_0$ in dB from $-20$ to $+25$ in 1~dB steps (upper end extended so keyed \texttt{mean}$(r/m)$ curves are not mistaken for a stuck receiver near BER $=0.5$). Unless overridden by the environment variable \texttt{BER\_MC\_NUM\_BITS}, each plotted point uses $10^6$ simulated bits per receiver condition.
 
 Standard GDSS uses chips $x_i=s|G_i|$ with $G_i\sim\mathcal{N}(0,1)$ and decision $\operatorname{sign}(\sum_i r_i)$. Keyed GDSS uses Box--Muller masks $m_i$ (clamped to minimum magnitude $10^{-4}$ as in the C++ block) and $\operatorname{sign}(\operatorname{mean}_i(r_i/m_i))$. AWGN variance per chip follows the repetition-combine DSSS mapping so that the DSSS curve matches \eqref{eq:dsss}.
 
-VHF land mobile (ITU-R P.1406--inspired): Rayleigh amplitude per symbol, Doppler-induced phase walk across chips at 50~Hz (pedestrian) and 200~Hz (vehicular); SOQPSK Mode~2 is approximated by a $+0.6$~dB effective $E_b/N_0$ offset relative to Mode~1 (multicarrier diversity placeholder). LDPC rate $1/2$ overlays use ideal waterfall shifts ($\approx$5~dB on keyed curves) consistent with \cite{shakeel2023} and gr-qradiolink usage \cite{repo_qrl,chung2001}.
+VHF land mobile (ITU-R P.1406--inspired): \textbf{flat} Rayleigh block fading (one positive gain per symbol, constant across chips) with 50~Hz and 200~Hz \emph{labels} mapped to a mild extra AWGN scaling (vehicular harsher). Per-chip Doppler phase rotation is \emph{not} applied: it averages destructively in the keyed statistic $\mathrm{mean}(r_i/m_i)$ and incorrectly drives BER to $\approx0.5$. SOQPSK Mode~2 uses a $+0.6$~dB effective $E_b/N_0$ offset vs.\ Mode~1. LDPC rate $1/2$ overlays use ideal SNR shifts with log-BER extrapolation past the simulated grid where needed \cite{shakeel2023,repo_qrl,chung2001}.
 
 HF (STANAG~4539--inspired): tapped-delay-line profiles labelled AWGN, Good, Poor, and Disturbed convolve chip sequences before AWGN; comparisons use uncoded standard GDSS versus LDPC-shifted keyed GDSS as in Fig.~\ref{fig:ber9}.
 
@@ -477,40 +486,43 @@ Fig.~\ref{fig:ber9} uses $N{=}256$ across four stylised HF profiles.
 \subsection{LDPC coding gain}
 Fig.~\ref{fig:ber10} compares uncoded keyed AWGN ($N{=}256$) to ideal rate-$1/2$ gains of 4.8~dB (block 576) and 5.2~dB (block 1152), consistent with Shakeel et al.\ Figure~15 ordering.
 
-\begin{figure*}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.92\textwidth]{\fig{fig7_awgn_ber.png}}
 \caption{AWGN: DSSS \eqref{eq:dsss} vs Monte Carlo standard and keyed GDSS ($N=64,128,256$).}
 \label{fig:ber7}
-\end{figure*}
+\end{figure}
 
-\begin{figure*}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.92\textwidth]{\fig{fig8_vhf_ber.png}}
-\caption{VHF-style Rayleigh fading with Doppler phase walk; $N{=}256$, SOQPSK Mode~1 vs.\ Mode~2, uncoded and LDPC-shifted keyed GDSS.}
+\caption{VHF-style flat block Rayleigh; Doppler labels scale noise (not per-chip phase on keyed $\mathrm{mean}(r/m)$). $N{=}256$; Modes~1--2; uncoded and LDPC-shifted keyed GDSS; $E_b/N_0$ to $+25$~dB.}
 \label{fig:ber8}
-\end{figure*}
+\end{figure}
 
-\begin{figure*}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.92\textwidth]{\fig{fig9_hf_ber.png}}
 \caption{HF-style tapped-delay profiles (AWGN, Good, Poor, Disturbed): uncoded standard GDSS vs LDPC-coded keyed GDSS ($N{=}256$).}
 \label{fig:ber9}
-\end{figure*}
+\end{figure}
 
-\begin{figure*}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.88\textwidth]{\fig{fig10_ldpc.png}}
-\caption{Keyed GDSS on AWGN: uncoded vs ideal LDPC rate $1/2$ with 576- and 1152-bit block gain anchors ($N{=}256$).}
+\caption{Keyed GDSS on AWGN: uncoded Monte Carlo to $+25$~dB $E_b/N_0$ (mask division yields gradual slope); ideal LDPC rate $1/2$ shifts with 576- and 1152-bit gain anchors ($N{=}256$).}
 \label{fig:ber10}
-\end{figure*}
+\end{figure}
 
-\begin{figure*}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.95\textwidth]{\fig{fig6_histograms.png}}
 \caption{Histogram comparison (synthetic stand-in for IQ report files).}
-\end{figure*}
+\end{figure}
 
+\FloatBarrier
+\clearpage
+\twocolumn
 \section{Discussion}
 \subsection{Comparison to standard GDSS}
 Keyed GDSS closes the masking-strip gap and strengthens sync obscurity; PAPR remains high as in standard GDSS (Gaussian amplitudes). Operational security (short transmissions, mobility) complements physics limits (direction finding).
@@ -523,6 +535,18 @@ Gaussian chip amplitudes imply high peak-to-average power ratio relative to cons
 
 \subsection{Open problems}
 Formal indistinguishability games for ChaCha20-derived masks, complete OTA validation with Nitrokey-backed keys, and integration of ephemeral ECDH for forward secrecy remain outstanding \cite{repo_gdss}.
+
+\subsection{Threat model and operational context}
+Journalists, press photographers, humanitarian workers, and human rights monitors in conflict zones or under authoritarian surveillance face a possible threat from state-level SIGINT assets. Encryption conceals content but does not conceal the fact of transmission or the transmitter's location. Keyed GDSS below the noise floor addresses precisely this gap.
+
+\subsection{LinHT hardware platform}
+LinHT is the most operationally practical hardware available today. Built into a Retevis C62 case, it is visually indistinguishable from a standard commercial handheld---carrying it through a checkpoint does not immediately identify SDR equipment. The USB-C port accepts a Nitrokey~3 for hardware-protected key operations. The device runs full Linux: \texttt{gr-k-gdss} flowgraphs, GnuPG, and the session key derivation scripts from Section~4.3 run natively. The 32~GB eMMC stores keying material and flowgraphs. At 433~MHz with $N{=}128$ and 500~kHz spread, processing gain is 21~dB, placing the signal 21~dB below the noise floor of any narrowband ISM-band receiver. Combined with keyed Gaussian masking, session-unique sync bursts, and ChaCha20-Poly1305 payload encryption, the LinHT-based keyed GDSS stack provides covertness substantially beyond any commercially available encrypted radio in a comparable form factor.
+
+\subsubsection{Stack alignment}
+The GR-K-GDSS stack uses only components already recommended by the press-freedom community: GnuPG \cite{gnupg,fpf,eff}, Linux, and GNU Radio \cite{gnu_radio}. Nitrokey is commercially available and recommended by privacy advocates. LinHT hardware files are open-source \cite{linht_hw}. No export-controlled components or proprietary firmware are required---the stack is auditable end-to-end.
+
+\subsubsection{Deployment limitations (LinHT)}
+LinHT is experimental and not a consumer product; building requires PCB fabrication from Gerber files. No push-to-talk consumer UI exists for keyed GDSS at time of writing. GnuPG key exchange requires in-person meeting before deployment. LinHT battery life under continuous SDR operation is uncharacterised. Legal status of spread-spectrum transmissions in non-ISM bands varies by jurisdiction. This section describes a technical capability only and does not constitute operational guidance.
 
 \section{Conclusions}
 GR-K-GDSS integrates HKDF-separated keys, ChaCha20 Box--Muller masking, and sessionised sync helpers into GNU Radio. Repository tests support functional correctness and large cross-session correlation reduction in simulation. Future work: ephemeral ECDH, PQ KEM integration, OTA validation with hardware tokens, formal statistical analysis of ChaCha20-Gaussian outputs.
@@ -545,7 +569,7 @@ Clone \cite{repo_gdss}; install GNU Radio 3.10+, libsodium, gr-linux-crypto, gr-
 \noindent\textbf{Limitation reminder.} Section~7 uses statistical baseband models (not over-the-air captures). VHF and HF channels are simplified Rayleigh and tapped-delay abstractions; they are not full ITU-R P.1406 or STANAG~4539 reference simulators. LDPC curves apply ideal SNR shifts to the keyed uncoded Monte Carlo BER, not bit-true decoder output. Independent replication with waveform-accurate GNU Radio flowgraphs is required before quoting absolute link budgets.
 
 \vspace{0.8em}
-\noindent\textbf{Channel simulation disclaimer.} ITU-R P.1406 models terrestrial land-mobile propagation with height, clutter, and frequency-dependent path loss \cite{itu1406}. A faithful implementation couples geometry databases, antenna patterns, and time-varying mobile routes. Section~7.3 uses Rayleigh fading with chip-wise Doppler phase rotation at labelled max Doppler (50~Hz and 200~Hz), not the standard's full scenario classes. STANAG~4539 HF models specify tapped-delay-line profiles for poor, good, and disturbed conditions \cite{stanag4539}; Fig.~\ref{fig:ber9} uses stylised normalised taps and real-baseband BPSK-on-$I$ chip ISI before AWGN, not a full STANAG modem chain.
+\noindent\textbf{Channel simulation disclaimer.} ITU-R P.1406 models terrestrial land-mobile propagation with height, clutter, and frequency-dependent path loss \cite{itu1406}. A faithful implementation couples geometry databases, antenna patterns, and time-varying mobile routes. Section~7.3 uses flat block Rayleigh fading with Doppler \emph{labels} mapped to noise scaling, not chip-wise Doppler phase rotation on the keyed combiner, not the standard's full scenario classes. STANAG~4539 HF models specify tapped-delay-line profiles for poor, good, and disturbed conditions \cite{stanag4539}; Fig.~\ref{fig:ber9} uses stylised normalised taps and real-baseband BPSK-on-$I$ chip ISI before AWGN, not a full STANAG modem chain.
 
 \vspace{0.5em}
 \noindent\textbf{Comparison to Shakeel et al.\ Figure~14--15.} The original GDSS paper contrasts DSSS, GDSS, and LDPC-coded GDSS using full waveform simulation \cite{shakeel2023}. This preprint adds Monte Carlo chip-level keyed GDSS and ideal LDPC overlays; aligning every decibel with \cite{shakeel2023} still requires bit-matching SOQPSK pulse shapes, resampler group delay, and LDPC interleaving as built in gr-qradiolink \cite{repo_qrl}.
@@ -592,6 +616,8 @@ The \textbf{GR-K-GDSS} (\texttt{gr-k-gdss}) software implementation is licensed 
 
 The project is \textbf{registered with the Open Invention Network} (OIN), a defensive patent pool that supports Linux-related ecosystems.
 
+The GPL-3.0 licence and OIN membership are chosen to ensure this technology remains freely available to journalists, press workers, and humanitarian organisations operating under surveillance and cannot be proprietised or restricted by any state or commercial actor.
+
 The \textbf{full text} of the GNU GPL version~3 is shipped in the GR-K-GDSS repository and can be read directly at:
 
 \noindent\url{https://raw.githubusercontent.com/Supermagnum/GR-K-GDSS/main/LICENSE}
@@ -603,6 +629,8 @@ The \textbf{full text} of the GNU GPL version~3 is shipped in the GR-K-GDSS repo
   \item \textbf{gr-linux-crypto:} \url{https://github.com/Supermagnum/gr-linux-crypto}
   \item \textbf{gr-qradiolink:} \url{https://github.com/Supermagnum/gr-qradiolink}
 \end{itemize}
+
+LinHT hardware is licensed under CC~BY-NC-SA~4.0 \cite{cc_by_nc_sa_40}. \texttt{gr-k-gdss}, \texttt{gr-linux-crypto}, and \texttt{gr-qradiolink} are GPL-3.0-or-later. The combined stack is fully open-source, auditable, and freely reproducible.
 
 \begin{thebibliography}{99}
 \bibitem{shakeel2023} I. Shakeel et al., ``Gaussian-Distributed Spread-Spectrum for Covert Communications,'' \textit{Sensors} 2023, 23(8), 4081. doi:10.3390/s23084081
@@ -626,6 +654,12 @@ The \textbf{full text} of the GNU GPL version~3 is shipped in the GR-K-GDSS repo
 \bibitem{repo_crypto} Supermagnum, ``gr-linux-crypto,'' GitHub, 2025. \url{https://github.com/Supermagnum/gr-linux-crypto}
 \bibitem{repo_crypto_results} gr-linux-crypto, \texttt{tests/TEST\_RESULTS.md}, 2026 snapshot.
 \bibitem{repo_qrl} Supermagnum, ``gr-qradiolink,'' GitHub, 2025. \url{https://github.com/Supermagnum/gr-qradiolink}
+\bibitem{gnupg} GNU Privacy Guard (GnuPG), \url{https://gnupg.org/}
+\bibitem{fpf} Freedom of the Press Foundation (digital security for journalists), \url{https://freedom.press/}
+\bibitem{eff} Electronic Frontier Foundation (digital rights), \url{https://www.eff.org/}
+\bibitem{gnu_radio} GNU Radio project, \url{https://www.gnuradio.org/}
+\bibitem{linht_hw} LinHT open hardware (Retevis C62-class integration; design files and Gerbers published as open hardware; consult current project documentation for repository URLs).
+\bibitem{cc_by_nc_sa_40} Creative Commons, ``CC BY-NC-SA 4.0 Attribution-NonCommercial-ShareAlike 4.0 International,'' \url{https://creativecommons.org/licenses/by-nc-sa/4.0/}
 \end{thebibliography}
 
 \end{document}
