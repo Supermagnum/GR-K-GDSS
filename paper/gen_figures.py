@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 import os
+import shutil
+from typing import Optional
 
 import matplotlib
 matplotlib.use("Agg")
@@ -16,13 +18,25 @@ from scipy.stats import norm, rayleigh
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIG = os.path.join(HERE, "figures")
+# Generated IQ fixtures (optional): tests/generate_iq_test_files.py writes tests/iq_files/*.cf32
+IQ_FILES_DIR = os.path.normpath(os.path.join(HERE, "..", "tests", "iq_files"))
 os.makedirs(FIG, exist_ok=True)
 BER_MC_NPZ = os.path.join(FIG, "ber_mc_results.npz")
+
+# Must match tests/generate_iq_test_files.py (N_SAMPLES, SPREADING_N) for IQ trim logic.
+_IQ_N_SAMPLES = 5000000
+_IQ_SPREADING_N = 256
+_IQ_N_SYMBOLS = (_IQ_N_SAMPLES + _IQ_SPREADING_N - 1) // _IQ_SPREADING_N
+# IQ Fig. 6 synthetic fallback: same as tests/generate_iq_test_files.VARIANCE (mask variance).
+_FIG6_SIGMA_S = 1.0
+_FIG6_SIGMA_MASK = 1.0
 
 MDPI_BLUE = "#004E8F"
 RED = "#C44E52"
 GREEN = "#55A868"
 ORANGE = "#FFA500"
+# Darker orange for keyed GDSS: readable on screen, in print, and when printed greyscale
+KEYED_GDSS_ORANGE = "#B34400"
 
 
 def fig1_block_diagram():
@@ -192,18 +206,65 @@ def fig5_bar_cross_session():
     plt.close(fig)
 
 
+def _fig6_subsample_i_from_cf32(filename: str, n: int, seed: int) -> Optional[np.ndarray]:
+    """Load real part (I) of complex samples from tests/iq_files if the file exists."""
+    path = os.path.join(IQ_FILES_DIR, filename)
+    if not os.path.isfile(path):
+        return None
+    try:
+        data = np.fromfile(path, dtype=np.complex64)
+    except OSError:
+        return None
+    if data.size < 256:
+        return None
+    # File 05 is one sample per symbol followed by zero padding to N_SAMPLES; do not
+    # histogram the padding (would spike at zero and mislead).
+    if filename == "05_keyed_gdss_despread_wrong_key.cf32":
+        data = data[: min(_IQ_N_SYMBOLS, data.size)]
+    rng = np.random.default_rng(seed)
+    take = min(n, data.size)
+    idx = rng.choice(data.size, size=take, replace=False)
+    return np.asarray(data[idx].real, dtype=np.float64)
+
+
 def fig6_histograms():
+    """
+    IQ I-channel histograms for Figure 6.
+
+    Reference chain (tests/generate_iq_test_files.py; lib/kgdss_spreader_cc_impl.cc):
+    chip_I = s_I * mask_i with BPSK s_I in {+-sigma_s}, mask_i ~ N(0, sigma_mask^2) from
+    Box-Muller (signed Gaussian per chip; MIN_MASK clamp omitted in synthetic for clarity).
+
+    Output variance on I: Var(s_I * mask_i) = sigma_s^2 * sigma_mask^2 for independent
+    Rademacher s_I and zero-mean mask (same as N(0, sigma_s^2 sigma_mask^2) marginally when
+    s_I is symmetric). This is not the same as s_I * |G| with G Gaussian (half-normal
+    amplitude), which this codebase does not use on transmit.
+    """
     rng = np.random.default_rng(42)
     n = 8000
-    base = rng.standard_normal(n)
-    keyed = rng.standard_normal(n) * np.abs(rng.standard_normal(n))
-    wrong = rng.standard_normal(n)
+    s01 = _fig6_subsample_i_from_cf32("01_gaussian_noise_baseline.cf32", n, seed=43)
+    s03 = _fig6_subsample_i_from_cf32("03_keyed_gdss_transmission.cf32", n, seed=44)
+    s05 = _fig6_subsample_i_from_cf32("05_keyed_gdss_despread_wrong_key.cf32", n, seed=45)
+
+    base = s01 if s01 is not None else rng.standard_normal(n)
+    if s03 is not None:
+        keyed = s03
+    else:
+        # Panel (b) synthetic: keyed GDSS transmission I (matches spreader, not |mask|).
+        chips = rng.choice(np.array([-1.0, 1.0]), size=n) * _FIG6_SIGMA_S
+        masks = rng.normal(0.0, _FIG6_SIGMA_MASK, size=n)
+        keyed = chips * masks
+    wrong = s05 if s05 is not None else rng.standard_normal(n)
+
+    src_a = "tests/iq_files" if s01 is not None else "synthetic N(0,1)"
+    src_b = "tests/iq_files" if s03 is not None else "synthetic BPSK s times Gaussian mask"
+    src_c = "tests/iq_files" if s05 is not None else "synthetic N(0,1)"
 
     fig, axes = plt.subplots(1, 3, figsize=(10, 3.2), dpi=150, sharey=True)
     titles = [
-        "(a) 01_gaussian_noise_baseline.cf32 (simulated)",
-        "(b) 03_keyed_gdss_transmission.cf32 (simulated I)",
-        "(c) 05_keyed_gdss_despread_wrong_key.cf32 (simulated)",
+        f"(a) 01_gaussian_noise_baseline.cf32 ({src_a})",
+        f"(b) 03_keyed_gdss_transmission.cf32 I ({src_b})",
+        f"(c) 05_keyed_gdss_despread_wrong_key.cf32 I ({src_c})",
     ]
     datas = [base, keyed, wrong]
     for ax, data, tit in zip(axes, datas, titles):
@@ -214,7 +275,14 @@ def fig6_histograms():
         ax.set_xlabel("Amplitude (I)")
         ax.legend(fontsize=6)
     axes[0].set_ylabel("Density")
-    fig.suptitle("Figure 6. IQ amplitude histogram comparison (synthetic stand-in; full tests use recorded .cf32)", fontsize=9, fontweight="bold", color=MDPI_BLUE, y=1.02)
+    fig.suptitle(
+        "Figure 6. IQ I-channel histograms (Gaussian baseline vs keyed spread vs wrong-key despread). "
+        "Keyed panel matches BPSK chip model s*mask_i (noise-like), not unrelated products of normals.",
+        fontsize=8.5,
+        fontweight="bold",
+        color=MDPI_BLUE,
+        y=1.02,
+    )
     fig.tight_layout()
     fig.savefig(os.path.join(FIG, "fig6_histograms.png"), bbox_inches="tight")
     plt.close(fig)
@@ -252,9 +320,17 @@ def fig7_awgn_ber_fallback():
     for n, lw in [("64", 1.0), ("128", 0.8), ("256", 0.6)]:
         Ni = int(n)
         ax.semilogy(snr, np.maximum(ber_gdss_family(snr, Ni, 1.2), 1e-8), "-", color=MDPI_BLUE, lw=lw, label=f"Std GDSS (approx. +1.2 dB) N={Ni}")
-    for n, lw in [("64", 1.0), ("128", 0.8), ("256", 0.6)]:
+    for n, lw in [("64", 1.35), ("128", 1.15), ("256", 0.95)]:
         Ni = int(n)
-        ax.semilogy(snr, np.maximum(ber_gdss_family(snr, Ni, 3.2), 1e-8), "-.", color=ORANGE, lw=lw, label=f"Keyed GDSS (approx. +3.2 dB) N={Ni}")
+        ax.semilogy(
+            snr,
+            np.maximum(ber_gdss_family(snr, Ni, 3.2), 1e-8),
+            "-.",
+            color=KEYED_GDSS_ORANGE,
+            lw=lw,
+            label=f"Keyed GDSS (approx. +3.2 dB) N={Ni}",
+            zorder=4,
+        )
     ax.set_xlabel(r"$E_b/N_0$ (dB) (fallback parametric model)")
     ax.set_ylabel("BER")
     ax.set_ylim(1e-6, 0.5)
@@ -276,12 +352,38 @@ def fig7_awgn_ber():
     fig, ax = plt.subplots(figsize=(7, 4.5), dpi=150)
     styles = [(64, "--", 1.0), (128, "--", 0.7), (256, "--", 0.4)]
     for n, ls, al in styles:
-        ax.semilogy(snr, _ber_clip_plot(d[f"dsss_{n}"]), ls, color="black", alpha=al, lw=1.2, label=f"DSSS theory N={n}")
+        ax.semilogy(
+            snr,
+            _ber_clip_plot(d[f"dsss_{n}"]),
+            ls,
+            color="black",
+            alpha=al,
+            lw=1.2,
+            label=f"DSSS theory N={n}",
+            zorder=2,
+        )
     lw_n = [(64, 1.0), (128, 0.8), (256, 0.6)]
     for n, lw in lw_n:
-        ax.semilogy(snr, _ber_clip_plot(d[f"std_{n}"]), "-", color=MDPI_BLUE, lw=lw, label=f"Standard GDSS (MC) N={n}")
-    for n, lw in lw_n:
-        ax.semilogy(snr, _ber_clip_plot(d[f"keyed_{n}"]), "-.", color=ORANGE, lw=lw, label=f"Keyed GDSS (MC) N={n}")
+        ax.semilogy(
+            snr,
+            _ber_clip_plot(d[f"std_{n}"]),
+            "-",
+            color=MDPI_BLUE,
+            lw=lw,
+            label=f"Standard GDSS (MC) N={n}",
+            zorder=3,
+        )
+    lw_keyed = [(64, 1.35), (128, 1.15), (256, 0.95)]
+    for n, lw in lw_keyed:
+        ax.semilogy(
+            snr,
+            _ber_clip_plot(d[f"keyed_{n}"]),
+            "-.",
+            color=KEYED_GDSS_ORANGE,
+            lw=lw,
+            label=f"Keyed GDSS (MC) N={n}",
+            zorder=4,
+        )
     nbits = int(d["meta_bits"][0]) if "meta_bits" in d.files else 0
     ax.set_xlabel(r"$E_b/N_0$ (dB)")
     ax.set_ylabel("BER")
@@ -330,7 +432,7 @@ def fig8_vhf():
         print("gen_figures: missing VHF arrays in npz; Figure 8 uses parametric fallback.")
         fig8_vhf_fallback()
         return
-    snr = np.asarray(d["snr_db"])
+    snr = np.asarray(d["snr_db_vhf"] if "snr_db_vhf" in d.files else d["snr_db"])
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3.8), dpi=150, sharey=True)
     ax1.semilogy(snr, _ber_clip_plot(d["vhf_ped_50_m1_unc"]), "-", color=MDPI_BLUE, lw=1.2, label="Mode 1 uncoded")
     ax1.semilogy(snr, _ber_clip_plot(d["vhf_ped_50_m1_coded"]), "--", color=MDPI_BLUE, lw=1.0, alpha=0.85, label="Mode 1 + LDPC r=1/2")
@@ -349,12 +451,18 @@ def fig8_vhf():
     ax2.set_xlabel(r"$E_b/N_0$ (dB)")
     ax2.grid(True, which="both", alpha=0.3)
     ax2.legend(fontsize=5, loc="upper right")
+    for ax in (ax1, ax2):
+        ax.set_ylim(5e-3, 0.55)
     nbits = int(d["meta_bits"][0]) if "meta_bits" in d.files else 0
     sub = f", N=256, {nbits} bits/SNR" if nbits else ", N=256"
     fig.suptitle(
         f"Figure 8. VHF land mobile (ITU-R P.1406-inspired): flat block Rayleigh; "
-        f"Doppler as noise scaling (not per-chip phase on keyed mean(r/m)). Eb/N0 to +25 dB.{sub}",
-        fontsize=8,
+        f"Doppler as noise scaling (not per-chip phase on keyed mean(r/m)). "
+        f"$E_b/N_0$ to +40 dB (VHF grid only). Gradual slope and residual BER floor: "
+        f"one fade per symbol (no chip-level diversity in this model); per-chip or "
+        f"frequency-selective fading would show N=256 despreading gain (paper Sec. 7.3). "
+        f"LDPC curves are ideal SNR shifts.{sub}",
+        fontsize=7.5,
         fontweight="bold",
         color=MDPI_BLUE,
     )
@@ -475,6 +583,77 @@ def fig10_ldpc():
     plt.close(fig)
 
 
+def _paper_iq_asset_placeholder(path: str, message: str) -> None:
+    """Write a minimal PNG so pdflatex succeeds when IQ spectrum plots are not generated yet."""
+    fig, ax = plt.subplots(figsize=(8, 3.5), dpi=120)
+    ax.set_axis_off()
+    ax.text(0.5, 0.55, message, ha="center", va="center", fontsize=9, wrap=True, transform=ax.transAxes)
+    ax.text(
+        0.5,
+        0.25,
+        "See paper/README.md: generate_iq_test_files.py, plot_spectrum_snapshots.py, plot_iq_comparison.py",
+        ha="center",
+        va="center",
+        fontsize=7,
+        transform=ax.transAxes,
+    )
+    fig.savefig(path, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def copy_iq_spectrum_paper_assets():
+    """
+    Stage spectrum snapshots and PSD row crop from tests/iq_files into paper/figures/.
+    Run after: tests/generate_iq_test_files.py, tests/plot_spectrum_snapshots.py,
+    tests/plot_iq_comparison.py (for iq_comparison_vs_standard.png).
+    """
+    mapping = [
+        ("spectrum_baseline.png", "fig_spectrum_baseline.png"),
+        ("spectrum_keyed_gdss.png", "fig_spectrum_keyed_gdss.png"),
+        ("spectrum_realistic_plus_standard_gdss.png", "fig_spectrum_realistic_plus_std.png"),
+        ("spectrum_realistic_plus_keyed_gdss.png", "fig_spectrum_realistic_plus_keyed.png"),
+        ("spectrum_standard_gdss.png", "fig_spectrum_standard_gdss.png"),
+        ("spectrum_real_noise.png", "fig_spectrum_real_noise.png"),
+    ]
+    for src_name, dst_name in mapping:
+        src = os.path.join(IQ_FILES_DIR, src_name)
+        dst = os.path.join(FIG, dst_name)
+        if os.path.isfile(src):
+            shutil.copy2(src, dst)
+            print("gen_figures: copied IQ asset", dst_name)
+        else:
+            _paper_iq_asset_placeholder(
+                dst,
+                f"Missing {src_name}\n(run tests/plot_spectrum_snapshots.py after generate_iq_test_files.py)",
+            )
+            print("gen_figures: placeholder for", dst_name)
+
+    src_cmp = os.path.join(IQ_FILES_DIR, "iq_comparison_vs_standard.png")
+    dst_crop = os.path.join(FIG, "fig_iq_psd_row_vs_standard.png")
+    if os.path.isfile(src_cmp):
+        try:
+            import matplotlib.image as mpimg
+
+            img = mpimg.imread(src_cmp)
+            h = int(img.shape[0])
+            row_h = h // 4
+            crop = img[row_h : 2 * row_h, :, :]
+            mpimg.imsave(dst_crop, crop)
+            print("gen_figures: wrote fig_iq_psd_row_vs_standard.png (row 2 crop)")
+        except Exception as ex:
+            print("gen_figures: PSD row crop failed:", ex)
+            _paper_iq_asset_placeholder(
+                dst_crop,
+                "Could not crop iq_comparison_vs_standard.png (row 2 PSD)",
+            )
+    else:
+        _paper_iq_asset_placeholder(
+            dst_crop,
+            "Missing iq_comparison_vs_standard.png\n(run tests/plot_iq_comparison.py with files 01,03,09,12,13)",
+        )
+        print("gen_figures: placeholder for fig_iq_psd_row_vs_standard.png")
+
+
 def fig11_radar():
     labels = ["Passive\ndet.", "Cyclo-\nstationary", "Moments", "Mod.\nstrip", "Sync\nburst", "Traffic\nanalysis", "Jam-\nming", "BER\nmargin"]
     N = len(labels)
@@ -512,6 +691,7 @@ def main():
     fig9_hf()
     fig10_ldpc()
     fig11_radar()
+    copy_iq_spectrum_paper_assets()
     print("Wrote figures to", FIG)
 
 

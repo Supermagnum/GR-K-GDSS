@@ -11,7 +11,7 @@ This folder builds the Cryptographically Keyed GDSS academic-style preprint.
 
 ## Build
 
-BER figures (Figs. 7-10) read Monte Carlo results from `figures/ber_mc_results.npz`. The SNR grid is $E_b/N_0$ from **-20 dB to +25 dB** (step 1 dB). The upper end is needed because keyed `mean(r/m)` has strong noise enhancement: a short grid can look like a stuck receiver near BER 0.5. VHF curves use **flat block Rayleigh** (constant gain per symbol); per-chip Doppler phase was removed because it collapses the keyed combiner.
+BER figures (Figs. 7-10) read Monte Carlo results from `figures/ber_mc_results.npz`. The default SNR grid is $E_b/N_0$ from **-20 dB to +25 dB** (step 1 dB); **Figure 8 (VHF) alone** uses **`snr_db_vhf`**, **-20 dB to +40 dB**, so the Rayleigh + keyed curves show a falling slope (a steep waterfall may still lie beyond +40 dB). The upper end is needed because keyed `mean(r/m)` has strong noise enhancement: a short grid can look like a stuck receiver near BER 0.5. VHF curves use **flat block Rayleigh** (constant gain per symbol); per-chip Doppler phase was removed because it collapses the keyed combiner.
 
 Generate `ber_mc_results.npz` first (full paper default: `10^6` bits per SNR per curve; expect a long run):
 
@@ -37,6 +37,8 @@ pdflatex -interaction=nonstopmode kgdss_paper.tex
 Output: `paper/kgdss_paper.pdf`
 
 If `ber_mc_results.npz` is missing, `gen_figures.py` falls back to parametric placeholder curves for Figs. 7-10 and prints a warning.
+
+**Spectrum and IQ comparison figures (Section 5--6):** after generating IQ fixtures, run `python3 tests/plot_spectrum_snapshots.py` and `python3 tests/plot_iq_comparison.py` so `tests/iq_files/` contains `spectrum_*.png` and `iq_comparison_vs_standard.png`. Then `gen_figures.py` copies or crops them into `paper/figures/` (`fig_spectrum_*.png`, `fig_iq_psd_row_vs_standard.png`). If those sources are absent, placeholder PNGs are written so the PDF still builds.
 
 The first page includes a mandatory AI disclaimer banner.
 
