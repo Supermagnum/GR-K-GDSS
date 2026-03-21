@@ -22,6 +22,52 @@ The developer used curiosity to piece the suggested improvements in this project
 
 ---
 
+## Who built this and why
+
+The code was written by a Norwegian amateur radio operator and SDR
+experimenter who has a neurological condition that makes traditional
+programming difficult. The work was done with AI assistance to bridge that gap.
+
+The system is intended for:
+
+- Amateur radio experimenters and SDR developers
+- Journalists and press workers operating in hostile environments
+- Humanitarian organisations facing surveillance threats
+- Researchers studying covert communications
+
+---
+
+## Power level, noise floor, and direction finding
+
+The signal content remains completely noise-like regardless of power level. The Gaussian amplitude distribution, the flat spectrum, the absence of cyclostationary features -- all of that holds whether you are 10 dB below the noise floor or 10 dB above it. Keyed masking means the chip amplitudes are cryptographically indistinguishable from thermal noise at any power level.
+
+What changes when power is too high is purely geometric and physical -- not statistical.
+
+A directional antenna pointed at the transmitter will measure a higher noise floor than the same antenna pointed away from it. The signal itself still looks like noise. But noise does not have a direction. Real thermal noise is isotropic -- it comes equally from all directions. An elevated noise floor that has a specific bearing, that appears and disappears at the same times a target is known to be active, and that is present at one location but not another -- that is anomalous even if its content is unreadable.
+
+### The specific threat (SIGINT)
+
+A SIGINT station with a calibrated directional antenna array doing noise floor monitoring, which is standard practice for serious signals intelligence, would notice:
+
+- Noise floor elevation of a few dB in a specific azimuth
+- Elevation present only during transmission periods
+- Consistent geographic source
+- No identifiable modulation, carrier, or structure
+
+The conclusion is not "someone is transmitting voice". It is "something is elevating the noise floor from that direction at those times." That is enough to trigger further investigation, direction finding, and potentially physical surveillance of the area.
+
+### Why mobility matters
+
+This is exactly why the operational security layer (short transmissions, movement between transmissions) is not optional. It is the direct countermeasure to this specific threat.
+
+A moving transmitter denies the adversary the stable baseline they need. If the elevated noise floor appears from a different direction each time and never from the same location twice, it cannot be correlated to a specific source. It looks like measurement noise in their own system rather than an anomalous emitter.
+
+### Table 3 and the physics limit
+
+The paper's Table 3 rating of 5/10 for "noise floor" for standard GDSS and 6/10 for keyed GDSS reflects this: it is the hardest column to improve because it is a physics problem, not a cryptography problem. No amount of keying or spreading changes the fact that radio waves carry energy that is measurable if you have a sensitive enough receiver pointed in the right direction.
+
+---
+
 ## Publication and IP Protection
 
 This project is documented in a peer-reviewed preprint:
@@ -55,6 +101,9 @@ restricted by any state or commercial actor.
 ---
 
 ## Table of Contents
+
+- [Who built this and why](#who-built-this-and-why)
+- [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
 
 1. [Background](#1-background)
 2. [What is GDSS?](#2-what-is-gdss)
