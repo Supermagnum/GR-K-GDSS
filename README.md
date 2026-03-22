@@ -72,13 +72,12 @@ The paper's Table 3 rating of 5/10 for "noise floor" for standard GDSS and 6/10 
 
 ## Publication and IP Protection
 
-This project is documented in a peer-reviewed preprint:
+
+This project is documented in the following preprint:
 
 > **Cryptographically Keyed Gaussian-Distributed Spread-Spectrum
-> for Enhanced Covert Communications: Design, Implementation,
-> and Simulated Performance in ITU Channel Models**
-> IACR Cryptology ePrint Archive, Paper 2025/108456
-> https://eprint.iacr.org/2025/108456
+> for Enhanced Covert Communications**
+> Zenodo, 2026. https://zenodo.org/records/19162119
 
 Archival PDF in this repository: [paper/kgdss_paper.pdf](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf).
 
@@ -95,7 +94,7 @@ See [LICENSE](LICENSE) for the full text.
 This project is registered with the
 [Open Invention Network (OIN)](https://openinventionnetwork.com),
 a defensive patent pool protecting Linux-related open source software.
-The combination of IACR ePrint publication (establishing prior art),
+The combination of open preprint publication (establishing prior art),
 OIN membership, and GPL-3.0 licensing is intended to ensure this
 technology remains freely available and cannot be proprietised or
 restricted by any state or commercial actor.
