@@ -16,52 +16,62 @@ Documentation and code were written with **AI assistance**. Use your own judgeme
 
 ## What problem is this trying to solve?
 
-Sometimes people need to **send radio messages** in a way that is hard to **notice** or **analyse**. Classic radio often has a clear "signature": a tone, a pattern, or a spike on a screen that says "someone is transmitting here."
+Radio noise has always been around us. Some of it comes from nature: lightning, the Sun, the wider galaxy. Some is man-made: computers, phone chargers, industrial equipment, and countless other devices. Receivers are used to a background that is messy, random-looking, and often ignored.
 
-**Gaussian-Distributed Spread-Spectrum (GDSS)** is a published approach where the transmitted energy is made to **look like ordinary radio noise** to many standard detectors. The project **GR-K-GDSS** builds on that idea and adds **cryptographic keying**: the random-looking "mask" that shapes the signal is derived from **keys** the users share, not only from a built-in noise source.
+In everyday listening, that background is the **hiss** you hear when you tune an analogue radio **between stations**. Engineers often call that kind of broad, featureless hiss **white noise** (or noise that behaves similarly in the receiver).
 
-So in one sentence: **GR-K-GDSS is a design (and this repository is code) for radio that tries to stay statistically noise-like on the air, while the fine details of that noise are controlled by secret keys.**
+**Spread spectrum** means taking a signal and **stretching or smearing** its energy across a **wide band** of frequencies (for example around a megahertz or more, depending on design), instead of concentrating it in a narrow peak. On a **spectrum analyser**, a wideband noise-like signal can look like a **raised, fuzzy band** across that span, while ordinary stations still show up as **narrow, distinct peaks**. The idea behind this codebase and method is to **shape the broadened transmission so it sits in that fuzzy noise floor** and is **hard to pick out** from everything else that already looks like noise.
+
+That addresses the first hurdle: **detection**. If someone still isolates energy or captures data, they hit a second hurdle: the **payload is strongly encrypted**. Recovering plaintext without the **session keys** should remain impractical, **provided users follow sound key-handling practice** (no shared passwords in chat, no keys on sticky notes, and so on). Poor operational choices can undo strong cryptography; the maths cannot fix human mistakes.
+
+**What if a transmission could mimic that ever-present noise closely enough that many standard detectors treat it as uninteresting background?** And **what if that mimicry were tied to strong, open, reviewable cryptography**, so that only someone with the right keys could undo the masking and recover the payload?
+
+That combination is the motivation behind this work. In practice, people sometimes need to **send radio messages** that are hard to **notice** or **analyse** with ordinary tools. Conventional transmissions often have an obvious signature: a steady tone, a repeating pattern, or a spike on a spectrum display that says "someone is transmitting here."
+
+**Gaussian-Distributed Spread-Spectrum (GDSS)** is a published approach in which transmitted energy is shaped so it **resembles ordinary radio noise** under many statistical tests. **GR-K-GDSS** extends that idea with **cryptographic keying**: the fine structure of the noise-like waveform is driven by **secret keys** shared between legitimate users, not only by a local random or thermal-noise source inside the transmitter.
+
+In one sentence: **GR-K-GDSS is a design (this repository is reference code) for radio that aims to stay statistically noise-like on the air, while the details of that noise are controlled by shared secret keys and open cryptographic primitives.**
 
 ---
 
 ## The big picture: what happens to your message?
 
-You can imagine a **chain** from microphone or data to antenna, and back on the receive side:
+Think of a simple **chain** from microphone or data file to antenna, and the reverse chain on receive:
 
-1. **Your content** (for example voice processed by a vocoder, or encrypted data) becomes a **digital stream** suitable for the radio chain.
-2. **Encryption** (via related projects such as **gr-linux-crypto**) can protect the **payload** so that even if someone captured bits, they would still face cryptographic protection.
-3. **Modulation** turns that stream into a radio waveform. In this stack, **SOQPSK** (from **gr-qradiolink**) is the kind of modulation used in the reference design.
-4. **Spreading and masking (GR-K-GDSS)** take that waveform and **spread** it across a wider slice of spectrum, applying **Gaussian masking** so that the transmitted chips resemble **thermal noise** in many statistical tests.
-5. The **antenna** radiates. On the other side, a receiver runs the steps in reverse: **despread**, **demodulate**, **decrypt**, play out audio or data.
+1. **Content** (for example voice through a vocoder, or data) becomes a **digital stream** for the radio chain.
+2. **Payload encryption** (for example via **gr-linux-crypto**) can protect the bits so that intercepting the stream still leaves an adversary facing proper cryptography.
+3. **Modulation** turns that stream into a radio waveform. In the reference stack, **SOQPSK** from **gr-qradiolink** is used.
+4. **Spreading and masking (GR-K-GDSS)** widen the signal in frequency and apply **Gaussian masking** so that, in many tests, the transmitted chips look like **thermal noise**.
+5. The **antenna** radiates. The receiver **despreads**, **demodulates**, and **decrypts** to recover audio or data.
 
-You do **not** need to know the names of those blocks to understand the idea: **encrypt the payload, make the radio layer look like noise, share keys so only your partner can undo the masking.**
+You do not need the jargon to grasp the idea: **encrypt the payload, make the over-the-air waveform look like noise, and share keys so only your partner can reverse the masking.**
 
 ---
 
 ## What does "keyed" actually mean here?
 
-In **standard GDSS**, masking uses randomness that is **statistically** like noise. In **keyed GDSS**, the same *kind* of output is aimed for, but the random-looking chip values are driven by **cryptographic keystream** (here built from modern primitives such as **ChaCha20** and key derivation via **HKDF** from a shared secret). That means:
+In **standard GDSS**, masking is **statistically** noise-like. In **keyed GDSS**, a similar **appearance** is targeted, but the chip-level masking is produced from a **cryptographic keystream** (here based on primitives such as **ChaCha20** and **HKDF** from a shared secret). So:
 
 - Without the **session key**, an eavesdropper should not be able to **predict** the masking.
-- **Synchronisation bursts** (needed to find each other on the air) can be **per-session** and **keyed**, so they do not repeat the same obvious pattern every time the radio is used.
+- **Synchronisation bursts** can be **per-session** and **keyed**, so they do not repeat the same obvious pattern every time the radio is used.
 
-So "keyed" is about **unpredictability under cryptography**, not about "more volume."
+**Keyed** means **cryptographic unpredictability**, not "turn the volume up."
 
 ---
 
 ## What this project **is**
 
-- A **GNU Radio** out-of-tree module (**gr-k-gdss**) with blocks such as a **keyed spreader**, **keyed despreader**, and helpers for **keys** and **sync**.
-- **Python helpers** for deriving subkeys, building nonces, and handling sync-burst behaviour in line with the design.
-- **Tests and simulations** that check statistical behaviour and illustrate performance in **simplified** channel models (those are **simulations**, not a guarantee of real-world performance).
+- A **GNU Radio** out-of-tree module (**gr-k-gdss**): **keyed spreader**, **keyed despreader**, and support for **keys** and **sync**.
+- **Python helpers** for subkey derivation, nonces, and sync-burst behaviour aligned with the design.
+- **Tests and simulations** that check statistics and show behaviour in **simplified** channel models. Those are **software experiments**, not a warranty for every real channel.
 
 ---
 
 ## What this project **is not**
 
-- **Not** a finished product you can deploy without understanding the stack.
-- **Not** a guarantee of invisibility. **Power** still matters: a directional antenna can still see **energy** coming from a direction even when the **content** looks like noise. Short transmissions and **movement** are part of the operational story; see the main [README](../README.md) section on power level, noise floor, and direction finding.
-- **Not** legal advice. Radio regulations vary by country; **you** are responsible for compliance.
+- **Not** a turnkey product: you still need to understand the stack and your threat model.
+- **Not** invisibility against physics. **Power and direction** still matter: a sensitive receiver pointed the right way can still see **energy** even when the **waveform** looks like noise. Short transmissions and **movement** matter; see the main [README](../README.md) on power level, noise floor, and direction finding.
+- **Not** legal advice. Radio rules differ by country and band; **you** are responsible for compliance.
 
 ---
 
@@ -69,25 +79,25 @@ So "keyed" is about **unpredictability under cryptography**, not about "more vol
 
 | Piece | Role in plain words |
 |-------|---------------------|
-| **GR-K-GDSS** (this repo) | Spreading, masking, despreading, sync helpers tied to the GDSS design. |
+| **GR-K-GDSS** (this repo) | Spreading, masking, despreading, sync helpers for the keyed GDSS design. |
 | **gr-linux-crypto** | Cryptographic building blocks: key agreement, payload encryption, key storage hooks. |
 | **gr-qradiolink** | SOQPSK modem pieces used in the reference transmit/receive path. |
-| **GNU Radio** | The framework that connects blocks into a flowgraph (graph of signal processing). |
+| **GNU Radio** | The framework that wires blocks into a flowgraph (signal-processing graph). |
 
-You can go deeper when you are ready: [USAGE.md](USAGE.md) for block-level detail, [TESTING.md](TESTING.md) for how tests are run, [GLOSSARY.md](GLOSSARY.md) for terms, and the [preprint PDF](../paper/kgdss_paper.pdf) for the full technical narrative.
+When you want more depth: [USAGE.md](USAGE.md) (blocks and helpers), [TESTING.md](TESTING.md) (how to run tests), [GLOSSARY.md](GLOSSARY.md) (terms), and the [preprint PDF](../paper/kgdss_paper.pdf) (full technical story).
 
 ---
 
 ## Who is this for?
 
-The main [README](../README.md) describes the author's background and intended audiences (experimenters, journalists in difficult environments, humanitarian contexts, researchers). This guide does not repeat that; it only points you there.
+The main [README](../README.md) describes the author's background and who the work is aimed at (experimenters, journalists in hostile environments, humanitarian use, researchers). This page does not repeat that; it only points you there.
 
 ---
 
 ## Summary
 
 - **GR-K-GDSS** adds **cryptographic keying** to **noise-like spread-spectrum** radio ideas.
-- The **goal** is stronger covertness against many **statistical** detectors, not a free pass against **physics** (energy, direction, timing).
-- The **code** is real; the **security claims** need **independent review** before high-stakes use.
+- The aim is stronger resistance to many **statistical** detectors, not immunity to **physics** (energy, bearing, timing).
+- The **code** is real and inspectable; **security claims** still need **independent expert review** before high-stakes use.
 
-When you want detail, switch from this page to the [main README](../README.md) and [USAGE.md](USAGE.md).
+For detail, continue with the [main README](../README.md) and [USAGE.md](USAGE.md).
