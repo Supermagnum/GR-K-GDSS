@@ -808,24 +808,24 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 If you want to inspect specific behaviour in code, start with these files and functions:
 
 - **Box-Muller Gaussian masking and statistical properties**
-  - `tests/generate_iq_test_files.py`: `_box_muller()`, `_chacha20_gaussian_masks()`
-  - `paper/ber_simulation.py`: `_box_muller_pair()` (Monte Carlo model used for BER figures)
-  - `docs/TESTING.md`: `TestT1GaussianDistribution` explains the distribution checks
+  - [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `_box_muller()`, `_chacha20_gaussian_masks()`
+  - [`paper/ber_simulation.py`](paper/ber_simulation.py): `_box_muller_pair()` (Monte Carlo model used for BER figures)
+  - [`docs/TESTING.md`](docs/TESTING.md): `TestT1GaussianDistribution` explains the distribution checks
 
 - **PN spreading sequence derived from Key 3 (`sync_pn`)**
-  - `python/sync_burst_utils.py`: `derive_sync_pn_sequence(master_key, session_id, chips)`
-  - `docs/USAGE.md`: `derive_session_keys(...)` returns `sync_pn`, which feeds `derive_sync_pn_sequence(...)`
-  - `tests/test_t2_sync_burst.py`: PN determinism and key-sensitivity tests
+  - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_pn_sequence(master_key, session_id, chips)`
+  - [`docs/USAGE.md`](docs/USAGE.md): `derive_session_keys(...)` returns `sync_pn`, which feeds `derive_sync_pn_sequence(...)`
+  - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): PN determinism and key-sensitivity tests
 
 - **Burst timing randomised using Key 4 (`sync_timing`)**
-  - `python/sync_burst_utils.py`: `derive_sync_schedule(master_key, session_id, window_ms=50)`
-  - `docs/USAGE.md`: "Sync burst timing and epoch window" section (how offsets are computed and used)
-  - `tests/test_t2_sync_burst.py`: timing determinism/range/distribution tests
+  - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_schedule(master_key, session_id, window_ms=50)`
+  - [`docs/USAGE.md`](docs/USAGE.md): "Sync burst timing and epoch window" section (how offsets are computed and used)
+  - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): timing determinism/range/distribution tests
 
 - **Gaussian amplitude envelope for sync bursts**
-  - `python/sync_burst_utils.py`: `gaussian_envelope(samples, rise_fraction=0.1)`
-  - `docs/USAGE.md`: helper reference and recommended sync-burst flow
-  - `tests/test_t2_sync_burst.py`: `TestT2GaussianEnvelope`
+  - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `gaussian_envelope(samples, rise_fraction=0.1)`
+  - [`docs/USAGE.md`](docs/USAGE.md): helper reference and recommended sync-burst flow
+  - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2GaussianEnvelope`
 
 ### Available APIs (gr-linux-crypto)
 
