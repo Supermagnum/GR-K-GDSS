@@ -111,6 +111,7 @@ restricted by any state or commercial actor.
 
 - [Who built this and why](#who-built-this-and-why)
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
+- [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map)
 
 ### Main sections (this document)
 
@@ -802,6 +803,30 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **Python bindings** (C++ blocks to Python) | **python/bindings/** — `kgdss_spreader_cc_python.cc`, `kgdss_despreader_cc_python.cc`, `kgdss_python.cc`; expose spreader/despreader and `kgdss_sync_state` to `gnuradio.kgdss`. |
 | **Build system** | **CMakeLists.txt** (top level), **lib/CMakeLists.txt**, **python/CMakeLists.txt**, **python/bindings/CMakeLists.txt**, **grc/CMakeLists.txt**, **include/gnuradio/kgdss/CMakeLists.txt** — build and install the C++ library, Python package, and GRC blocks. |
 
+### Where key functions are implemented (quick code map)
+
+If you want to inspect specific behaviour in code, start with these files and functions:
+
+- **Box-Muller Gaussian masking and statistical properties**
+  - `tests/generate_iq_test_files.py`: `_box_muller()`, `_chacha20_gaussian_masks()`
+  - `paper/ber_simulation.py`: `_box_muller_pair()` (Monte Carlo model used for BER figures)
+  - `docs/TESTING.md`: `TestT1GaussianDistribution` explains the distribution checks
+
+- **PN spreading sequence derived from Key 3 (`sync_pn`)**
+  - `python/sync_burst_utils.py`: `derive_sync_pn_sequence(master_key, session_id, chips)`
+  - `docs/USAGE.md`: `derive_session_keys(...)` returns `sync_pn`, which feeds `derive_sync_pn_sequence(...)`
+  - `tests/test_t2_sync_burst.py`: PN determinism and key-sensitivity tests
+
+- **Burst timing randomised using Key 4 (`sync_timing`)**
+  - `python/sync_burst_utils.py`: `derive_sync_schedule(master_key, session_id, window_ms=50)`
+  - `docs/USAGE.md`: "Sync burst timing and epoch window" section (how offsets are computed and used)
+  - `tests/test_t2_sync_burst.py`: timing determinism/range/distribution tests
+
+- **Gaussian amplitude envelope for sync bursts**
+  - `python/sync_burst_utils.py`: `gaussian_envelope(samples, rise_fraction=0.1)`
+  - `docs/USAGE.md`: helper reference and recommended sync-burst flow
+  - `tests/test_t2_sync_burst.py`: `TestT2GaussianEnvelope`
+
 ### Available APIs (gr-linux-crypto)
 
 GR-K-GDSS uses **gr-linux-crypto** for key derivation (CryptoHelpers, KeyringHelper) and optionally for payload encryption. The following gr-linux-crypto APIs are available and can be combined with keyed GDSS as needed.
@@ -853,7 +878,7 @@ The **[examples/](examples/)** directory contains a ready-made GNU Radio Compani
 
 - **tx_example_kgdss.grc** — A TX (transmit) example that wires: Audio Source (microphone) -> resampler -> Codec2 encoder -> Brainpool ECIES Multi-Recipient Encrypt (gr-linux-crypto) -> byte-to-bit unpack -> SOQPSK modulator (gr-qradiolink) -> Keyed GDSS Spreader -> Null Sink. The **Keyed GDSS Key Injector** block supplies key and nonce from the kernel keyring (variable `keyring_id`) and connects its message port to the spreader's `set_key` input. Replace the Null Sink with an osmocom or UHD Sink for real hardware output. Generate and run the flowgraph with `grcc tx_example_kgdss.grc` then `python3 tx_example_kgdss.py`. See [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md) for verification steps.
 
-**Brainpool ECIES parameters in the example:** gr-linux-crypto supports reading recipient public keys from the **kernel keyring** or from a JSON file. **key_store_path** is optional: leave it empty to use the keyring. Add recipient public keys to the keyring with `keyctl add user "callsign:W1ABC" "$(cat pubkey.pem)"` or from Python with `CallsignKeyStore(...).add_public_key(callsign, public_key_pem)`; the ECIES block then looks up keys by description `callsign:CALLSIGN`. Alternatively set **key_store_path** to a JSON file path for file-based store (see gr-linux-crypto docs). **callsigns** is the comma-separated list of recipient callsigns (e.g. `"ALICE,BOB"`); keys are resolved from the keyring or from the JSON file. If callsigns is empty, the block does not encrypt for any recipients.
+**Brainpool ECIES parameters in the example:** gr-linux-crypto supports reading recipient public keys from the **kernel keyring** or from a JSON file. **key_store_path** is optional: leave it empty to use the keyring. Add recipient public keys to the keyring with `keyctl add user "callsign:PRESS1" "$(cat pubkey.pem)"` or from Python with `CallsignKeyStore(...).add_public_key(callsign, public_key_pem)`; the ECIES block then looks up keys by description `callsign:CALLSIGN`. Alternatively set **key_store_path** to a JSON file path for file-based store (see gr-linux-crypto docs). **callsigns** is the comma-separated list of recipient callsigns (e.g. `"ALICE,BOB"`); keys are resolved from the keyring or from the JSON file. If callsigns is empty, the block does not encrypt for any recipients.
 
 ### Dependencies
 
