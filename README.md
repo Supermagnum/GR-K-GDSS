@@ -808,24 +808,37 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 If you want to inspect specific behaviour in code, start with these files and functions:
 
 - **Box-Muller Gaussian masking and statistical properties**
-  - [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `_box_muller()`, `_chacha20_gaussian_masks()`
-  - [`paper/ber_simulation.py`](paper/ber_simulation.py): `_box_muller_pair()` (Monte Carlo model used for BER figures)
-  - [`docs/TESTING.md`](docs/TESTING.md): `TestT1GaussianDistribution` explains the distribution checks
+  - **Runtime code (actual processing path):**
+    - [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc): `box_muller()`, keyed chip masking in spreader
+    - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): `box_muller()`, keyed mask reconstruction in despreader
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `_box_muller()` used by sync-burst keyed masking helper
+  - **Test / simulation code:**
+    - [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `_box_muller()`, `_chacha20_gaussian_masks()`
+    - [`paper/ber_simulation.py`](paper/ber_simulation.py): `_box_muller_pair()` (Monte Carlo model used for BER figures)
+    - [`docs/TESTING.md`](docs/TESTING.md): `TestT1GaussianDistribution` explains the distribution checks
 
 - **PN spreading sequence derived from Key 3 (`sync_pn`)**
-  - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_pn_sequence(master_key, session_id, chips)`
-  - [`docs/USAGE.md`](docs/USAGE.md): `derive_session_keys(...)` returns `sync_pn`, which feeds `derive_sync_pn_sequence(...)`
-  - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): PN determinism and key-sensitivity tests
+  - **Runtime code (actual helper used by applications):**
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_pn_sequence(master_key, session_id, chips)`
+    - [`python/session_key_derivation.py`](python/session_key_derivation.py): `derive_session_keys(...)` returns `sync_pn`
+  - **Documentation / tests:**
+    - [`docs/USAGE.md`](docs/USAGE.md): `derive_session_keys(...)` -> `sync_pn` -> `derive_sync_pn_sequence(...)`
+    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): PN determinism and key-sensitivity tests
 
 - **Burst timing randomised using Key 4 (`sync_timing`)**
-  - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_schedule(master_key, session_id, window_ms=50)`
-  - [`docs/USAGE.md`](docs/USAGE.md): "Sync burst timing and epoch window" section (how offsets are computed and used)
-  - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): timing determinism/range/distribution tests
+  - **Runtime code (actual helper used by applications):**
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_schedule(master_key, session_id, window_ms=50)`
+    - [`python/session_key_derivation.py`](python/session_key_derivation.py): `derive_session_keys(...)` returns `sync_timing`
+  - **Documentation / tests:**
+    - [`docs/USAGE.md`](docs/USAGE.md): "Sync burst timing and epoch window" section (how offsets are computed and used)
+    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): timing determinism/range/distribution tests
 
 - **Gaussian amplitude envelope for sync bursts**
-  - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `gaussian_envelope(samples, rise_fraction=0.1)`
-  - [`docs/USAGE.md`](docs/USAGE.md): helper reference and recommended sync-burst flow
-  - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2GaussianEnvelope`
+  - **Runtime code (actual helper used by applications):**
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `gaussian_envelope(samples, rise_fraction=0.1)`
+  - **Documentation / tests:**
+    - [`docs/USAGE.md`](docs/USAGE.md): helper reference and recommended sync-burst flow
+    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2GaussianEnvelope`
 
 ### Available APIs (gr-linux-crypto)
 
