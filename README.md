@@ -807,6 +807,19 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 
 If you want to inspect specific behaviour in code, start with these files and functions:
 
+- **HKDF key derivation and session subkeys**
+  - **Runtime code (actual key schedule path):**
+    - [`python/session_key_derivation.py`](python/session_key_derivation.py): `derive_session_keys(ecdh_shared_secret)` derives four domain-separated subkeys via HKDF-SHA256 (RFC 5869 style expand labels)
+  - **Tests:**
+    - [`tests/test_t3_key_derivation.py`](tests/test_t3_key_derivation.py): domain separation, determinism, input sensitivity, and nonce-construction checks
+
+- **ChaCha20 keystream generation (chip masking)**
+  - **Runtime code (actual processing path):**
+    - [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc): `fill_keystream()` using libsodium `crypto_stream_chacha20_ietf_xor_ic`
+    - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): `fill_keystream()` matching the spreader byte-for-byte for mask reconstruction
+  - **Tests:**
+    - [`tests/test_t1_spreader_despreader.py`](tests/test_t1_spreader_despreader.py): `TestT1KeystreamDeterminism`, `TestT1KeySensitivity`, `TestT1WrongKeyDespreader`
+
 - **Box-Muller Gaussian masking and statistical properties**
   - **Runtime code (actual processing path):**
     - [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc): `box_muller()`, keyed chip masking in spreader
@@ -839,6 +852,17 @@ If you want to inspect specific behaviour in code, start with these files and fu
   - **Documentation / tests:**
     - [`docs/USAGE.md`](docs/USAGE.md): helper reference and recommended sync-burst flow
     - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2GaussianEnvelope`
+
+- **Public C++ block API headers (interface contracts)**
+  - **Runtime API (public interfaces):**
+    - [`include/gnuradio/kgdss/kgdss_spreader_cc.h`](include/gnuradio/kgdss/kgdss_spreader_cc.h): spreader block public API
+    - [`include/gnuradio/kgdss/kgdss_despreader_cc.h`](include/gnuradio/kgdss/kgdss_despreader_cc.h): despreader block public API
+
+- **Python bindings (C++ <-> Python exposure)**
+  - **Runtime bindings (loaded by `gnuradio.kgdss`):**
+    - [`python/bindings/kgdss_spreader_cc_python.cc`](python/bindings/kgdss_spreader_cc_python.cc): binds spreader block methods/types
+    - [`python/bindings/kgdss_despreader_cc_python.cc`](python/bindings/kgdss_despreader_cc_python.cc): binds despreader block methods/types
+    - [`python/bindings/kgdss_python.cc`](python/bindings/kgdss_python.cc): module-level exports (including enums/types)
 
 ### Available APIs (gr-linux-crypto)
 
