@@ -112,6 +112,7 @@ restricted by any state or commercial actor.
 - [Who built this and why](#who-built-this-and-why)
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
 - [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map)
+- [Hardware Security Module — Current Limitations and Future Direction](#hardware-security-module--current-limitations-and-future-direction)
 
 ### Main sections (this document)
 
@@ -646,6 +647,27 @@ ones. This modification has not been implemented in the current
 design and is noted here as a recommended improvement for a future
 revision.
 
+### Hardware Security Module — Current Limitations and Future Direction
+
+The current design uses a **Nitrokey** hardware security device for private key storage and protection. The Nitrokey provides meaningful protection: the private key never leaves the device, cryptographic operations run on-device, and physical destruction of the device can render past sessions unrecoverable in practice. That is a **pragmatic compromise**, not an ideal end state.
+
+The **architectural gap** is **forward secrecy**. The design uses **static long-term GnuPG keys** for ECDH. An adversary who records all radio traffic and **later** obtains the long-term private key could **retroactively** derive historical session keys and decrypt recorded sessions. This README describes **physical destruction of the Nitrokey** as an operational substitute for cryptographic forward secrecy; that is a **procedural mitigation**, not a cryptographic guarantee in the same class as per-session ephemeral keys.
+
+**Closing the gap properly** would require a hardware token capable of more than today’s typical devices. An ideal platform would need to:
+
+- Generate **ephemeral keypairs on-device per session**, perform **ECDH entirely on-device**, derive **all session subkeys via HKDF on-device**, export **only** the derived subkeys to the host, and **immediately and verifiably destroy** the ephemeral private key, such that even **physical seizure after session teardown** yields nothing useful about **past** sessions
+- Provide **hardware acceleration** for BrainpoolP256r1 point multiplication, ChaCha20, Poly1305, HKDF, and a **TRNG** meeting NIST SP 800-90B
+- Support a **custom programmable application layer** so ephemeral ECDH and subkey-derivation logic can be deployed and audited as **open source**, rather than relying only on fixed-function firmware
+- **Bind key-vault access to verified application measurements**, so a compromised host cannot substitute malicious code and extract protected key material
+- Be **open at every layer** relevant to trust (for example HDL, firmware, application code, hardware schematics) so independent parties can verify the security claims
+
+**No currently available token satisfies all of these.** Devices such as Nitrokey 3, YubiKey 5, Solo2, and common OpenPGP smart cards each meet **part** of the list; none combines a **programmable audited application**, **hardware acceleration for the full primitive set**, **measured boot with access tied to application integrity**, and **full-stack open hardware and firmware** in one USB-class product.
+
+The **missing enabler** is a suitable **open, programmable, verifiable** compute platform small enough for a USB form factor **with** the required accelerators. **RISC-V** (open, royalty-free ISA) is a plausible foundation, whether as a **soft core on a small FPGA** or as **dedicated silicon** with secure storage and crypto blocks. Research and commercial efforts are moving in this direction; **better-matched hardware may appear** as RISC-V ecosystems and open security hardware mature.
+
+**When such a platform exists**, the GR-K-GDSS design is structured to **accommodate it**. The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. A custom on-device application implementing ephemeral ECDH, on-device HKDF subkey derivation, and verifiable destruction of ephemeral secrets could be deployed **without** rewriting the radio or upper-layer crypto stacks—at which point forward secrecy could rest on **hardware-enforced** properties rather than **operator procedure alone**.
+
+**Until then**, the **Nitrokey** remains the **recommended** openly available device for this role, with the forward-secrecy limitation **documented and understood** as above.
 
 ---
 
