@@ -113,6 +113,7 @@ restricted by any state or commercial actor.
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
 - [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map)
 - [Hardware Security Module — Current Limitations and Future Direction](#hardware-security-module--current-limitations-and-future-direction)
+- [Likely candidates for future hardware](#likely-candidates-for-future-hardware)
 
 ### Main sections (this document)
 
@@ -659,15 +660,55 @@ The **architectural gap** is **forward secrecy**. The design uses **static long-
 - Provide **hardware acceleration** for BrainpoolP256r1 point multiplication, ChaCha20, Poly1305, HKDF, and a **TRNG** meeting NIST SP 800-90B
 - Support a **custom programmable application layer** so ephemeral ECDH and subkey-derivation logic can be deployed and audited as **open source**, rather than relying only on fixed-function firmware
 - **Bind key-vault access to verified application measurements**, so a compromised host cannot substitute malicious code and extract protected key material
-- Be **open at every layer** relevant to trust (for example HDL, firmware, application code, hardware schematics) so independent parties can verify the security claims
+- Be **open at every layer** relevant to trust (for example HDL, firmware, application code, hardware schematics) so independent parties can verify the security claims — a **fully open stack** is what makes **future algorithm changes** auditable and deployable without blind trust in a vendor blob
+- **Support future algorithms**, not only today’s Brainpool / ChaCha20 profile: vault and APIs should treat stored and derived objects as **algorithm-agnostic key material** (clear types and lengths, no silent assumption that every secret is exactly one legacy format or size)
+- Use **HKDF with explicit domain separation** (distinct info labels per subkey purpose) so **new subkey types** can be added **without** breaking or redefining existing derivations. The host-side reference for that pattern is [`python/session_key_derivation.py`](python/session_key_derivation.py); a capable token should apply the same discipline **on-device**
 
 **No currently available token satisfies all of these.** Devices such as Nitrokey 3, YubiKey 5, Solo2, and common OpenPGP smart cards each meet **part** of the list; none combines a **programmable audited application**, **hardware acceleration for the full primitive set**, **measured boot with access tied to application integrity**, and **full-stack open hardware and firmware** in one USB-class product.
 
 The **missing enabler** is a suitable **open, programmable, verifiable** compute platform small enough for a USB form factor **with** the required accelerators. **RISC-V** (open, royalty-free ISA) is a plausible foundation, whether as a **soft core on a small FPGA** or as **dedicated silicon** with secure storage and crypto blocks. Research and commercial efforts are moving in this direction; **better-matched hardware may appear** as RISC-V ecosystems and open security hardware mature.
 
-**When such a platform exists**, the GR-K-GDSS design is structured to **accommodate it**. The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. A custom on-device application implementing ephemeral ECDH, on-device HKDF subkey derivation, and verifiable destruction of ephemeral secrets could be deployed **without** rewriting the radio or upper-layer crypto stacks—at which point forward secrecy could rest on **hardware-enforced** properties rather than **operator procedure alone**.
+**When such a platform exists**, the GR-K-GDSS design is structured to **accommodate it**. The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. A custom on-device application implementing ephemeral ECDH, on-device HKDF subkey derivation, and verifiable destruction of ephemeral secrets could be deployed **without** rewriting the radio or upper-layer crypto stacks—at which point forward secrecy could rest on **hardware-enforced** properties rather than **operator procedure alone**. Long-term, **algorithm-agnostic vault semantics** and **HKDF labels that can be extended** matter as much as any single cipher choice: they are what let the stack adopt **post-quantum or successor primitives** without a full ground-up redesign of the trust model.
 
 **Until then**, the **Nitrokey** remains the **recommended** openly available device for this role, with the forward-secrecy limitation **documented and understood** as above.
+
+### Likely candidates for future hardware
+
+The following are **not endorsements** and **not commitments** from those parties; they are **plausible directions** and organisations whose existing work is **closest in spirit** to the platform described above.
+
+#### Tillitis
+
+The most directly relevant **existing** effort. **Tillitis** is a Swedish company that already shipped the **TKey**: a **RISC-V** soft core on an **FPGA** (Lattice **iCE40**) in a **USB stick** form factor, with **measured boot** and **application hash binding** to key access. That architecture is closer to this document’s target than most consumer security keys. The stack is **open source**, including the FPGA bitstream. The limitation is that the iCE40 is a **small, low-power** FPGA **without** dedicated cryptographic accelerators, so BrainpoolP256r1 and ChaCha20 would run **in software** on the RISC-V core rather than in fixed hardware. Sweden has a strong open-hardware culture and Tillitis emerged from the open security community; for this purpose it is among the most interesting existing organisations.
+
+#### Nitrokey
+
+German company with a **strong open source** posture; **OpenPGP** card support and **GnuPG** integration already match what GR-K-GDSS relies on. Historically Nitrokey devices have used **NXP microcontrollers** rather than RISC-V or FPGA platforms, which **limits** how far current designs can be reprogrammed for custom on-device ephemeral ECDH flows. The **Nitrokey 3** generation was a significant step. Nitrokey would be a **natural partner or collaborator** given existing integration, but meeting the **full** specification above would likely require a **different underlying platform**, not only firmware tweaks.
+
+#### Olimex
+
+Bulgarian **open hardware** manufacturer: full **schematics** and **PCB** layouts, **KiCad**, and **RISC-V** development boards. Olimex is not primarily a security-key vendor, but it is the kind of manufacturer that could produce the **board-level platform** the specification implies. Bulgaria is an **EU** member with a relatively open technology policy environment.
+
+#### Precursor / Sutajio Ko-Usagi (bunnie studios)
+
+Based in **Singapore**; the **Precursor** device places a **RISC-V** soft core on a **Xilinx FPGA** in a **handheld** form factor and is among the most technically ambitious open security-hardware projects in this space. Andrew **bunnie** Huang is a widely cited voice in open hardware security. Precursor is **too large** for a USB-stick token, but the **architecture** is directly relevant and the design materials are open; they could inform a **miniaturised** derivative.
+
+#### Chips and chip ecosystems worth watching
+
+- **Lattice Semiconductor** — **iCE40** and **ECP5** FPGAs are the usual choice for **open-source FPGA toolchains** (Project IceStorm, Project Trellis). The company is US-based (ownership has changed over time), but these parts underpin many open FPGA security projects including Tillitis. **ECP5** is larger than iCE40 and could host **more capable** cryptographic soft cores.
+- **EFINIX** — RISC-V-friendly FPGAs aimed at **low power** and **small footprint**; less entrenched in the open-hardware community than Lattice but worth monitoring.
+- **lowRISC** — UK non-profit; **OpenTitan** is an open **silicon root of trust** with measured-boot thinking aligned with this document, though it targets **embedded integration** rather than USB security sticks today. It is a credible open **RoT** effort in a friendly jurisdiction; UK government and research programmes have supported related open-silicon work.
+- **RISC-V International** — headquartered in **Switzerland**; neutral jurisdiction considerations matter for some European adopters. The **RISC-V** ecosystem in Europe continues to grow.
+
+#### Governments and initiatives with relevant interest
+
+- **Germany** — **BSI** promotes auditable cryptography; **BSI TR-03111** (Brainpool curves) is a BSI family of documents. Germany is a plausible **certification-oriented** jurisdiction.
+- **Sweden** — strong open-technology tradition; defence and signals-security communities have a sustained interest in **robust communications**. An open, low-probability-of-detection stack with sound key management could attract **policy and industry** interest adjacent to that space.
+- **Netherlands** — active in **open cryptographic standards** and open-source **government** policy; NLNCSA works on cybersecurity and signals-related topics at national level.
+- **European Union** — **Cyber Resilience Act** and related law push toward **auditable**, **certifiable** security products, which aligns with fully open, verifiable devices—**if** vendors choose that path.
+
+#### Outreach
+
+Anyone seeking such hardware could **politely contact** relevant teams (for example Tillitis, Nitrokey, Olimex, or FPGA-focused vendors) to ask whether a **next-generation** token or module could be scoped—**for example** moving from iCE40 toward **Lattice ECP5**, **EFINIX**, or similar, to host **stronger** soft cores and TRNG blocks while keeping **measured boot** and **open bitstreams**. This is **exploratory**; timelines, cost, and product fit are for those organisations to answer.
 
 ---
 
