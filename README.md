@@ -113,6 +113,7 @@ restricted by any state or commercial actor.
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
 - [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map)
 - [Hardware Security Module — Current Limitations and Future Direction](#hardware-security-module--current-limitations-and-future-direction)
+- [Active zeroisation, power-loss resume, and threat model](#active-zeroisation-power-loss-resume-and-threat-model)
 - [Likely candidates for future hardware](#likely-candidates-for-future-hardware)
 
 ### Main sections (this document)
@@ -671,6 +672,49 @@ The **missing enabler** is a suitable **open, programmable, verifiable** compute
 **When such a platform exists**, the GR-K-GDSS design is structured to **accommodate it**. The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. A custom on-device application implementing ephemeral ECDH, on-device HKDF subkey derivation, and verifiable destruction of ephemeral secrets could be deployed **without** rewriting the radio or upper-layer crypto stacks—at which point forward secrecy could rest on **hardware-enforced** properties rather than **operator procedure alone**. Long-term, **algorithm-agnostic vault semantics** and **HKDF labels that can be extended** matter as much as any single cipher choice: they are what let the stack adopt **post-quantum or successor primitives** without a full ground-up redesign of the trust model.
 
 **Until then**, the **Nitrokey** remains the **recommended** openly available device for this role, with the forward-secrecy limitation **documented and understood** as above.
+
+### Active zeroisation, power-loss resume, and threat model
+
+This is a **critical security requirement** and it goes **significantly beyond** what most current devices implement. Most devices that claim to "brick" or "lock" after failed PIN attempts are **passive** — they simply refuse further operations rather than **actively destroying key material**. That is **insufficient** for a serious threat model.
+
+#### What Proper Active Zeroisation Requires
+
+The zeroisation must be **active**, not passive. Simply setting a flag that blocks further PIN attempts leaves key material intact in NVM. An adversary with physical access and the right equipment can bypass the flag and read the NVM directly. **Active zeroisation** means the device **overwrites key material with random data from the TRNG**, repeatedly, before halting.
+
+**Multiple overwrite passes.** A single overwrite may be insufficient depending on the NVM technology. Flash memory in particular has wear levelling and can retain ghost images of previous writes. The zeroisation routine should write random data, verify the write, and repeat several times across all key vault addresses.
+
+**It must survive power interruption.** This is the hard part. If the device loses power mid-zeroisation — accidentally or deliberately by an adversary who pulls the USB connection the moment a wrong PIN is entered — the process must **resume and complete** on next power-up **before any other operation** is permitted. This requires:
+
+- A **zeroisation state flag** written to OTP or a dedicated tamper register that survives power loss
+- The **measured boot** sequence checking this flag before any application is permitted to run
+- Zeroisation **completing and being verified** before the device presents any interface to the host
+
+The **PIN attempt counter** itself must be in **tamper-evident storage**. If the counter can be reset by power cycling or by NVM manipulation, the whole mechanism is defeated. The counter should be in OTP-style storage that can only increment, never decrement, or in a **monotonic counter** backed by hardware that survives power loss.
+
+The **TRNG must be available during zeroisation**. If the zeroisation routine uses a weak or predictable source for the overwrite data, a sophisticated adversary might be able to partially recover original key material by subtracting the known overwrite pattern. The same **NIST SP 800-90B** certified TRNG used for key generation should source the overwrite data.
+
+**Zeroisation scope must be complete.** Not just the key vault but all locations where key material could have been copied — application state storage, any internal RAM that held derived keys, working registers used during cryptographic operations. The device should treat its **entire state** as potentially sensitive.
+
+#### The Power-Loss Resume Mechanism in Detail
+
+The sequence on **every power-up** should be:
+
+1. Check tamper/zeroisation state register **before anything else**
+2. If zeroisation is flagged as **incomplete**, resume immediately — no USB enumeration, no application loading, no PIN prompt
+3. Complete all overwrite passes across all sensitive storage regions
+4. Verify overwrites
+5. Set zeroisation complete flag
+6. Only then proceed to normal boot
+
+This means an adversary **cannot interrupt** zeroisation by power cycling. Every time the device is powered, it will continue zeroising until done. The device becomes **useless to the adversary** regardless of how many times they interrupt power.
+
+#### What This Means for the FPGA Architecture
+
+The **zeroisation controller** should be implemented in the **FPGA fabric itself**, not in application software, so it cannot be bypassed by a compromised application. It should have **direct access** to NVM write interfaces that bypass any software abstraction layer. The measured boot chain should treat an **incomplete zeroisation flag** as equivalent to a tamper event — **nothing runs** until the situation is resolved.
+
+#### Current Devices Fall Short
+
+The Nitrokey's auto-brick behaviour after PIN attempts is **essentially passive** — it stops responding rather than actively overwriting. The TKey's current design does **not** implement this level of active zeroisation with power-loss resume. This is a **genuine gap** in available open hardware that would need to be addressed in any device targeting the threat model GR-K-GDSS implies.
 
 ### Likely candidates for future hardware
 
