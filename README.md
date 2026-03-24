@@ -5,8 +5,6 @@ A highly experimental Cryptographically keyed GDSS proposal.
 
 The developer used curiosity to piece the suggested improvements in this project together. AI assisted with documentation and coding.
 
-**Plain-language overview (no radio or math background required):** [GR-K-GDSS for Dummies](docs/GR-K-GDSS-for-Dummies.md).
-
 ## Table of Contents
 
 ### Start here (plain language)
