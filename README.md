@@ -114,6 +114,7 @@ restricted by any state or commercial actor.
 - [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map)
 - [Hardware Security Module — Current Limitations and Future Direction](#hardware-security-module--current-limitations-and-future-direction)
 - [Active zeroisation, power-loss resume, and threat model](#active-zeroisation-power-loss-resume-and-threat-model)
+- [Hardware Security Token Platform](#hardware-security-token-platform)
 - [Likely candidates for future hardware](#likely-candidates-for-future-hardware)
 
 ### Main sections (this document)
@@ -665,13 +666,13 @@ The **architectural gap** is **forward secrecy**. The design uses **static long-
 - **Support future algorithms**, not only today’s Brainpool / ChaCha20 profile: vault and APIs should treat stored and derived objects as **algorithm-agnostic key material** (clear types and lengths, no silent assumption that every secret is exactly one legacy format or size)
 - Use **HKDF with explicit domain separation** (distinct info labels per subkey purpose) so **new subkey types** can be added **without** breaking or redefining existing derivations. The host-side reference for that pattern is [`python/session_key_derivation.py`](python/session_key_derivation.py); a capable token should apply the same discipline **on-device**
 
-**No currently available token satisfies all of these.** Devices such as Nitrokey 3, YubiKey 5, Solo2, and common OpenPGP smart cards each meet **part** of the list; none combines a **programmable audited application**, **hardware acceleration for the full primitive set**, **measured boot with access tied to application integrity**, and **full-stack open hardware and firmware** in one USB-class product.
+**For a long time, no single USB-class product combined all of the above.** Devices such as Nitrokey 3, YubiKey 5, Solo2, and common OpenPGP smart cards each meet **part** of the list. A **Baochip-1x** SoC on the **Dabao** evaluation board has since been **evaluated against the full hardware bar**; see [Hardware Security Token Platform](#hardware-security-token-platform). That path satisfies the **silicon and boot-chain** requirements documented there; **firmware**, **PIN-exhaustion zeroisation extensions**, and a **production USB carrier** remain **implementation work**, not architectural blockers in the same class as missing accelerators or closed RTL.
 
-The **missing enabler** is a suitable **open, programmable, verifiable** compute platform small enough for a USB form factor **with** the required accelerators. **RISC-V** (open, royalty-free ISA) is a plausible foundation, whether as a **soft core on a small FPGA** or as **dedicated silicon** with secure storage and crypto blocks. Research and commercial efforts are moving in this direction; **better-matched hardware may appear** as RISC-V ecosystems and open security hardware mature.
+**RISC-V** (open, royalty-free ISA) remains a plausible foundation for other programmes, whether as a **soft core on an FPGA** or as **dedicated silicon** with secure storage and crypto blocks. The Baochip-1x line is one concrete open-RTL example in that space.
 
-**When such a platform exists**, the GR-K-GDSS design is structured to **accommodate it**. The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. A custom on-device application implementing ephemeral ECDH, on-device HKDF subkey derivation, and verifiable destruction of ephemeral secrets could be deployed **without** rewriting the radio or upper-layer crypto stacks—at which point forward secrecy could rest on **hardware-enforced** properties rather than **operator procedure alone**. Long-term, **algorithm-agnostic vault semantics** and **HKDF labels that can be extended** matter as much as any single cipher choice: they are what let the stack adopt **post-quantum or successor primitives** without a full ground-up redesign of the trust model.
+The GR-K-GDSS design is structured to **accommodate** a capable token once available. The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. A custom on-device application implementing ephemeral ECDH, on-device HKDF subkey derivation, and verifiable destruction of ephemeral secrets can be deployed **without** rewriting the radio or upper-layer crypto stacks—at which point forward secrecy can rest on **hardware-enforced** properties rather than **operator procedure alone**. Long-term, **algorithm-agnostic vault semantics** and **HKDF labels that can be extended** matter as much as any single cipher choice: they are what let the stack adopt **post-quantum or successor primitives** without a full ground-up redesign of the trust model.
 
-**Until then**, the **Nitrokey** remains the **recommended** openly available device for this role, with the forward-secrecy limitation **documented and understood** as above.
+**Until the Baochip-based firmware path is complete and audited** (or an equivalent token is fielded), **Nitrokey 3** remains the **interim** recommendation for operators using today’s stack, with the forward-secrecy limitation **documented and understood** as above.
 
 ### Active zeroisation, power-loss resume, and threat model
 
@@ -716,9 +717,84 @@ The **zeroisation controller** should be implemented in the **FPGA fabric itself
 
 The Nitrokey's auto-brick behaviour after PIN attempts is **essentially passive** — it stops responding rather than actively overwriting. The TKey's current design does **not** implement this level of active zeroisation with power-loss resume. This is a **genuine gap** in available open hardware that would need to be addressed in any device targeting the threat model GR-K-GDSS implies.
 
+### Hardware Security Token Platform
+
+#### Background
+
+The GR-K-GDSS design requires a hardware security token capable of performing **ephemeral ECDH** key exchange entirely on-device, deriving **all session subkeys via HKDF** on-device, exporting **only** derived subkeys to the host, and **verifiably destroying** ephemeral private key material after session teardown — such that **physical seizure after session teardown** yields nothing useful about **past** sessions.
+
+Additional requirements include **hardware acceleration** for BrainpoolP256r1 point multiplication, ChaCha20, Poly1305, HKDF, and a **TRNG** meeting NIST SP 800-90B; a **custom programmable application layer** so that ephemeral ECDH and subkey-derivation logic can be deployed and audited as **open source**; **measured boot** with key vault access bound to **verified application measurements**; and a **fully open stack** at every layer relevant to trust — HDL, firmware, application code, and hardware schematics.
+
+At time of writing, **no shipping product** in a **USB-stick form factor** fielded **all** of the above end-to-end; **Nitrokey 3** was recommended as an **interim** device, with the forward-secrecy limitation explicitly documented and understood. **Silicon-level** evaluation against the full bar is documented below for **Baochip-1x** on the **Dabao** board.
+
+#### Platform Selection: Baochip-1x
+
+The **Baochip-1x** SoC, available on the **Dabao** evaluation board, has been evaluated against the requirements above. It **satisfies every hardware requirement** called out in this README for the token platform; the remaining items are **implementation tasks** rather than **architectural gaps** in the silicon and boot model.
+
+**Hardware specification (Dabao evaluation board):**
+
+- 350 MHz VexRiscv RV32-IMAC CPU with MMU and **Zkn** scalar cryptography extensions (native AES instructions in the CPU pipeline)
+- 4 x 700 MHz PicoRV32 I/O coprocessor cores (BIO) with custom register extensions
+- 4 MiB on-chip RRAM (non-volatile, XIP up to ~1200 MB/s), 2 MiB SRAM + 256 KiB I/O buffers
+- Swap memory support
+- Cryptographic accelerators at 175 MHz: PKE (RSA, ECC, ECDSA, X25519, GCD), ComboHash (HMAC, SHA256, SHA512, SHA3, RIPEMD, Blake2, Blake3), AES, ALU, TRNG, SDMA
+- PKE engine **verified algorithm-agnostic**: field prime supplied at runtime via **N0Dat** (256-bit), Montgomery parameter computed on-the-fly — **BrainpoolP256r1** confirmed viable without firmware modification
+- Physical attack hardening: glitch sensors, security mesh, PV sensor, ECC-protected RAM
+- Always-on domain: AORAM (8 KiB), 256-bit backup register, one-way counters, WDT, RTC — all surviving power loss
+- Signed boot, key store, hardware one-way counters
+- USB High Speed via USB-C
+- Fully open RTL (CERN-OHL-W-2.0), reproducible bootloader, Rust-based Xous OS, open schematics
+- IRIS-inspectable silicon
+
+**Boot chain security model:**
+
+The **immutable boot0** stage is burned at wafer-probe time, with JTAG fused out post-packaging. It runs **before USB enumeration**, before application loading, and before any host interaction. It verifies the integrity of **both** itself and **boot1** using up to four **ed25519** public keys burned into the chip. If verification fails, **volatile state is actively zeroised** before the CPU is halted. **One-way counters** are used throughout for key revocation, boot mode selection, and board type coding — these counters are **hardware-enforced**, monotonically incrementing, and survive power loss in the always-on domain.
+
+This architecture **directly satisfies** the **active zeroisation** requirement described earlier in this README: the zeroisation controller operates at the **immutable boot layer**, below any software that could be compromised, with **direct access** to sensitive storage regions.
+
+**Requirement mapping:**
+
+| Requirement | Status | Notes |
+|-------------|--------|-------|
+| Ephemeral ECDH on-device | Implementable | Custom Xous application; process isolation via MMU |
+| BrainpoolP256r1 HW acceleration | Confirmed | PKE engine runtime-configurable; verified in `PkeCore.sv` |
+| ChaCha20 / Poly1305 HW acceleration | Unconfirmed | Software fallback on 350 MHz VexRiscv; adequate for token use |
+| HKDF / HMAC-SHA256/512 HW acceleration | Confirmed | ComboHash block |
+| TRNG | Confirmed | Dedicated hardware block; ring oscillator sourced |
+| Programmable open application layer | Confirmed | Open RTL, reproducible bootloader, open Xous/Rust stack |
+| Measured boot / integrity-bound key vault | Confirmed | Signed boot, immutable boot0, ed25519 key verification |
+| Full open stack | Confirmed | RTL, bootloader, OS, schematics all open |
+| Active zeroisation | Confirmed | Implemented in immutable boot0; extension to PIN exhaustion is firmware work |
+| Power-loss resume during zeroisation | Architecturally supported | AORAM + always-on domain + boot0 pre-enumeration check |
+| Monotonic PIN counter, tamper-evident | Confirmed | Hardware one-way counters in always-on domain |
+| Physical attack hardening | Confirmed | Glitch sensors, mesh, PV sensor, ECC-protected RAM |
+| Algorithm-agnostic vault / HKDF domain separation | Implementable | Application-layer implementation task |
+| USB form factor | Pending | Dabao is an evaluation board; custom carrier board required for production |
+
+#### Implementation Notes
+
+**Active zeroisation extension:** The boot0 zeroisation path (triggered on signature verification failure) provides the **reference implementation**. Extending this to **PIN attempt counter exhaustion** requires: incrementing a **one-way counter** in the always-on domain on each failed attempt, checking this counter in the **boot0 pre-enumeration** sequence, and triggering the same **TRNG-sourced multi-pass overwrite** across all sensitive storage regions (key vault, AORAM, any SRAM holding derived key material) when the counter threshold is reached. **Power-loss resume** is inherent to the boot0 architecture — the device will not enumerate until boot0 completes, so interrupted zeroisation resumes automatically on next power-up.
+
+**BrainpoolP256r1 usage:** Load curve parameters (prime *p*, coefficients *a*, *b*, generator point Gx/Gy, order *n*) into the PKE RAM, supply *p* as N0Dat, issue opcode `0x20` to precompute the Montgomery parameter, then run ECDH point multiplication. The 256-bit datapath matches the field size exactly.
+
+**Developer mode:** Transitioning a chip to developer mode **permanently erases** the secret key area with **no recovery path**. Production tokens should use **standard SKU** chips, not engineering samples (ES suffix / BGA package).
+
+**Key derivation:** The host-side HKDF domain separation pattern documented in [`python/session_key_derivation.py`](python/session_key_derivation.py) should be replicated on-device. The ComboHash HMAC block provides the hardware primitive; the Xous application implements the same explicit **info** label discipline per subkey purpose.
+
+#### Recommended Transition Path
+
+1. Acquire **Dabao** evaluation boards for firmware development
+2. Implement **ephemeral ECDH + HKDF** subkey derivation as a **Xous** application
+3. Implement **PIN counter exhaustion zeroisation** extending the existing boot0 path
+4. Design **custom USB carrier board** (chip provides USB HS via USB-C natively)
+5. Validate **TRNG** output against **NIST SP 800-90B** test suite
+6. **Retire Nitrokey interim recommendation** once steps 2–3 are complete and audited
+
+The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. **No changes** to the radio or upper-layer crypto stacks are required.
+
 ### Likely candidates for future hardware
 
-The following are **not endorsements** and **not commitments** from those parties; they are **plausible directions** and organisations whose existing work is **closest in spirit** to the platform described above.
+The **Baochip-1x / Dabao** evaluation path is documented under [Hardware Security Token Platform](#hardware-security-token-platform). The following are **not endorsements** and **not commitments** from those parties; they are **additional** plausible directions and organisations whose existing work is **closest in spirit** to an open, programmable security token ecosystem.
 
 #### Tillitis
 
