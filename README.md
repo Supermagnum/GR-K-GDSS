@@ -771,6 +771,23 @@ This architecture **directly satisfies** the **active zeroisation** requirement 
 
 **Active zeroisation extension:** The boot0 zeroisation path (triggered on signature verification failure) provides the **reference implementation**. Extending this to **PIN attempt counter exhaustion** requires: incrementing a **one-way counter** in the always-on domain on each failed attempt, checking this counter in the **boot0 pre-enumeration** sequence, and triggering the same **TRNG-sourced multi-pass overwrite** across all sensitive storage regions (key vault, AORAM, any SRAM holding derived key material) when the counter threshold is reached. **Power-loss resume** is inherent to the boot0 architecture — the device will not enumerate until boot0 completes, so interrupted zeroisation resumes automatically on next power-up.
 
+**Key storage** 4MB RRAM can hold around 1024 BrainpoolP256r1 keypairs. 
+
+**Optional PSRAM chip**
+
+To an uninformed host / adversary:
+
+Plugs in as a standard USB mass storage device
+PSRAM contents appear as a normal (if encrypted) filesystem.
+Nothing to see, nothing to explain.
+
+To an informed host with kernel support:
+
+Kernel driver or software function built into gr-linux-crypto recognises the device.
+Challenges it for a minimum 5-character alphanumeric passphrase.
+Correct response unlocks the real key material from RRAM and mounts the actual protected volume.
+Wrong response (or no kernel support) — falls back to mass storage, silently.
+
 **BrainpoolP256r1 usage:** Load curve parameters (prime *p*, coefficients *a*, *b*, generator point Gx/Gy, order *n*) into the PKE RAM, supply *p* as N0Dat, issue opcode `0x20` to precompute the Montgomery parameter, then run ECDH point multiplication. The 256-bit datapath matches the field size exactly.
 
 **Developer mode:** Transitioning a chip to developer mode **permanently erases** the secret key area with **no recovery path**. Production tokens should use **standard SKU** chips, not engineering samples (ES suffix / BGA package).
