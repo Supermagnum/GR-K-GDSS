@@ -24,7 +24,7 @@ In everyday listening, that background is the **hiss** you hear when you tune an
 
 That addresses the first hurdle: **detection**. If someone still isolates energy or captures data, they hit a second hurdle: the **payload is strongly encrypted**. Recovering plaintext without the **session keys** should remain impractical, **provided users follow sound key-handling practice** (no shared passwords in chat, no keys on sticky notes, and so on). Poor operational choices can undo strong cryptography; the maths cannot fix human mistakes.
 
-**What if a transmission could mimic that ever-present noise closely enough that many standard detectors treat it as uninteresting background?** And **what if that mimicry were tied to strong, open, reviewable cryptography**, so that only someone with the right keys could undo the masking and recover the payload?
+**What if a transmission could mimic that ever-present noise closely enough that many standard detectors treat it as uninteresting background?** And **what if that mimicry were tied to strong, open source, reviewable cryptography**, so that only someone with the right keys could undo the masking and recover the payload?
 
 That combination is the motivation behind this work. In practice, people sometimes need to **send radio messages** that are hard to **notice** or **analyse** with ordinary tools. Conventional transmissions often have an obvious signature: a steady tone, a repeating pattern, or a spike on a spectrum display that says "someone is transmitting here."
 
@@ -44,7 +44,7 @@ Think of a simple **chain** from microphone or data file to antenna, and the rev
 4. **Spreading and masking (GR-K-GDSS)** widen the signal in frequency and apply **Gaussian masking** so that, in many tests, the transmitted chips look like **thermal noise**.
 5. The **antenna** radiates. The receiver **despreads**, **demodulates**, and **decrypts** to recover audio or data.
 
-You do not need the jargon to grasp the idea: **encrypt the payload, make the over-the-air waveform look like noise, and share keys so only your partner can reverse the masking.**
+You do not need the jargon to grasp the idea: **encrypt the payload, make the over-the-air waveform look like noise, and share keys so only your partners can reverse the masking.**
 
 ---
 
