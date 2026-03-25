@@ -139,6 +139,22 @@ OIN membership, and GPL-3.0 licensing is intended to ensure this
 technology remains freely available and cannot be proprietised or
 restricted by any state or commercial actor.
 
+### Copyright jurisdiction and international protection
+
+There is an important legal nuance: Norwegian copyright law (andsverkloven) is national law and therefore applies directly within Norway. In practice, Norwegian works still receive broad protection abroad through international frameworks:
+
+1. **Berne Convention**  
+   Norway has been a member since 13 April 1896. Works originating in Norway (or by Norwegian nationals) receive national-treatment protection across other Berne member states, which covers most jurisdictions worldwide.
+
+2. **WTO / TRIPS**  
+   Norway has been a WTO member since 1 January 1995. TRIPS sets minimum international standards for IP protection and enforcement.
+
+3. **EEA alignment with EU copyright directives**  
+   Norway is not an EU member but is part of the EEA. The Norwegian copyright framework incorporates key EU directives, keeping practical copyright standards aligned with much of Europe.
+
+4. **2018 Copyright Act modernization**  
+   The 2018 Norwegian Copyright Act is more technology-neutral than the old 1961 framework, improving fit for digital and cross-border use cases.
+
 ---
 
 ## 1. Background
