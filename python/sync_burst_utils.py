@@ -13,8 +13,9 @@ Sync bursts can be masked with the same keyed Gaussian masking as the data
 the GDSS waveform to a passive observer.
 
 Exported API:
-  - derive_sync_schedule(master_key, session_id, window_ms) -> Callable[[int], int]
-  - derive_sync_pn_sequence(master_key, session_id, chips) -> np.ndarray
+  - derive_sync_schedule(master_key, session_id, ...) -> list[int]
+  - derive_sync_pn_sequence(master_key, session_id, chips, burst_index=0) -> np.ndarray
+  - derive_sync_amplitude_scaling(master_key, session_id, n_bursts, ...) -> list[float]
   - gaussian_envelope(samples, rise_fraction) -> np.ndarray
   - apply_keyed_gaussian_mask(burst, gdss_key, nonce, variance) -> np.ndarray
 """
@@ -23,7 +24,7 @@ from __future__ import annotations
 
 import math
 import struct
-from typing import Callable
+from typing import Iterable
 
 import numpy as np
 
@@ -131,49 +132,92 @@ def apply_keyed_gaussian_mask(
 def derive_sync_schedule(
     master_key: bytes,
     session_id: int,
-    window_ms: int = 50,
-) -> Callable[[int], int]:
+    *,
+    session_duration_s: float = 900.0,
+    n_bursts: int = 20,
+    mean_interval_s: float = 60.0,
+    pareto_alpha: float = 2.0,
+    min_interval_s: float = 5.0,
+) -> list[int]:
     """
-    Derive a deterministic sync-burst timing schedule for a session.
+    Derive a deterministic multi-burst sync schedule for a session.
 
-    Returns a callable that maps a nominal epoch (milliseconds since session
-    start) to an actual TX offset in milliseconds in the range [-window_ms,
-    +window_ms]. TX and RX compute the same offset given the same master_key
-    and session_id, so sync bursts are aligned without using a fixed position
-    (which would be correlatable across sessions).
+    Instead of emitting a single burst at session start, TX emits a pseudo-random
+    sequence of sync bursts throughout the session lifetime. TX and RX derive the
+    same ordered list of burst epochs (milliseconds since session start) from the
+    same inputs, without any explicit signalling.
+
+    Inter-burst intervals are derived from per-burst key material and mapped
+    through a Pareto inverse CDF (heavy-tailed), producing an irregular cadence.
 
     Args:
         master_key: 32-byte key (e.g. sync_timing from derive_session_keys).
         session_id: Session identifier; different sessions get different offsets.
-        window_ms: Half-width of the offset window in ms. Default 50.
+        session_duration_s: Maximum session duration to schedule over.
+        n_bursts: Number of sync bursts to schedule (best-effort; may be fewer if
+            parameters would exceed session_duration_s).
+        mean_interval_s: Target mean interval between bursts (seconds). Used to
+            parameterize the Pareto scale.
+        pareto_alpha: Pareto shape parameter alpha (> 1.0). Larger alpha reduces
+            tail weight; smaller alpha produces longer gaps.
+        min_interval_s: Lower bound on inter-burst interval (seconds) to avoid
+            degenerate clustering.
 
     Returns:
-        Function get_offset(epoch_ms: int) -> int giving offset in milliseconds.
+        Ordered list of burst epochs in milliseconds since session start.
     """
     import hashlib
     import hmac
 
-    sync_key = hmac.new(
+    if n_bursts <= 0:
+        return []
+    if session_duration_s <= 0:
+        return []
+    if mean_interval_s <= 0:
+        raise ValueError("mean_interval_s must be > 0")
+    if pareto_alpha <= 1.0:
+        raise ValueError("pareto_alpha must be > 1.0")
+    if min_interval_s < 0:
+        raise ValueError("min_interval_s must be >= 0")
+
+    # HKDF-Expand-like: domain label + session + burst_index (monotonic counter).
+    base = hmac.new(
         master_key,
-        b"sync-timing-v1" + session_id.to_bytes(8, "big"),
+        b"sync-schedule-v2" + session_id.to_bytes(8, "big"),
         hashlib.sha256,
     ).digest()
 
-    def get_offset(epoch_ms: int) -> int:
-        # Use ChaCha20 keystream indexed by epoch to get deterministic offset
-        nonce = epoch_ms.to_bytes(8, "little") + b"\x00" * 4
-        cipher = ChaCha20.new(key=sync_key, nonce=nonce)
-        rand_bytes = cipher.encrypt(b"\x00" * 4)
-        raw = int.from_bytes(rand_bytes, "little")
-        return int((raw / 0xFFFFFFFF) * 2 * window_ms) - window_ms
+    # Parameterize Pareto scale xm so that E[X] ~= mean_interval_s.
+    # For Pareto(xm, alpha): mean = alpha*xm/(alpha-1), so xm = mean*(alpha-1)/alpha.
+    xm = float(mean_interval_s) * (float(pareto_alpha) - 1.0) / float(pareto_alpha)
+    duration_ms = int(session_duration_s * 1000.0)
+    min_interval_ms = int(min_interval_s * 1000.0)
 
-    return get_offset
+    epochs: list[int] = []
+    t_ms = 0
+    for i in range(int(n_bursts)):
+        # Derive per-burst uniform u in (0,1) from ChaCha20 keystream.
+        # Nonce uses burst index to avoid overlap and keep it deterministic.
+        per = hmac.new(base, b"/i/" + i.to_bytes(8, "big"), hashlib.sha256).digest()
+        nonce = i.to_bytes(8, "little") + b"\x00" * 4
+        cipher = ChaCha20.new(key=per, nonce=nonce)
+        u_bytes = cipher.encrypt(b"\x00" * 4)
+        u = _to_uniform(u_bytes)
+        # Pareto inverse CDF: x = xm / (1-u)^(1/alpha). Heavy-tailed.
+        interval_s = xm / pow(max(1e-12, 1.0 - u), 1.0 / float(pareto_alpha))
+        interval_ms = max(min_interval_ms, int(interval_s * 1000.0))
+        t_ms += interval_ms
+        if t_ms >= duration_ms:
+            break
+        epochs.append(t_ms)
+    return epochs
 
 
 def derive_sync_pn_sequence(
     master_key: bytes,
     session_id: int,
     chips: int = 10000,
+    burst_index: int = 0,
 ) -> np.ndarray:
     """
     Derive a session-unique pseudo-noise sequence for sync bursts.
@@ -187,6 +231,8 @@ def derive_sync_pn_sequence(
         master_key: 32-byte key (e.g. sync_pn from derive_session_keys).
         session_id: Session identifier; different sessions get different PN.
         chips: Length of the PN sequence. Default 10000.
+        burst_index: Burst index within the schedule. Defaults to 0 for backward
+            compatibility; when provided, each burst gets a unique PN sequence.
 
     Returns:
         One-dimensional float32 array of length chips with values in {-1.0, +1.0}.
@@ -196,7 +242,10 @@ def derive_sync_pn_sequence(
 
     pn_key = hmac.new(
         master_key,
-        b"sync-pn-v1" + session_id.to_bytes(8, "big"),
+        b"sync-pn-v2"
+        + session_id.to_bytes(8, "big")
+        + b"/i/"
+        + int(burst_index).to_bytes(8, "big", signed=False),
         hashlib.sha256,
     ).digest()
 
@@ -208,9 +257,52 @@ def derive_sync_pn_sequence(
     return bits.astype(np.float32) * 2 - 1
 
 
+def derive_sync_amplitude_scaling(
+    master_key: bytes,
+    session_id: int,
+    n_bursts: int,
+    *,
+    lognorm_mu: float = 0.0,
+    lognorm_sigma: float = 0.35,
+) -> list[float]:
+    """
+    Derive a deterministic per-burst amplitude scaling sequence.
+
+    The scaling is log-normally distributed: scale = exp(mu + sigma * Z), where
+    Z ~ Normal(0, 1) derived deterministically from key material. TX and RX compute
+    the same scale factors for the same inputs.
+    """
+    import hashlib
+    import hmac
+
+    if n_bursts <= 0:
+        return []
+    if lognorm_sigma < 0:
+        raise ValueError("lognorm_sigma must be >= 0")
+
+    base = hmac.new(
+        master_key,
+        b"sync-amp-scale-v1" + session_id.to_bytes(8, "big"),
+        hashlib.sha256,
+    ).digest()
+
+    scales: list[float] = []
+    for i in range(int(n_bursts)):
+        per = hmac.new(base, b"/i/" + i.to_bytes(8, "big"), hashlib.sha256).digest()
+        nonce = i.to_bytes(8, "little") + b"\x00" * 4
+        cipher = ChaCha20.new(key=per, nonce=nonce)
+        r = cipher.encrypt(b"\x00" * 8)
+        u1 = _to_uniform(r[:4])
+        u2 = _to_uniform(r[4:8])
+        z = _box_muller(u1, u2, variance=1.0)
+        scale = math.exp(float(lognorm_mu) + float(lognorm_sigma) * float(z))
+        scales.append(float(scale))
+    return scales
+
+
 def gaussian_envelope(
     samples: np.ndarray,
-    rise_fraction: float = 0.1,
+    rise_fraction: float = 0.15,
 ) -> np.ndarray:
     """
     Apply a Gaussian-shaped amplitude envelope to a burst to reduce sidelobes.

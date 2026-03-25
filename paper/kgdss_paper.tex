@@ -161,11 +161,12 @@ Name & Info string & Purpose \\
 \end{tabular}
 \end{table}
 
-\begin{strip}
+\begin{figure*}[t]
 \centering
-\includegraphics[width=0.92\textwidth]{\fig{fig2_key_derivation.png}}
-\captionof{figure}{Key derivation hierarchy (conceptual).}
-\end{strip}
+\includegraphics[width=0.90\textwidth]{\fig{fig2_key_derivation.png}}
+\caption{Key derivation hierarchy (conceptual).}
+\label{fig:keyderiv}
+\end{figure*}
 
 \subsection{Cryptographic masking}
 Sixteen ChaCha20 bytes per chip provide four 32-bit uniforms; Box--Muller yields two Gaussian masks:
@@ -178,10 +179,14 @@ Minimum magnitude clamp $\mathrm{MIN\_MASK}=10^{-4}$ avoids division instability
 \end{equation}
 Implementation matches \texttt{kgdss\_spreader\_cc} / \texttt{kgdss\_despreader\_cc} and libsodium ChaCha20 IETF interface \cite{rfc8439,bernstein2008}.
 
-\subsection{Session-unique sync}
-\texttt{derive\_sync\_pn\_sequence}: HMAC-SHA256(\texttt{sync\_pn}, \texttt{sync-pn-v1}$\Vert$\texttt{session\_id}) derives material expanded by ChaCha20 to $\pm1$ chips \cite{repo_gdss}.\\
-\texttt{derive\_sync\_schedule}: derives per-epoch offsets in $[-w,w]$ ms via ChaCha20-indexed uniforms \cite{repo_gdss}.\\
-\texttt{gaussian\_envelope}: rise/fall $\exp(-x^2/2)$ on flanks, \texttt{rise\_fraction}=0.1.
+\subsection{Session-unique sync and scheduled multi-burst cadence}
+The synchronisation design uses a deterministic \emph{multi-burst} cadence rather than a single burst at session start. TX and RX derive the same ordered burst-epoch list from \texttt{sync\_timing} without extra signalling: \texttt{derive\_sync\_schedule} maps keyed uniforms through an inverse Pareto CDF (heavy-tailed inter-burst intervals), bounded by configured minimum interval and session duration \cite{repo_gdss}.
+
+\texttt{derive\_sync\_pn\_sequence}: HMAC-SHA256(\texttt{sync\_pn}, \texttt{sync-pn-v2}$\Vert$\texttt{session\_id}$\Vert$\texttt{burst\_index}) derives per-burst material expanded by ChaCha20 to $\pm1$ chips; \texttt{burst\_index}=0 preserves backward compatibility \cite{repo_gdss}.\\
+\texttt{derive\_sync\_amplitude\_scaling}: deterministic per-burst log-normal amplitude jitter from a separate keyed domain label.\\
+\texttt{gaussian\_envelope}: rise/fall $\exp(-x^2/2)$ on flanks, \texttt{rise\_fraction}=0.15.
+
+Receiver recovery follows a flywheel model: each detected burst re-centres timing; missed bursts increase drift only until the next successful lock, bounding loss to frames between adjacent schedule positions.
 
 \begin{strip}
 \centering
@@ -608,7 +613,7 @@ Featureless-waveform concepts date to early LPI research \cite{turner1991}; cycl
 Gaussian chip amplitudes imply high peak-to-average power ratio relative to constant-envelope modulations. Power amplifiers may clip unless backed off, reintroducing distortion features; this mirrors standard GDSS hardware constraints \cite{shakeel2023}.
 
 \subsection{Open problems}
-Formal indistinguishability games for ChaCha20-derived masks, complete OTA validation with Nitrokey-backed keys, and integration of ephemeral ECDH for forward secrecy remain outstanding \cite{repo_gdss}.
+Formal indistinguishability games for ChaCha20-derived masks, complete OTA validation with Nitrokey-backed keys, and integration of ephemeral ECDH for forward secrecy remain outstanding \cite{repo_gdss}. Beyond the implemented multi-burst cadence, the current engineering roadmap prioritises (i) real-time receiver-side noise-floor estimation from rolling PSD statistics, (ii) SQLite persistence of noise-floor and impulse-rate history for warm starts and local adaptation, and (iii) optional GPS-assisted dual-site exchange of those histories via out-of-band channels. P.372-15 remains the baseline cold-start model \cite{p372}; a practical receiver architecture is to tie P.372-15 directly to GNU Radio receiver block outputs so per-frequency-bin PSD estimates can be compared to the expected P.372-15 spectral density profile and used to calibrate burst schedule and amplitude-jitter parameters.
 
 \subsection{Threat model and operational context}
 Journalists, press photographers, humanitarian workers, and human rights monitors in conflict zones or under authoritarian surveillance face a possible threat from state-level SIGINT assets. Encryption conceals content but does not conceal the fact of transmission or the transmitter's location. Keyed GDSS below the noise floor addresses precisely this gap.
@@ -721,6 +726,7 @@ LinHT hardware is licensed under CC~BY-NC-SA~4.0 \cite{cc_by_nc_sa_40}. \texttt{
 \bibitem{reparaz2017} O. Reparaz \textit{et al.}, CHES 2017 (dudect).
 \bibitem{kaddoum2016} G. Kaddoum, IEEE Access, 2016.
 \bibitem{itu1406} ITU-R P.1406, 2018.
+\bibitem{p372} ITU-R P.372-15, ``Radio noise,'' International Telecommunication Union, 2023.
 \bibitem{stanag4539} STANAG 4539, HF channel models.
 \bibitem{makhdoom2022} I. Makhdoom \textit{et al.}, Comput. Secur., 2022.
 \bibitem{soltani2018} R. Soltani \textit{et al.}, IEEE Trans. Wirel. Commun., 2018.

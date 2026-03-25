@@ -13,7 +13,7 @@ import os
 import struct
 import sys
 import warnings
-from typing import Dict, Generator, Optional, Tuple
+from typing import Dict, Generator, List, Optional, Tuple
 
 import numpy as np
 
@@ -231,17 +231,19 @@ def _derive_sync_pn_sequence(
     master_key: bytes,
     session_id: int,
     chips: int,
+    burst_index: int = 0,
 ) -> np.ndarray:
     """
-    Derive session-unique PN sequence for sync bursts (match sync_burst_utils).
+    Derive per-burst PN sequence for sync bursts (match sync_burst_utils).
 
-    HMAC-SHA256(master_key, "sync-pn-v1" || session_id) -> ChaCha20 key;
+    HMAC-SHA256(master_key, "sync-pn-v2" || session_id || "/i/" || burst_index) -> ChaCha20 key;
     ChaCha20(key, zero nonce) expanded to bits, then mapped to +1/-1 float32.
 
     Args:
         master_key: 32-byte key (e.g. sync_pn from full session key derivation).
         session_id: Session identifier.
         chips: Length of PN sequence.
+        burst_index: Burst index within the schedule; defaults to 0 for backward compatibility.
 
     Returns:
         One-dimensional float32 array of length chips with values in {-1.0, +1.0}.
@@ -250,7 +252,10 @@ def _derive_sync_pn_sequence(
     import hashlib
     pn_key = hmac.new(
         master_key,
-        b"sync-pn-v1" + session_id.to_bytes(8, "big"),
+        b"sync-pn-v2"
+        + session_id.to_bytes(8, "big")
+        + b"/i/"
+        + int(burst_index).to_bytes(8, "big", signed=False),
         hashlib.sha256,
     ).digest()
     nonce_12 = b"\x00" * 12
@@ -272,7 +277,7 @@ def _derive_sync_pn_sequence(
 
 def _gaussian_envelope(
     samples: np.ndarray,
-    rise_fraction: float = 0.1,
+    rise_fraction: float = 0.15,
 ) -> np.ndarray:
     """
     Apply Gaussian-shaped amplitude envelope to a burst (match sync_burst_utils).
@@ -385,6 +390,98 @@ def _generate_realistic_noise(n_samples: int, rng: np.random.Generator) -> np.nd
     return out.astype(np.complex64)
 
 
+def _derive_sync_schedule(
+    master_key: bytes,
+    session_id: int,
+    *,
+    session_duration_s: float,
+    n_bursts: int,
+    mean_interval_s: float,
+    pareto_alpha: float,
+    min_interval_s: float,
+) -> List[int]:
+    """
+    Deterministic multi-burst schedule: ordered list of epochs in ms since start.
+
+    Intervals are Pareto heavy-tailed using inverse CDF mapping from per-burst
+    key material. This matches the sync_burst_utils logic but is implemented
+    locally for generator self-containment.
+    """
+    import hmac
+    import hashlib
+
+    if n_bursts <= 0 or session_duration_s <= 0:
+        return []
+    if mean_interval_s <= 0:
+        raise ValueError("mean_interval_s must be > 0")
+    if pareto_alpha <= 1.0:
+        raise ValueError("pareto_alpha must be > 1.0")
+    if min_interval_s < 0:
+        raise ValueError("min_interval_s must be >= 0")
+
+    base = hmac.new(
+        master_key,
+        b"sync-schedule-v2" + session_id.to_bytes(8, "big"),
+        hashlib.sha256,
+    ).digest()
+
+    xm = float(mean_interval_s) * (float(pareto_alpha) - 1.0) / float(pareto_alpha)
+    duration_ms = int(session_duration_s * 1000.0)
+    min_interval_ms = int(min_interval_s * 1000.0)
+
+    epochs: List[int] = []
+    t_ms = 0
+    for i in range(int(n_bursts)):
+        per = hmac.new(base, b"/i/" + i.to_bytes(8, "big"), hashlib.sha256).digest()
+        nonce = i.to_bytes(8, "little") + b"\x00" * 4
+        u_bytes = _chacha20_keystream(per, nonce, 4)
+        u = _to_uniform(u_bytes)
+        interval_s = xm / pow(max(1e-12, 1.0 - u), 1.0 / float(pareto_alpha))
+        interval_ms = max(min_interval_ms, int(interval_s * 1000.0))
+        t_ms += interval_ms
+        if t_ms >= duration_ms:
+            break
+        epochs.append(t_ms)
+    return epochs
+
+
+def _derive_sync_amplitude_scaling(
+    master_key: bytes,
+    session_id: int,
+    n_bursts: int,
+    *,
+    lognorm_mu: float,
+    lognorm_sigma: float,
+) -> List[float]:
+    """
+    Deterministic per-burst amplitude scaling: exp(mu + sigma * Z), Z~N(0,1).
+    """
+    import hmac
+    import hashlib
+
+    if n_bursts <= 0:
+        return []
+    if lognorm_sigma < 0:
+        raise ValueError("lognorm_sigma must be >= 0")
+
+    base = hmac.new(
+        master_key,
+        b"sync-amp-scale-v1" + session_id.to_bytes(8, "big"),
+        hashlib.sha256,
+    ).digest()
+
+    out: List[float] = []
+    for i in range(int(n_bursts)):
+        per = hmac.new(base, b"/i/" + i.to_bytes(8, "big"), hashlib.sha256).digest()
+        nonce = i.to_bytes(8, "little") + b"\x00" * 4
+        r = _chacha20_keystream(per, nonce, 8)
+        u1 = _to_uniform(r[:4])
+        u2 = _to_uniform(r[4:8])
+        z = _box_muller(u1, u2, variance=1.0)
+        out.append(float(math.exp(float(lognorm_mu) + float(lognorm_sigma) * float(z))))
+    return out
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -396,6 +493,10 @@ def main():
     realistic = _generate_realistic_noise(N_SAMPLES, rng)
     realistic.tofile(os.path.join(OUTPUT_DIR, "01b_realistic_noise_baseline.cf32"))
     from scipy import stats
+    try:
+        from scipy.signal import fftconvolve
+    except Exception:
+        fftconvolve = None
     I, Q = noise.real, noise.imag
     meta1 = {
         "mean_i": float(np.mean(I)),
@@ -490,16 +591,16 @@ def main():
         json.dump({"pearson_correlation_vs_payload": float(corr5)}, f, indent=2)
     assert abs(corr5) < 0.05, f"Wrong-key correlation |{corr5}| >= 0.05"
 
-    # File 6 - Sync burst isolation (keyed Gaussian masked; indistinguishable from GDSS data)
+    # File 6 - Sync burst isolation (single burst; keyed Gaussian masked; indistinguishable from GDSS data)
     burst_len = 1000  # 2 ms at 500 kHz
     silence_half = 250_000  # 0.5 s
     total_6 = silence_half * 2 + burst_len
     keys_6 = _derive_session_keys(TEST_SHARED_SECRET)
     gdss_key_6 = keys_6["gdss_masking"]
     sync_nonce_6 = _sync_burst_nonce(SESSION_ID)
-    pn = _derive_sync_pn_sequence(TEST_SHARED_SECRET, SESSION_ID, burst_len)
+    pn = _derive_sync_pn_sequence(TEST_SHARED_SECRET, SESSION_ID, burst_len, burst_index=0)
     burst_raw = pn.astype(np.complex64)
-    burst_envelope = _gaussian_envelope(burst_raw, rise_fraction=0.1)
+    burst_envelope = _gaussian_envelope(burst_raw, rise_fraction=0.15)
     burst_masked = _apply_keyed_gaussian_mask(burst_envelope, gdss_key_6, sync_nonce_6)
     noise_floor = 1.0
     target_rms = 1.0
@@ -640,7 +741,7 @@ Optional baseline with hardware artifacts (SDR recording):
         merged_std.tofile(os.path.join(OUTPUT_DIR, "01c_realistic_noise_plus_standard_gdss.cf32"))
         merged_keyed.tofile(os.path.join(OUTPUT_DIR, "01d_realistic_noise_plus_keyed_gdss.cf32"))
 
-    # File 10a - Standard GDSS sync burst Session A (fixed PN, seed 99)
+    # File 10a - Standard GDSS sync burst Session A (fixed PN, fixed position)
     PN_SEED_STD = 99
     BURST_POS_FIXED = 10_000
     SILENCE_LEN_10 = 500_000
@@ -649,7 +750,7 @@ Optional baseline with hardware artifacts (SDR recording):
     rng10 = np.random.default_rng(seed=PN_SEED_STD)
     pn10 = rng10.choice([-1.0, 1.0], size=10_000)
     burst10 = pn10[:burst_len].astype(np.complex64)
-    burst10_env = _gaussian_envelope(burst10, rise_fraction=0.1)
+    burst10_env = _gaussian_envelope(burst10, rise_fraction=0.15)
     scale10 = noise_floor * (10 ** (peak_target_db / 20.0)) / (np.max(np.abs(burst10_env)) + 1e-12)
     burst10_scaled = burst10_env * scale10
     silence_before = np.zeros(BURST_POS_FIXED, dtype=np.complex64)
@@ -667,33 +768,78 @@ Optional baseline with hardware artifacts (SDR recording):
     with open(os.path.join(OUTPUT_DIR, "10b_standard_gdss_sync_burst_session_B.json"), "w") as f:
         json.dump(meta10b, f, indent=2)
 
-    # File 11a/11b - Keyed GDSS sync burst (session-unique PN + keyed Gaussian mask; power matches noise)
+    # File 11a/11b - Keyed GDSS sync bursts (scheduled multi-burst cadence, per-burst PN, keyed Gaussian mask)
     target_rms_11 = 1.0
     keys_full = _derive_full_session_keys(TEST_SHARED_SECRET)
     sync_pn_key = keys_full["sync_pn"]
     gdss_key_11 = keys_full["gdss_masking"]
-    pn11a = _derive_sync_pn_sequence(sync_pn_key, SESSION_ID_A, burst_len)
-    burst11a = pn11a.astype(np.complex64)
-    burst11a_env = _gaussian_envelope(burst11a, rise_fraction=0.1)
-    burst11a_masked = _apply_keyed_gaussian_mask(burst11a_env, gdss_key_11, _sync_burst_nonce(SESSION_ID_A))
-    rms11a = np.sqrt(np.mean(np.abs(burst11a_masked) ** 2)) + 1e-12
-    burst11a_scaled = burst11a_masked * (target_rms_11 / rms11a)
-    file11a = np.concatenate([silence_before, burst11a_scaled, silence_after])
+    sync_timing_key = keys_full["sync_timing"]
+
+    session_len_s = SILENCE_LEN_10 / float(SAMPLE_RATE)
+    # Keep the test window short (1 second) so correlation is tractable; use shorter mean interval.
+    n_bursts_sched = 6
+    mean_interval_s = 0.15
+    pareto_alpha = 2.0
+    min_interval_s = 0.05
+    amp_mu = 0.0
+    amp_sigma = 0.35
+
+    def _render_keyed_schedule(session_id: int) -> Tuple[np.ndarray, Dict]:
+        epochs_ms = _derive_sync_schedule(
+            sync_timing_key,
+            session_id,
+            session_duration_s=session_len_s,
+            n_bursts=n_bursts_sched,
+            mean_interval_s=mean_interval_s,
+            pareto_alpha=pareto_alpha,
+            min_interval_s=min_interval_s,
+        )
+        scales = _derive_sync_amplitude_scaling(
+            sync_timing_key,
+            session_id,
+            len(epochs_ms),
+            lognorm_mu=amp_mu,
+            lognorm_sigma=amp_sigma,
+        )
+
+        out = np.zeros(SILENCE_LEN_10, dtype=np.complex64)
+        sync_nonce = _sync_burst_nonce(session_id)
+        for i, t_ms in enumerate(epochs_ms):
+            pos = int((t_ms / 1000.0) * SAMPLE_RATE)
+            if pos < 0 or pos + burst_len > len(out):
+                continue
+            pn = _derive_sync_pn_sequence(sync_pn_key, session_id, burst_len, burst_index=i)
+            burst = pn.astype(np.complex64)
+            burst_env = _gaussian_envelope(burst, rise_fraction=0.15)
+            burst_masked = _apply_keyed_gaussian_mask(burst_env, gdss_key_11, sync_nonce)
+            rms = np.sqrt(np.mean(np.abs(burst_masked) ** 2)) + 1e-12
+            burst_scaled = burst_masked * (target_rms_11 / rms) * float(scales[i])
+            out[pos : pos + burst_len] += burst_scaled
+
+        meta = {
+            "session_id": session_id,
+            "type": "keyed_gdss_scheduled_multi_burst",
+            "keyed_gaussian_masked": True,
+            "burst_duration_ms": 2.0,
+            "n_bursts_requested": int(n_bursts_sched),
+            "n_bursts_scheduled": int(len(epochs_ms)),
+            "schedule_epochs_ms": [int(x) for x in epochs_ms],
+            "pareto_alpha": float(pareto_alpha),
+            "mean_interval_s": float(mean_interval_s),
+            "min_interval_s": float(min_interval_s),
+            "amplitude_lognorm_mu": float(amp_mu),
+            "amplitude_lognorm_sigma": float(amp_sigma),
+            "note": "Short-window parameters used for test tractability (not deployment defaults).",
+        }
+        return out, meta
+
+    file11a, meta11a = _render_keyed_schedule(SESSION_ID_A)
     file11a.tofile(os.path.join(OUTPUT_DIR, "11a_keyed_gdss_sync_burst_session_A.cf32"))
-    meta11a = {"session_id": SESSION_ID_A, "type": "keyed_gdss_session_pn", "keyed_gaussian_masked": True}
     with open(os.path.join(OUTPUT_DIR, "11a_keyed_gdss_sync_burst_session_A.json"), "w") as f:
         json.dump(meta11a, f, indent=2)
 
-    # File 11b - Keyed GDSS sync burst Session B (session-unique PN + keyed Gaussian mask)
-    pn11b = _derive_sync_pn_sequence(sync_pn_key, SESSION_ID_B, burst_len)
-    burst11b = pn11b.astype(np.complex64)
-    burst11b_env = _gaussian_envelope(burst11b, rise_fraction=0.1)
-    burst11b_masked = _apply_keyed_gaussian_mask(burst11b_env, gdss_key_11, _sync_burst_nonce(SESSION_ID_B))
-    rms11b = np.sqrt(np.mean(np.abs(burst11b_masked) ** 2)) + 1e-12
-    burst11b_scaled = burst11b_masked * (target_rms_11 / rms11b)
-    file11b = np.concatenate([silence_before, burst11b_scaled, silence_after])
+    file11b, meta11b = _render_keyed_schedule(SESSION_ID_B)
     file11b.tofile(os.path.join(OUTPUT_DIR, "11b_keyed_gdss_sync_burst_session_B.cf32"))
-    meta11b = {"session_id": SESSION_ID_B, "type": "keyed_gdss_session_pn", "keyed_gaussian_masked": True}
     with open(os.path.join(OUTPUT_DIR, "11b_keyed_gdss_sync_burst_session_B.json"), "w") as f:
         json.dump(meta11b, f, indent=2)
 
@@ -701,7 +847,12 @@ Optional baseline with hardware artifacts (SDR recording):
     data10a = np.fromfile(os.path.join(OUTPUT_DIR, "10a_standard_gdss_sync_burst_session_A.cf32"), dtype=np.complex64)
     data10b = np.fromfile(os.path.join(OUTPUT_DIR, "10b_standard_gdss_sync_burst_session_B.cf32"), dtype=np.complex64)
     I10a, I10b = data10a.real, data10b.real
-    cross12 = np.correlate(I10a - I10a.mean(), I10b - I10b.mean(), mode="full")
+    a12 = I10a - I10a.mean()
+    b12 = I10b - I10b.mean()
+    if fftconvolve is not None:
+        cross12 = fftconvolve(a12, b12[::-1], mode="full")
+    else:
+        cross12 = np.correlate(a12, b12, mode="full")
     denom12 = len(I10a) * np.std(I10a) * np.std(I10b)
     cross12_n = cross12 / denom12 if denom12 > 0 else cross12
     peak12 = float(np.max(np.abs(cross12_n)))
@@ -718,7 +869,12 @@ Optional baseline with hardware artifacts (SDR recording):
     data11a = np.fromfile(os.path.join(OUTPUT_DIR, "11a_keyed_gdss_sync_burst_session_A.cf32"), dtype=np.complex64)
     data11b = np.fromfile(os.path.join(OUTPUT_DIR, "11b_keyed_gdss_sync_burst_session_B.cf32"), dtype=np.complex64)
     I11a, I11b = data11a.real, data11b.real
-    cross13 = np.correlate(I11a - I11a.mean(), I11b - I11b.mean(), mode="full")
+    a13 = I11a - I11a.mean()
+    b13 = I11b - I11b.mean()
+    if fftconvolve is not None:
+        cross13 = fftconvolve(a13, b13[::-1], mode="full")
+    else:
+        cross13 = np.correlate(a13, b13, mode="full")
     denom13 = len(I11a) * np.std(I11a) * np.std(I11b)
     cross13_n = cross13 / denom13 if denom13 > 0 else cross13
     peak13 = float(np.max(np.abs(cross13_n)))

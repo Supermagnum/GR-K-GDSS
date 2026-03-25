@@ -1028,26 +1028,36 @@ If you want to inspect specific behaviour in code, start with these files and fu
 
 - **PN spreading sequence derived from Key 3 (`sync_pn`)**
   - **Runtime code (actual helper used by applications):**
-    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_pn_sequence(master_key, session_id, chips)`
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_pn_sequence(master_key, session_id, chips, burst_index=0)` (per-burst PN evolution; backward-compatible default)
     - [`python/session_key_derivation.py`](python/session_key_derivation.py): `derive_session_keys(...)` returns `sync_pn`
   - **Documentation / tests:**
     - [`docs/USAGE.md`](docs/USAGE.md): `derive_session_keys(...)` -> `sync_pn` -> `derive_sync_pn_sequence(...)`
-    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): PN determinism and key-sensitivity tests
+    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): PN determinism/key-sensitivity, per-burst uniqueness, and `burst_index=0` compatibility checks
 
 - **Burst timing randomised using Key 4 (`sync_timing`)**
   - **Runtime code (actual helper used by applications):**
-    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_schedule(master_key, session_id, window_ms=50)`
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_schedule(...)` returning an ordered multi-burst epoch list (Pareto heavy-tailed inter-burst intervals)
     - [`python/session_key_derivation.py`](python/session_key_derivation.py): `derive_session_keys(...)` returns `sync_timing`
   - **Documentation / tests:**
-    - [`docs/USAGE.md`](docs/USAGE.md): "Sync burst timing and epoch window" section (how offsets are computed and used)
-    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): timing determinism/range/distribution tests
+    - [`docs/USAGE.md`](docs/USAGE.md): sync helpers and receiver integration sections
+    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): schedule determinism/range/ordering/non-collision checks
 
 - **Gaussian amplitude envelope for sync bursts**
   - **Runtime code (actual helper used by applications):**
-    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `gaussian_envelope(samples, rise_fraction=0.1)`
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `gaussian_envelope(samples, rise_fraction=0.15)` (current default)
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_amplitude_scaling(...)` deterministic per-burst log-normal scaling
   - **Documentation / tests:**
     - [`docs/USAGE.md`](docs/USAGE.md): helper reference and recommended sync-burst flow
     - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2GaussianEnvelope`
+
+- **P.372 baseline and receiver PSD profile integration**
+  - **Runtime code (receiver-side model helpers):**
+    - [`python/p372_baseline.py`](python/p372_baseline.py): `load_p372_params()` + `P372Params` from static config
+    - [`python/p372_baseline_config.json`](python/p372_baseline_config.json): precomputed nominal/min parameter source
+    - [`python/p372_receiver_profile.py`](python/p372_receiver_profile.py): `p372_expected_psd_profile_dbm_per_hz(...)`, `calibrate_p372_profile_to_measured_psd(...)`, `P372ReceiverProfile`
+  - **Documentation / tests:**
+    - [`docs/USAGE.md`](docs/USAGE.md): "Tie P.372-15 into receiver source (PSD by frequency bin)"
+    - [`tests/test_p372_receiver_profile.py`](tests/test_p372_receiver_profile.py): loader determinism, expected-profile shape, and calibration tests
 
 - **Public C++ block API headers (interface contracts)**
   - **Runtime API (public interfaces):**

@@ -396,6 +396,55 @@ In GRC the chain looks like:
 
 The SOQPSK demodulator expects complex baseband symbols at the same symbol rate and alignment as produced by the SOQPSK modulator. The despreader must use the **same** `sequence_length`, `chips_per_symbol`, `variance`, `seed`, `chacha_key`, and `chacha_nonce` as the transmitter.
 
+### Tie P.372-15 into receiver source (PSD by frequency bin)
+
+You can tie the P.372-15 atmospheric noise baseline directly into the receiver source path by taking FFT-bin PSD estimates from your RX chain and calibrating them against a P.372 reference profile.
+
+Helpers exported by `gnuradio.kgdss`:
+
+- `load_p372_params()`
+- `p372_expected_psd_profile_dbm_per_hz(freq_bins_hz, center_freq_hz, nominal_floor_dbm_per_hz=...)`
+- `calibrate_p372_profile_to_measured_psd(freq_bins_hz, measured_psd_dbm_per_hz, center_freq_hz, nominal_floor_dbm_per_hz=...)`
+
+Typical usage:
+
+1. Compute PSD per FFT bin from the receiver source (for example using an FFT/log-power path and a probe).
+2. Build `freq_bins_hz` from center frequency and sample rate.
+3. Run `calibrate_p372_profile_to_measured_psd(...)`.
+4. Use calibrated profile and residuals to set conservative thresholds and headroom.
+
+```python
+import numpy as np
+from gnuradio import kgdss
+
+fft_size = 1024
+center_hz = 7_100_000
+samp_rate = 500_000
+freq_bins_hz = center_hz + np.fft.fftshift(np.fft.fftfreq(fft_size, d=1.0 / samp_rate))
+
+# measured_psd_dbm_per_hz: one FFT frame or robust median across recent frames
+profile = kgdss.calibrate_p372_profile_to_measured_psd(
+    freq_bins_hz,
+    measured_psd_dbm_per_hz,
+    center_freq_hz=center_hz,
+    nominal_floor_dbm_per_hz=-160.0,
+)
+print("P372 calibration offset (dB):", profile.calibration_offset_db)
+```
+
+This keeps P.372-15 as a model prior while adapting to the actual local receiver noise floor by frequency bin.
+
+**Development import troubleshooting**
+
+If you run tests from source and see an error during collection such as:
+
+`ImportError: attempted relative import with no known parent package`
+
+it usually means Python imported `p372_receiver_profile.py` as a standalone module while another part of the run imported `gnuradio.kgdss` from an installed package. Current code supports both import modes (package-relative and source-tree direct import), but if your environment is mixed:
+
+- prefer running tests with a consistent `PYTHONPATH`,
+- or install/reinstall the current tree before running full pytest.
+
 ### DC spike and IQ imbalance (real SDR hardware)
 
 The **Keyed GDSS Spreader** and **Keyed GDSS Despreader** do **not** implement correction for RTL-SDR-style **DC spikes** or **IQ imbalance**. Those effects come from the analog front end and tuner, not from the GDSS algorithm. You must handle them in the **RF / channel part** of your GNU Radio flowgraph (or by tuning/calibration outside GNU Radio).

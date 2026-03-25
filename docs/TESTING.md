@@ -11,6 +11,7 @@ This document describes the unit tests for gr-k-gdss, how to run them, what each
   - [Suite overview](#suite-overview)
   - [T1 — Spreader/despreader (test_t1_spreader_despreader.py)](#t1--spreaderdespreader-test_t1_spreader_despreaderpy)
   - [T2 — Sync burst (test_t2_sync_burst.py)](#t2--sync-burst-test_t2_sync_burstpy)
+  - [P372 — Receiver PSD profile (test_p372_receiver_profile.py)](#p372--receiver-psd-profile-test_p372_receiver_profilepy)
   - [T3 — Key derivation (test_t3_key_derivation.py)](#t3--key-derivation-test_t3_key_derivationpy)
   - [Cross-layer (test_cross_layer.py)](#cross-layer-test_cross_layerpy)
 - [Expected results](#expected-results)
@@ -121,7 +122,8 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 | Suite | File | What it tests |
 |-------|------|----------------|
 | T1 | test_t1_spreader_despreader.py | C++ spreader and despreader blocks: round-trip, keystream behaviour, key/nonce validation, Gaussian masking, block continuity. |
-| T2 | test_t2_sync_burst.py | Python sync-burst helpers: PN sequence generation, timing offsets, Gaussian envelope shape, keyed Gaussian mask for sync bursts, sync-burst nonce. |
+| T2 | test_t2_sync_burst.py | Python sync-burst helpers: multi-burst schedule derivation, per-burst PN evolution, Gaussian envelope shape, keyed Gaussian mask for sync bursts, sync-burst nonce. |
+| P372 | test_p372_receiver_profile.py | P.372 baseline loader determinism, expected PSD profile shape, and robust calibration against measured receiver PSD bins. |
 | T3 | test_t3_key_derivation.py | Session key derivation (HKDF), nonce construction, and storing/loading the GDSS key via the Linux kernel keyring. |
 | Cross-layer | test_cross_layer.py | End-to-end: derive keys, build spreader/despreader, run a full spread/despread flow; output matches input. |
 
@@ -164,6 +166,18 @@ These tests cover the Python sync-burst utilities: PN sequence generation, timin
 | **TestT2SyncBurstNonce** | gdss_sync_burst_nonce(session_id) returns 12 bytes; different session_id yields different nonce. |
 
 T2 tests are skipped if `sync_burst_utils` (e.g. derive_sync_pn_sequence, gaussian_envelope) is not available (missing PyCryptodome or cryptography). The keyed-mask and sync-burst-nonce tests are skipped unless `apply_keyed_gaussian_mask` and `gdss_sync_burst_nonce` are exported by the installed module.
+
+### P372 — Receiver PSD profile (test_p372_receiver_profile.py)
+
+These tests cover receiver-side P.372 integration helpers.
+
+| Test | What it does |
+|------|----------------|
+| **TestP372BaselineLoader** | Calls `load_p372_params()` twice and checks deterministic values (including `rise_fraction=0.15`). |
+| **TestP372ExpectedProfile** | Builds expected per-bin PSD profile for FFT bins and checks shape/finite output. |
+| **TestP372Calibration** | Verifies median-offset calibration against synthetic measured PSD. |
+
+**Import-mode note:** In development environments, pytest may import from source tree while `gnuradio.kgdss` points to an older installed package. The tests include source fallback and `p372_receiver_profile.py` supports both package-relative and direct imports. This avoids collection-time errors such as `attempted relative import with no known parent package`.
 
 ### T3 — Key derivation (test_t3_key_derivation.py)
 
@@ -235,21 +249,21 @@ All of the above IQ data files (generated 01–07, 09–13 and optional recordin
 | **09_standard_gdss_transmission.cf32** | Standard (unkeyed) GDSS per Shakeel et al. 2023: masking from Gaussian RNG (not ChaCha20), same payload and spreading factor as 03. Used to compare keyed vs standard GDSS; both should look noise-like in histograms and PSD. |
 | **10a_standard_gdss_sync_burst_session_A.cf32** | Standard GDSS sync burst for "session A": fixed PN sequence (seed 99), 2 ms burst at fixed position 10000 in a 500k-sample silence window. Same PN for every session (vulnerability). |
 | **10b_standard_gdss_sync_burst_session_B.cf32** | Identical to 10a (same PN, same position). Cross-correlation of 10a vs 10b shows a strong peak (File 12), confirming the repeating-PN vulnerability. |
-| **11a_keyed_gdss_sync_burst_session_A.cf32** | Keyed GDSS sync burst for session A: session-unique PN and timing from derive_sync_pn_sequence / derive_sync_schedule. |
-| **11b_keyed_gdss_sync_burst_session_B.cf32** | Keyed GDSS sync burst for session B (different session_id). PN and burst position differ from 11a. Cross-correlation of 11a vs 11b (File 13) should show no detectable peak. |
+| **11a_keyed_gdss_sync_burst_session_A.cf32** | Keyed GDSS **scheduled multi-burst** waveform for session A: deterministic burst epochs from `derive_sync_schedule`, per-burst PN from `derive_sync_pn_sequence(..., burst_index=i)`, Gaussian envelope (`rise_fraction=0.15`), keyed Gaussian mask, and per-burst amplitude jitter. |
+| **11b_keyed_gdss_sync_burst_session_B.cf32** | Same scheduled multi-burst construction for session B (different `session_id`). Schedule and per-burst PN differ from 11a, so cross-correlation of 11a vs 11b (File 13) should show no detectable recurring structure. |
 | **12_standard_gdss_crosscorr_A_vs_B.cf32** | Normalized cross-correlation of 10a vs 10b (I component). Strong peak confirms standard GDSS sync bursts are detectable across sessions. Generator asserts peak > 0.5. |
-| **13_keyed_gdss_crosscorr_A_vs_B.cf32** | Normalized cross-correlation of 11a vs 11b (I component). No strong peak; keyed GDSS session-unique PN is not detectable. Generator asserts peak < 0.15 (software simulation threshold; real transmission would be lower). The improvement ratio (standard peak / keyed peak) is what demonstrates protection. |
+| **13_keyed_gdss_crosscorr_A_vs_B.cf32** | Normalized cross-correlation of 11a vs 11b (I component) over the **full scheduled multi-burst waveforms**. No strong peak; keyed GDSS recurring structure is not detectable. Generator asserts peak < 0.15 (software simulation threshold; real transmission would be lower). The improvement ratio (standard peak / keyed peak) is what demonstrates protection. |
 
-**Is the keyed GDSS residual (~0.107) exploitable?** The honest answer: **no**. That value is a **simulation artifact**. In the test, two sessions use different session-unique PN sequences and timing; the residual correlation comes from the finite sample size, identical burst envelope shape, and lack of channel effects. In a real channel, additional noise, multipath, and hardware imperfections would push the cross-session correlation lower. The residual is not considered exploitable for traffic analysis or session linking; the design goal is that keyed GDSS does not reveal repeating structure across sessions, and the roughly 9x reduction versus standard GDSS is what matters for that claim.
+**Is the keyed GDSS residual exploitable?** The honest answer: **no**. The residual value in software tests is a **simulation artifact**. In the multi-burst test, two sessions use different schedules, per-burst PN sequences, and amplitude jitter; any remaining correlation comes from finite sample effects and simplified channel assumptions. In a real channel, additional noise, multipath, and hardware imperfections would push cross-session correlation lower. The residual is not considered exploitable for traffic analysis or session linking; the key metric is strong reduction versus standard GDSS.
 
 ### Scripts
 
-1. **generate_iq_test_files.py** — Builds all test files in `tests/iq_files/`: 01, 01b (realistic noise), 01c (realistic + unkeyed GDSS), 01d (realistic + keyed GDSS), 02–08 as above, plus 09 (standard GDSS transmission), 10a/10b (standard sync bursts), 11a/11b (keyed sync bursts), 12 (standard cross-corr), 13 (keyed cross-corr). On success it prints "VULNERABILITY CONFIRMED" (File 12 peak > 0.5) and "PROTECTION CONFIRMED" (File 13 peak < 0.15), then "Generated all IQ test files in .../tests/iq_files". The 0.15 threshold is for software simulation; in real transmission, channel noise and hardware would push the keyed cross-session peak lower. The improvement ratio (e.g. 9x reduction) is what matters. Requires numpy, scipy, cryptography (and optionally pycryptodome for ChaCha20 IETF).
+1. **generate_iq_test_files.py** — Builds all test files in `tests/iq_files/`: 01, 01b (realistic noise), 01c (realistic + unkeyed GDSS), 01d (realistic + keyed GDSS), 02–08 as above, plus 09 (standard GDSS transmission), 10a/10b (standard sync bursts), 11a/11b (**keyed scheduled multi-burst** sync waveforms), 12 (standard cross-corr), 13 (keyed cross-corr). The keyed schedule uses Pareto-distributed inter-burst intervals, per-burst PN evolution (`burst_index`), and deterministic log-normal amplitude jitter. On success it prints "VULNERABILITY CONFIRMED" (File 12 peak > 0.5) and "PROTECTION CONFIRMED" (File 13 peak < 0.15), then "Generated all IQ test files in .../tests/iq_files". The 0.15 threshold is for software simulation; in real transmission, channel noise and hardware would push the keyed cross-session peak lower. The improvement ratio is what matters. Requires numpy, scipy, cryptography (and optionally pycryptodome for ChaCha20 IETF).
 2. **analyse_iq_files.py** — Runs statistical checks: same as before on 01–08; on 09 the same eight noise-like tests (with relaxed thresholds for standard GDSS) plus KL divergence vs 03; reads JSON for 12/13 and prints a cross-session correlation summary (Standard GDSS peak, Keyed GDSS peak, improvement ratio). Prints a PASS/FAIL/WARN table and exits with 0 only if no tests fail.
 3. **plot_iq_comparison.py** — Produces two plots. **iq_comparison.png**: original 3x3 grid (histograms, PSD, autocorrelation for 01, 03, 04, 05, 06). **iq_comparison_vs_standard.png**: 4x3 grid comparing keyed vs standard GDSS (rows 1–2: noise, keyed, standard; row 3: cross-correlation 12 vs 13 and overlay; row 4: despread comparison). Requires matplotlib.
 4. **plot_spectrum_snapshots.py** — Produces spectrum snapshot images (600 kHz bandwidth, Welch PSD, DC bin excluded, Gaussian roll-off): **spectrum_baseline.png** (File 01), **spectrum_standard_gdss.png** (File 09 + File 06), **spectrum_keyed_gdss.png** (File 03), **spectrum_real_noise.png** when File 08 exists (Blackman-Harris), **spectrum_realistic_baseline.png** (File 01b synthetic realistic baseline), **spectrum_realistic_plus_standard_gdss.png** (File 01c), **spectrum_realistic_plus_keyed_gdss.png** (File 01d). Data is resampled from 500 kHz to 600 kHz. A notch at 0 Hz in spectrum displays is caused by the DC blocker in GNU Radio (see [Unexpected PSD finding](#unexpected-psd-finding-row-2-second-plot-standard-gdss-low-frequency-structure)). Requires matplotlib, scipy.
 
-Run from the repo root or from `tests/`. The generator can take several minutes because of the large cross-correlation in File 13; allow up to 600 seconds (10 minutes) on a typical machine:
+Run from the repo root or from `tests/`. The generator now uses FFT-based cross-correlation and should complete quickly on typical machines:
 
 ```bash
 cd tests
