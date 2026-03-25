@@ -305,15 +305,42 @@ cryptographically opaque.
 
 ### The Sync Burst
 
-The 2ms synchronisation burst is redesigned to mimic natural static
-spikes in the radio environment:
+The synchronisation burst is **2 ms** in the documented RF design; the
+number of chips is whatever you pass to `derive_sync_pn_sequence` (API
+default `chips=10000`). The IQ test generator uses **1000** chips at
+**500 kHz** sample rate so each burst is still 2 ms long. The Python
+helpers in [`python/sync_burst_utils.py`](python/sync_burst_utils.py)
+implement the following (see also the code map later in this README):
 
-- The PN spreading sequence is derived from Key 3 — unique per session,
-  unknown to anyone without the session key
-- The burst timing is randomised using Key 4 — the burst arrives at an
-  unpredictable offset within a search window that both ends know
-- A Gaussian amplitude envelope is applied so the burst's rise and fall
-  profile resembles natural impulse noise rather than a keyed signal
+- **PN spreading (Key 3 — `sync_pn`):** `derive_sync_pn_sequence` derives
+  the BPSK-like PN from the session subkey and `session_id`. Each entry in
+  the sync schedule uses a **different** sequence: callers pass
+  **`burst_index`**, and the derivation binds that index (domain label
+  `sync-pn-v2` in code) so bursts in the same session do not reuse one PN
+  pattern. Only peers with the same keys and session id can reproduce the
+  sequences.
+
+- **Timing (Key 4 — `sync_timing`):** `derive_sync_schedule` returns an
+  **ordered list of burst epoch times** in milliseconds since session
+  start, not a single offset in a window. Inter-burst gaps are
+  **heavy-tailed** (Pareto inverse-CDF mapping of key-derived uniforms;
+  domain label `sync-schedule-v2`). Parameters include
+  `session_duration_s`, `n_bursts`, `mean_interval_s`, `pareto_alpha`, and
+  `min_interval_s`. Transmitter and receiver compute the **same** schedule
+  without extra signalling; the receiver searches around each predicted
+  arrival time (flywheel-style tracking is the intended receiver behaviour).
+
+- **Envelope and per-burst amplitude:** `gaussian_envelope` applies a
+  Gaussian rise and fall; the **default `rise_fraction` is 0.15** (15% of
+  the burst length at each end). `derive_sync_amplitude_scaling` adds a
+  **deterministic per-burst** log-normal scale factor (`sync-amp-scale-v1`
+  in code). The reference IQ generator passes the **`sync_timing`** subkey
+  into both the schedule and amplitude helpers.
+
+- **Keyed masking (Key 2 — `gdss_masking`):** For keyed GDSS, the same
+  Gaussian masking as the data path is applied with
+  `apply_keyed_gaussian_mask` and `gdss_sync_burst_nonce(session_id)` so the
+  sync burst does not stand out statistically from the masked waveform.
 
 ---
 
