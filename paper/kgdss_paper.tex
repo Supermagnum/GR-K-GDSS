@@ -424,10 +424,11 @@ Destroyed before seizure & None left & Past sessions unrecoverable \\
 }
 \end{table}
 
-\begin{strip}
+\begin{table*}[t]
 \centering
-\captionof{table}{SOQPSK operating parameters (representative; see gr-qradiolink README).}
+\caption{SOQPSK operating parameters (representative; see gr-qradiolink README).}
 \small
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}lllll@{}}
 \toprule
 Mode & Application & Data rate & BW / spacing & Notes \\
@@ -438,12 +439,14 @@ HF standard & Narrow HF & 4 kbps/carrier & 2.7 kHz & STANAG-style bands \\
 HF 10m & Wide HF & 9 kbps/carrier & 6 kHz & Higher-rate option \\
 \bottomrule
 \end{tabular}
-\end{strip}
+}
+\end{table*}
 
-\begin{strip}
+\begin{table*}[t]
 \centering
-\captionof{table}{gr-linux-crypto cross-validation (summary from TEST\_RESULTS.md).}
+\caption{gr-linux-crypto cross-validation (summary from TEST\_RESULTS.md).}
 \scriptsize
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}llrrr@{}}
 \toprule
 Suite & Algorithm / scope & Vectors & Passed & Rate \\
@@ -457,7 +460,8 @@ Wycheproof & ECDH Brainpool P-512r1 & (set) & all & 100\% \\
 Wycheproof & ECDSA per Brainpool curve & 475+ each & 475+ & 100\% \\
 \bottomrule
 \end{tabular}
-\end{strip}
+}
+\end{table*}
 
 \begin{table}[H]
 \centering
@@ -474,10 +478,11 @@ ChaCha20-Poly1305 & 11.5 & -- & -- & $<$100 \\
 \end{tabular}
 \end{table}
 
-\begin{strip}
+\begin{table*}[t]
 \centering
-\captionof{table}{IQ file analysis outcomes (\texttt{analyse\_iq\_files.py}, 29 checks PASS).}
+\caption{IQ file analysis outcomes (\texttt{analyse\_iq\_files.py}, 29 checks PASS).}
 \scriptsize
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}ll@{}}
 \toprule
 File / comparison & Tests (all PASS) \\
@@ -492,24 +497,28 @@ File / comparison & Tests (all PASS) \\
 \texttt{13\_keyed\_gdss\_crosscorr} & Cross-session peak $<0.15$ \\
 \bottomrule
 \end{tabular}
-\end{strip}
+}
+\end{table*}
 
-\begin{strip}
+\begin{table*}[t]
 \centering
-\captionof{table}{gr-k-gdss pytest modules (snapshot: 37 passed, 1 skipped).}
+\caption{gr-k-gdss pytest modules (snapshot: 42 passed, 1 skipped).}
 \scriptsize
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}ll@{}}
 \toprule
 Module / test & Status \\
 \midrule
 \texttt{test\_cross\_layer.py::test\_full\_stack\_round\_trip} & PASSED \\
+\texttt{test\_p372\_receiver\_profile.py} (3 tests: loader, expected profile, calibration) & PASSED \\
 \texttt{test\_t1\_spreader\_despreader.py} (14 tests: round\_trip, keystream, key/nonce sensitivity, invalid sizes, Gaussian, masks, boundary, set\_key) & PASSED \\
-\texttt{test\_t2\_sync\_burst.py} (12 tests: PN, timing, envelope, masking) & PASSED \\
+\texttt{test\_t2\_sync\_burst.py} (16 tests: PN, schedule, per-burst PN, envelope, masking) & PASSED \\
 \texttt{test\_t3\_key\_derivation.py} (10 tests: HKDF, nonces, keyring) & PASSED \\
 Optional keyring / environment & 1 skipped \\
 \bottomrule
 \end{tabular}
-\end{strip}
+}
+\end{table*}
 
 \FloatBarrier
 \clearpage
