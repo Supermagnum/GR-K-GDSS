@@ -70,6 +70,31 @@ The GPS position data also enables future use of P.372-15 in a targeted mode —
 
 The interface boundary for this enhancement is well-defined: the SQLite schema from Priority 3, a simple merge procedure for combining two databases, and the existing out-of-band exchange channel. None of the core burst design is affected.
 
+It should also be possible to share this information by RF when needed, but whether that is practical depends on payload overhead, link rate, and duty-cycle constraints.
+
+### Overhead example (RF sharing feasibility)
+
+Using the Priority 3 estimate of approximately 50 bytes per row:
+
+- Example capture set: 3 monitored bands, 1 sample per minute, 24 hours
+- Rows: 3 * 60 * 24 = 4,320
+- Raw payload: 4,320 * 50 bytes = 216,000 bytes (about 211 KiB)
+
+Approximate one-way transfer time over RF:
+
+- At 9.6 kbps net payload: 216,000 * 8 / 9,600 = 180 s (about 3.0 min)
+- At 2.4 kbps net payload: 216,000 * 8 / 2,400 = 720 s (about 12.0 min)
+
+If compressed and delta-encoded to, for example, 30% of raw size:
+
+- Payload: about 64.8 kB
+- Time: about 54 s at 9.6 kbps, or about 3.6 min at 2.4 kbps
+
+This is feasible for occasional exchange windows, but not free. A practical design should support both:
+
+- out-of-band full-database exchange as the default path, and
+- RF exchange of compact incremental updates when out-of-band transfer is unavailable.
+
 ---
 
 ## 6. Open Questions
@@ -80,4 +105,3 @@ The interface boundary for this enhancement is well-defined: the SQLite schema f
 - What is the upper HF frequency limit above which the P.372-15 atmospheric noise model produces a natural event rate so low that any additional burst event is statistically anomalous? This defines the maximum operating frequency for the atmospheric mimicry approach and should be computed from the P.372-15 quiet-site conservative constraint.
 - Should the averaging matrix be extended to include man-made noise contributions from P.372-15 Section 3 for urban deployment scenarios, or should the design remain conservative by using atmospheric noise alone as the universal mimicry target?
 - At what point in the real-time measurement accumulation window is the local estimate considered reliable enough to replace the P.372-15 cold-start fallback? A minimum sample count or minimum elapsed time threshold needs to be defined.
-- How much overhead will sharing rf noise measurements need? 
