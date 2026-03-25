@@ -109,7 +109,7 @@ The computed average across the full matrix produces the nominal parameter set. 
 
 The mean inter-burst interval must be no shorter than the minimum natural impulse event inter-arrival time from the P.372-15 conservative constraint. A recommended starting point is 30 to 90 seconds mean interval with Pareto-distributed jitter. This must be validated against the oscillator drift rate of the receiver hardware.
 
-For the B210/B220 with its on-board 26 MHz TCXO at approximately 2 ppm, timing drift over a 90 second inter-burst interval must be verified against the despreader's timing tolerance. An external GPSDO reference reduces drift to sub-ppb and substantially relaxes the upper bound on inter-burst interval.
+For a B210/B220 as a example with its on-board 26 MHz TCXO at approximately 2 ppm, timing drift over a 90 second inter-burst interval must be verified against the despreader's timing tolerance. An external GPSDO reference reduces drift to sub-ppb and substantially relaxes the upper bound on inter-burst interval. A solution is to make the code tolerant of such drift.
 
 At each scheduled burst position, the receiver opens a correlation search window around the predicted arrival time. The window half-width should be set to approximately three standard deviations of the expected drift distribution for the hardware in use.
 
@@ -117,7 +117,7 @@ At each scheduled burst position, the receiver opens a correlation search window
 
 ## 4. Priority 2 — Real-Time Noise Floor Measurement
 
-**Importance: high. Dependency: Priority 1 complete.**
+**Importance: high. Dependency: Priority 1**
 
 The SDR is already running, already has the RF window open, and is already computing spectral data for despreading and correlation. Measuring the noise floor is computationally free — it is a statistical operation on samples already being processed. No additional DSP chain is required.
 
@@ -133,7 +133,7 @@ The inter-arrival times and amplitudes of detected impulse events in the live me
 
 ## 5. Priority 3 — SQLite Noise Floor History
 
-**Importance: medium. Dependency: Priority 2 complete.**
+**Importance: medium. Dependency: Priority 2**
 
 Timestamped noise floor measurements from the real-time estimator are written to a local SQLite database. Each row records the timestamp in UTC, centre frequency, monitoring bandwidth, median noise floor in dBm, upper tail amplitude estimate, and observed impulse event rate. A single row is approximately 50 bytes. Thousands of measurements fit in a few hundred kilobytes. The database grows slowly and imposes no meaningful storage cost.
 
@@ -169,3 +169,4 @@ The interface boundary for this enhancement is well-defined: the SQLite schema f
 - What is the upper HF frequency limit above which the P.372-15 atmospheric noise model produces a natural event rate so low that any additional burst event is statistically anomalous? This defines the maximum operating frequency for the atmospheric mimicry approach and should be computed from the P.372-15 quiet-site conservative constraint.
 - Should the averaging matrix be extended to include man-made noise contributions from P.372-15 Section 3 for urban deployment scenarios, or should the design remain conservative by using atmospheric noise alone as the universal mimicry target?
 - At what point in the real-time measurement accumulation window is the local estimate considered reliable enough to replace the P.372-15 cold-start fallback? A minimum sample count or minimum elapsed time threshold needs to be defined.
+- How much overhead will sharing rf noise measurements need? 
