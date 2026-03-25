@@ -2,9 +2,9 @@
 
 This document records snapshot results from the gr-k-gdss test suite. For how to run the tests and what they do, see [TESTING.md](TESTING.md).
 
-**Last recorded run: 21 March 2026**
+**Last recorded run: 25 March 2026**
 
-- **pytest:** 37 passed, 1 skipped (38 collected). `TestT3KeyringRoundTrip::test_keyring_round_trip` is skipped when no keyring is available (expected in many environments).
+- **pytest:** 42 passed, 1 skipped (43 collected). `TestT3KeyringRoundTrip::test_keyring_round_trip` is skipped when no keyring is available (expected in many environments).
 - **IQ file analysis:** 29 passed, 0 failed, 0 warnings. Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
 - **Preprint BER / channel simulations (not pytest):** Statistical Monte Carlo figures for [Section 7](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.tex) live under `paper/figures/` (`fig7_awgn_ber.png` through `fig10_ldpc.png`). Regenerate via [paper/README.md](../paper/README.md) (`ber_simulation.py`, `gen_figures.py`). See [Preprint BER and ITU/STANAG-style channel figures](#preprint-ber-and-itustanag-style-channel-figures) below.
 
@@ -45,9 +45,12 @@ Run: `pytest tests/ -v` from the repository root (after installing the module an
 platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0 -- /usr/bin/python3
 cachedir: .pytest_cache
 rootdir: /path/to/GR-K-GDSS
-collecting ... collected 38 items
+collecting ... collected 43 items
 
 tests/test_cross_layer.py::TestCrossLayerFullStackRoundTrip::test_full_stack_round_trip PASSED [  2%]
+tests/test_p372_receiver_profile.py::TestP372BaselineLoader::test_load_is_deterministic PASSED [  4%]
+tests/test_p372_receiver_profile.py::TestP372ExpectedProfile::test_expected_profile_shape PASSED [  6%]
+tests/test_p372_receiver_profile.py::TestP372Calibration::test_median_offset_calibration PASSED [  9%]
 tests/test_t1_spreader_despreader.py::TestT1RoundTrip::test_round_trip PASSED [  5%]
 tests/test_t1_spreader_despreader.py::TestT1KeystreamDeterminism::test_keystream_determinism PASSED [  7%]
 tests/test_t1_spreader_despreader.py::TestT1KeySensitivity::test_key_sensitivity PASSED [ 10%]
@@ -66,8 +69,10 @@ tests/test_t2_sync_burst.py::TestT2PNDeterminism::test_pn_determinism PASSED [ 4
 tests/test_t2_sync_burst.py::TestT2PNKeySensitivity::test_pn_key_sensitivity PASSED [ 44%]
 tests/test_t2_sync_burst.py::TestT2PNBalance::test_pn_balance PASSED     [ 47%]
 tests/test_t2_sync_burst.py::TestT2TimingOffsetDeterminism::test_timing_determinism PASSED [ 50%]
-tests/test_t2_sync_burst.py::TestT2TimingOffsetRange::test_timing_offset_range PASSED [ 52%]
-tests/test_t2_sync_burst.py::TestT2TimingOffsetDistribution::test_timing_offset_distribution PASSED [ 55%]
+tests/test_t2_sync_burst.py::TestT2TimingScheduleRange::test_schedule_range PASSED [ 53%]
+tests/test_t2_sync_burst.py::TestT2TimingScheduleProperties::test_schedule_properties PASSED [ 55%]
+tests/test_t2_sync_burst.py::TestT2PerBurstPNUniqueness::test_pn_backward_compatible_default PASSED [ 58%]
+tests/test_t2_sync_burst.py::TestT2PerBurstPNUniqueness::test_pn_uniqueness PASSED [ 60%]
 tests/test_t2_sync_burst.py::TestT2GaussianEnvelope::test_gaussian_envelope_shape PASSED [ 57%]
 tests/test_t2_sync_burst.py::TestT2KeyedGaussianMask::test_mask_determinism PASSED [ 60%]
 tests/test_t2_sync_burst.py::TestT2KeyedGaussianMask::test_mask_different_nonce_different_output PASSED [ 63%]
@@ -86,10 +91,10 @@ tests/test_t3_key_derivation.py::TestT3SyncBurstNonce::test_sync_burst_nonce_dis
 tests/test_t3_key_derivation.py::TestT3SyncBurstNonce::test_sync_burst_nonce_length PASSED [ 97%]
 tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip SKIPPED [100%]
 
-======================== 37 passed, 1 skipped in 0.43s =========================
+======================== 42 passed, 1 skipped in 0.42s =========================
 ```
 
-**Summary:** 37 passed, 1 skipped (38 collected). With a keyring available, the keyring round-trip test may run instead of skip (38 passed, 0 skipped).
+**Summary:** 42 passed, 1 skipped (43 collected). With a keyring available, the keyring round-trip test may run instead of skip (43 passed, 0 skipped).
 
 ---
 
