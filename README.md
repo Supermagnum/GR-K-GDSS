@@ -45,6 +45,7 @@ The developer used curiosity to piece the suggested improvements in this project
 17. [KGDSS preprint](paper/kgdss_paper.tex) ([PDF on GitHub](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf))
 18. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
 19. [Publication and IP Protection](#publication-and-ip-protection)
+20. [Sync Burst Improvements Roadmap](docs/todo.md)
 
 ---
 
