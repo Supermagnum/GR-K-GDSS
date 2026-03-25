@@ -53,7 +53,9 @@ You do not need the jargon to grasp the idea: **encrypt the payload, make the ov
 In **standard GDSS**, masking is **statistically** noise-like. In **keyed GDSS**, a similar **appearance** is targeted, but the chip-level masking is produced from a **cryptographic keystream** (here based on primitives such as **ChaCha20** and **HKDF** from a shared secret). So:
 
 - Without the **session key**, an eavesdropper should not be able to **predict** the masking.
-- **Synchronisation bursts** can be **per-session** and **keyed**, so they do not repeat the same obvious pattern every time the radio is used.
+- **Synchronisation bursts** are now designed as a **scheduled multi-burst cadence** instead of a single one-shot burst.
+- Each burst can use its own **burst index**, so PN patterns evolve per burst and do not repeat as one fixed sequence.
+- Burst spacing can be irregular (heavy-tailed), making timing less predictable for outsiders while remaining deterministic for legitimate receivers.
 
 **Keyed** means **cryptographic unpredictability**, not "turn the volume up."
 
@@ -63,6 +65,7 @@ In **standard GDSS**, masking is **statistically** noise-like. In **keyed GDSS**
 
 - A **GNU Radio** out-of-tree module (**gr-k-gdss**): **keyed spreader**, **keyed despreader**, and support for **keys** and **sync**.
 - **Python helpers** for subkey derivation, nonces, and sync-burst behaviour aligned with the design.
+- **Receiver-side helpers** to compare measured FFT/PSD bins against a **P.372-15 atmospheric-noise baseline profile**, so model priors can be tied to real local receiver measurements by frequency.
 - **Tests and simulations** that check statistics and show behaviour in **simplified** channel models. Those are **software experiments**, not a warranty for every real channel.
 
 ---
@@ -97,6 +100,8 @@ The main [README](../README.md) describes the author's background and who the wo
 ## Summary
 
 - **GR-K-GDSS** adds **cryptographic keying** to **noise-like spread-spectrum** radio ideas.
+- Synchronisation is designed around **multiple keyed bursts over time**, not only one startup burst.
+- The receiver can combine **live PSD measurements** with a **P.372-15 baseline** to tune noise-floor assumptions per frequency bin.
 - The aim is stronger resistance to many **statistical** detectors, not immunity to **physics** (energy, bearing, timing).
 - The **code** is real and inspectable; **security claims** still need **independent expert review** before high-stakes use.
 

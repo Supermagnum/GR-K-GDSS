@@ -1,0 +1,10 @@
+{
+  "rise_fraction": 0.15,
+  "pareto_alpha_nominal": 2.0,
+  "pareto_alpha_min": 1.5,
+  "mean_interval_s_nominal": 60.0,
+  "mean_interval_s_min": 90.0,
+  "min_interval_s_min": 5.0,
+  "lognorm_mu": 0.0,
+  "lognorm_sigma": 0.35
+}

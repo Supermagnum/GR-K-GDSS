@@ -179,7 +179,7 @@ Two files are produced:
 
 ![gr-k-gdss IQ comparison plot](../tests/iq_files/iq_comparison.png)
 
-2. **iq_comparison_vs_standard.png** (4x3) — Keyed vs standard GDSS comparison. Rows 1–2: histograms and PSD for noise (01), keyed (03), and standard (09); all three should look alike. Row 3: cross-correlation of standard GDSS sessions (12, red) vs keyed sessions (13, green) and overlay; standard shows a detectable peak, keyed does not. Row 4: despreading (keyed correct/wrong key vs despread of standard GDSS without key).
+2. **iq_comparison_vs_standard.png** (4x3) — Keyed vs standard GDSS comparison. Rows 1–2: histograms and PSD for noise (01), keyed (03), and standard (09); all three should look alike. Row 3: cross-correlation of standard GDSS sessions (12, red) vs keyed sessions (13, green) and overlay; standard shows a detectable peak, keyed does not. The keyed correlation uses the full scheduled multi-burst session waveforms (11a vs 11b). Row 4: despreading (keyed correct/wrong key vs despread of standard GDSS without key).
 
 ![gr-k-gdss keyed vs standard GDSS comparison](../tests/iq_files/iq_comparison_vs_standard.png)
 
