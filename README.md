@@ -117,7 +117,7 @@ This project is documented in the following preprint:
 
 > **Cryptographically Keyed Gaussian-Distributed Spread-Spectrum
 > for Enhanced Covert Communications**
-> Zenodo, 2026. https://zenodo.org/records/19162119
+> Zenodo, 2026. https://zenodo.org/records/19219359
 
 Archival PDF in this repository: [paper/kgdss_paper.pdf](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf).
 
