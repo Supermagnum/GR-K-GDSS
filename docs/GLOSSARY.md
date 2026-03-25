@@ -32,6 +32,7 @@ Definitions of technical terms and acronyms used in the GR-K-GDSS documentation 
 - [Nonce](#nonce)
 - [OOT module](#oot-module)
 - [PN sequence](#pn-sequence)
+- [Round trip (testing)](#round-trip-testing)
 - [Session key derivation](#session-key-derivation)
 - [Shamir's Secret Sharing](#shamirs-secret-sharing)
 - [set_key (message port)](#set_key-message-port)
@@ -180,6 +181,18 @@ Command-line and API interface to the Linux kernel keyring. Used by GR-K-GDSS to
 ## PN sequence
 
 **Pseudo-Noise sequence.** A deterministic sequence that looks random (e.g. balanced +1/-1 symbols). In GR-K-GDSS, the sync burst uses a key-derived PN sequence so that only a receiver with the same key can correlate and detect the burst. The sequence is derived per session (e.g. via `derive_sync_pn_sequence`).
+
+---
+
+## Round trip (testing)
+
+A **round trip** in the test suite is a **consistency check** that runs a **forward** step and a matching **reverse** (or **store** then **load**) and verifies the outcome—typically that original data or key bytes are recovered.
+
+**Keyed GDSS signal path:** Unit tests (e.g. T1 `test_round_trip`, cross-layer full-stack round trip) pass symbols through the **spreader** and then the **despreader** with the same key and nonce. That matches the **logical order of transmit encoding and receive decoding**, but runs **in software** (often one machine, no antenna). It does **not** by itself include RF, propagation, or SDR hardware unless a separate flowgraph or recording adds those. **IQ File 04** analysis uses **round-trip correlation**: despread File 03 with the correct key and compare to the payload reference.
+
+**Keyring:** The keyring **round-trip** test stores derived keys via the kernel keyring and loads them back; that exercises **persistence and retrieval**, not radio.
+
+See [Round trip (what it means)](TESTING.md#round-trip-what-it-means) in [TESTING.md](TESTING.md).
 
 ---
 

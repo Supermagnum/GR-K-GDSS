@@ -13,6 +13,7 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
 ## Table of Contents
 
 - [Unit tests (pytest)](#unit-tests-pytest)
+- [Round trip (what it means)](#round-trip-what-it-means)
 - [IQ test file generation](#iq-test-file-generation)
 - [IQ file analysis](#iq-file-analysis)
   - [Explanation of analysis tests](#explanation-of-analysis-tests)
@@ -20,6 +21,18 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
   - [Spectrum snapshot plots](#spectrum-snapshot-plots)
   - [Real recorded noise (File 08): interpretation](#real-recorded-noise-file-08-interpretation)
 - [Preprint BER and ITU/STANAG-style channel figures](#preprint-ber-and-itustanag-style-channel-figures)
+
+---
+
+## Round trip (what it means)
+
+Several tests and IQ checks are described as **round trip** in logs and tables. In GR-K-GDSS that means **forward + inverse** (or **store + load**) with a consistency check—not necessarily a literal antenna-to-antenna link.
+
+- **pytest (T1, cross-layer):** spread then despread with the same key/nonce in software; same *idea* as TX then RX on the keyed GDSS blocks, **without** RF or channel unless added elsewhere.
+- **pytest (T3 keyring):** store session key material in the keyring, read it back, compare bytes (**not** radio).
+- **IQ analysis (File 04):** **Round-trip correlation** checks that correct-key despread output matches the payload reference (offline `.cf32` pipeline).
+
+Full explanation: [Round trip (what it means)](TESTING.md#round-trip-what-it-means) in [TESTING.md](TESTING.md). Definition: [Round trip (testing)](GLOSSARY.md#round-trip-testing) in [GLOSSARY.md](GLOSSARY.md).
 
 ---
 
@@ -149,6 +162,7 @@ Improvement:  9.7x reduction in cross-session correlation
 | **Skewness (I)** / **Skewness (Q)** | Asymmetry of the I or Q distribution (0 = symmetric). PASS: |skewness| < 0.1. See [Skewness (IQ analysis)](GLOSSARY.md#skewness-iq-analysis). |
 | **Autocorrelation** | Normalized correlation of the I component with itself at lags 1–100. PASS: no significant correlation (signal looks uncorrelated like noise). See [Autocorrelation (IQ analysis)](GLOSSARY.md#autocorrelation-iq-analysis). |
 | **KL divergence (I)** | Compares the I-component distribution of File 09 (standard GDSS) with File 03 (keyed GDSS). PASS: distributions are close (both noise-like). See [KL divergence (IQ analysis)](GLOSSARY.md#kl-divergence-iq-analysis). |
+| **Round-trip correlation** (File 04) | Despreads the keyed transmission (File 03) with the **correct** key and nonce, then measures Pearson correlation against the known payload reference. PASS: correlation above threshold (e.g. > 0.95)—an **encode-then-decode** check on generated IQ data, **not** a live RF TX/RX loop. See [Round trip (what it means)](TESTING.md#round-trip-what-it-means) and [Round trip (testing)](GLOSSARY.md#round-trip-testing). |
 
 ### IQ comparison plots
 

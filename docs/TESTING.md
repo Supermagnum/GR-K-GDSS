@@ -6,6 +6,7 @@ This document describes the unit tests for gr-k-gdss, how to run them, what each
 
 - [Running the tests](#running-the-tests)
 - [Documented test run](#documented-test-run)
+- [Round trip (what it means)](#round-trip-what-it-means)
 - [What the tests do](#what-the-tests-do)
   - [Suite overview](#suite-overview)
   - [T1 — Spreader/despreader (test_t1_spreader_despreader.py)](#t1--spreaderdespreader-test_t1_spreader_despreaderpy)
@@ -22,6 +23,20 @@ This document describes the unit tests for gr-k-gdss, how to run them, what each
   - [Example IQ file analysis output](#example-iq-file-analysis-output)
   - [Example plot output](#example-plot-output)
   - [Unexpected PSD finding (Row 2, second plot): standard GDSS low-frequency peak](#unexpected-psd-finding-row-2-second-plot-standard-gdss-low-frequency-peak)
+
+---
+
+## Round trip (what it means)
+
+In this project, **round trip** means running a **forward** transform and its matching **inverse** (or store-then-load) and checking that the result is consistent—usually that you recover the original data or the same bytes you stored.
+
+**Spreader and despreader (T1, cross-layer, IQ File 04):** The tests run the **transmit-side** spreader and then the **receive-side** despreader with the **same key and nonce**, in software, often in one process. That is **conceptually the same shape as TX then RX** (encode then decode), but it is **not** a full radio link: there is typically **no over-the-air path**, **no RF front end**, and **no channel** unless a test or script adds noise or impairment. So it **simulates** the keyed GDSS signal chain for correctness, not a complete hardware transceiver.
+
+**Keyring round trip (T3):** **Store** derived key material in the Linux kernel keyring, **load** it back, and assert the bytes match. That is a round trip in the **key-storage** sense only; it is **not** TX/RX.
+
+**IQ analysis “Round-trip correlation” (File 04):** After generating a keyed transmission (File 03), the pipeline **despreads** with the correct key and checks **Pearson correlation** between the recovered stream and the known payload reference. That is another **encode-then-decode** style check on **offline IQ data**, still without a live RF loop.
+
+For a short definition, see [Round trip (testing)](GLOSSARY.md#round-trip-testing) in [GLOSSARY.md](GLOSSARY.md).
 
 ---
 
