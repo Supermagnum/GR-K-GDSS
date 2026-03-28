@@ -16,6 +16,7 @@ The developer used curiosity to piece the suggested improvements in this project
 - [Who built this and why](#who-built-this-and-why)
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
 - [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map)
+- [Extending and debugging without maintainer support](#12-extending-and-debugging-without-maintainer-support)
 - [Hardware Security Module — Current Limitations and Future Direction](#hardware-security-module--current-limitations-and-future-direction)
 - [Active zeroisation, power-loss resume, and threat model](#active-zeroisation-power-loss-resume-and-threat-model)
 - [Hardware Security Token Platform](#hardware-security-token-platform)
@@ -47,6 +48,7 @@ The developer used curiosity to piece the suggested improvements in this project
 18. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
 19. [Publication and IP Protection](#publication-and-ip-protection)
 20. [Sync Burst Improvements Roadmap](docs/todo.md)
+21. [Extending and debugging without maintainer support](#12-extending-and-debugging-without-maintainer-support)
 
 ---
 
@@ -1333,6 +1335,67 @@ pytest tests/ -v
 - **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results. A recent full-environment run (GNU Radio, gr-linux-crypto with **galdralag_session_kdf**, `keyctl` for keyring tests) reported **46 passed, 1 skipped**; without Galdralag KDF, four mapping tests skip; without `keyctl`, the keyring round-trip skips.
 - **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — Recorded pytest and IQ file analysis snapshot (update when you refresh results; IQ checks remain **29** unless the IQ suite changes).
 - **tests/README.md** — Quick run instructions and per-suite notes; keyring round-trip is skipped if the Linux kernel keyring or `keyctl` is not available.
+
+## 12. Extending and debugging without maintainer support
+
+If the original author or maintainers do not answer questions, you can still change and verify this project using the repository, the test suite, and standard GNU Radio tooling. The sections below are a minimal checklist; details live in [docs/USAGE.md](docs/USAGE.md), [docs/TESTING.md](docs/TESTING.md), and [tests/README.md](tests/README.md).
+
+### Orientation
+
+Start from [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map) to see which file owns each behaviour. For crypto and keying, treat [gr-linux-crypto](https://github.com/Supermagnum/gr-linux-crypto) as the companion codebase: set **`GR_LINUX_CRYPTO_DIR`** to its repository root when you need imports without a full install (see [docs/TESTING.md](docs/TESTING.md)).
+
+### Adding new Python functions (public API)
+
+1. **Place code** in the appropriate module under **`python/`** (e.g. `session_key_derivation.py`, `sync_burst_utils.py`, `key_injector.py`), or add a new module in **`python/`** if the feature is self-contained.
+2. **Export** names that should appear as **`gnuradio.kgdss`** in **`python/__init__.py`**: import inside the existing `try` blocks (or add a new block), and append to **`__all__`**. Follow the same pattern as neighbouring symbols so optional dependencies still allow partial imports.
+3. **Document** user-facing behaviour in **[docs/USAGE.md](docs/USAGE.md)**. If you add or change tests, update **[docs/TESTING.md](docs/TESTING.md)** briefly.
+4. **Add tests** under **`tests/`** with `pytest` (naming: `test_*.py`, functions `test_*`). Prefer small, deterministic checks; reuse fixtures from **`tests/conftest.py`** if present.
+5. **Run** `pytest tests/ -v` after **`make install`** (or a local prefix plus **`PYTHONPATH`**) so Python loads the build you intend—see **[tests/README.md](tests/README.md)**.
+
+### Changing or adding C++ blocks (spreader / despreader)
+
+1. **Implementation:** **`lib/*_impl.cc`**; **public headers:** **`include/gnuradio/kgdss/`**.
+2. **Python bindings:** **`python/bindings/`** (`*_python.cc`, `kgdss_python.cc` as needed).
+3. **GRC:** **`grc/*.block.yml`** if block parameters or documentation strings change.
+4. **Rebuild and install:** from a build directory, `cmake .. && make -j$(nproc)` then `make install` (use `sudo` only if your prefix requires it). Run **`sudo ldconfig`** after installing shared libraries to a system lib path if the loader does not see the new `.so`.
+5. **Tests:** extend **`tests/test_t1_spreader_despreader.py`** and/or **`tests/test_cross_layer.py`** for behaviour that flows through the bindings.
+
+### Flowgraphs and examples
+
+New or changed Companion flowgraphs belong under **`examples/`**. After editing **`.grc`**, regenerate the **`.py`** (e.g. `grcc your_flowgraph.grc`) and run **`python3 your_flowgraph.py` from a terminal** so tracebacks and print output are visible—Companion hides some failures.
+
+### Debugging
+
+**Confirm which Python module is loaded** (stale installs are a common source of “my change did nothing”):
+
+```bash
+python3 -c "import gnuradio.kgdss.kgdss_python as m; print(m.__file__)"
+```
+
+Use the same interpreter and **`PYTHONPATH`** as **`pytest`**.
+
+**Targeted tests:**
+
+```bash
+pytest tests/test_t2_sync_burst.py -v
+pytest tests/test_t3_key_derivation.py::SomeClass::test_name -v
+```
+
+**Python:** run with **`python3 -X dev`** to surface more warnings; add temporary logging or assertions in tests rather than only in GUI flowgraphs.
+
+**C++ crashes or hangs in a flowgraph:** run the generated **`python3 …py`** under **`gdb`**:
+
+```bash
+gdb --args python3 /path/to/flowgraph.py
+```
+
+Install **`*-dbg`** / debug symbol packages for Python and GNU Radio if you need readable backtraces. For suspected VOLK or SIMD issues, you can try **`export VOLK_GENERIC=1`** before running (slower, generic kernels).
+
+**CMake / compile errors:** configure with **`cmake ..`** from a clean or existing **`build/`** directory; read the first error block. Missing **`find_package(Gnuradio)`** or **`pkg_check_modules`** failures usually mean dev packages or **`PKG_CONFIG_PATH`** are wrong for your install prefix.
+
+### If upstream stays silent
+
+You may **fork** the repository, apply changes on a branch, and keep your fork as the working “downstream” copy. Merge requests or pull requests can still be opened for the original project when someone becomes available; until then, your fork remains the integration point for your own work.
 
 ---
 
