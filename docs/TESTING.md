@@ -14,6 +14,7 @@ This document describes the unit tests for gr-k-gdss, how to run them, what each
   - [P372 — Receiver PSD profile (test_p372_receiver_profile.py)](#p372--receiver-psd-profile-test_p372_receiver_profilepy)
   - [T3 — Key derivation (test_t3_key_derivation.py)](#t3--key-derivation-test_t3_key_derivationpy)
   - [Galdralag mapping (test_galdralag_kgdss_compat.py)](#galdralag-mapping-test_galdralag_kgdss_compatpy)
+  - [gr-linux-crypto HKDF (test_gr_linux_crypto_hkdf_compat.py)](#gr-linux-crypto-hkdf-test_gr_linux_crypto_hkdf_compatpy)
   - [Cross-layer (test_cross_layer.py)](#cross-layer-test_cross_layerpy)
 - [Expected results](#expected-results)
 - [IQ test file generation and analysis](#iq-test-file-generation-and-analysis)
@@ -128,6 +129,7 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 | P372 | test_p372_receiver_profile.py | P.372 baseline loader determinism, expected PSD profile shape, and robust calibration against measured receiver PSD bins. |
 | T3 | test_t3_key_derivation.py | Session key derivation (HKDF), nonce construction, and storing/loading the GDSS key via the Linux kernel keyring. |
 | Galdralag | test_galdralag_kgdss_compat.py | Maps gr-linux-crypto `derive_galdralag_session_keys` output to gr-k-gdss subkey names; swap-invariant GDSS keys; payload i2r vs r2i. Skips if Galdralag KDF is unavailable. |
+| gr-linux-crypto HKDF | test_gr_linux_crypto_hkdf_compat.py | `derive_session_keys(...)['gdss_masking']` matches `CryptoHelpers.derive_key_hkdf` with salt `bytes(32)` and info `gdss-chacha20-masking-v1` (gr-linux-crypto / GDSS Set Key Source default path). Skips if `CryptoHelpers` unavailable. |
 | Cross-layer | test_cross_layer.py | End-to-end: derive keys, build spreader/despreader, run a full spread/despread flow; output matches input. |
 
 ### T1 — Spreader/despreader (test_t1_spreader_despreader.py)
@@ -208,6 +210,14 @@ These tests assert that **gr-linux-crypto** `derive_galdralag_session_keys` can 
 | **test_map_invalid_payload_direction** | `map_galdralag_keys_to_kgdss` rejects an invalid `payload_direction`. |
 
 The entire class is skipped when `galdralag_kdf_available()` is false (no `derive_galdralag_session_keys` in gr-linux-crypto).
+
+### gr-linux-crypto HKDF (test_gr_linux_crypto_hkdf_compat.py)
+
+| Test | What it does |
+|------|----------------|
+| **TestGrLinuxCryptoGdssHkdfCompat** | Asserts `derive_session_keys(secret)["gdss_masking"]` equals `CryptoHelpers.derive_key_hkdf(secret, salt=bytes(32), info=b"gdss-chacha20-masking-v1", length=32)` for 32-byte and 48-byte ECDH-style secrets. |
+
+Skipped when `gr_linux_crypto.CryptoHelpers` cannot be imported (install gr-linux-crypto or set **`GR_LINUX_CRYPTO_DIR`**).
 
 ### Cross-layer (test_cross_layer.py)
 

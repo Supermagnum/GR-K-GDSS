@@ -21,13 +21,30 @@ from gnuradio.gr import pmt
 try:
     from .session_key_derivation import (
         derive_session_keys,
+        derive_session_keys_from_galdralag,
+        galdralag_kdf_available,
         gdss_nonce,
         load_gdss_key,
     )
 except ImportError:
     derive_session_keys = None
+    derive_session_keys_from_galdralag = None
+    galdralag_kdf_available = None
     gdss_nonce = None
     load_gdss_key = None
+
+
+def _normalize_key_derivation(mode: str) -> str:
+    """Match gr-linux-crypto gdss_set_key_source_block naming."""
+    m = (mode or "gr_k_gdss").strip().lower().replace("-", "_")
+    if m in ("gr_k_gdss", "grkgdss", "gr_k_gdss_default", "default"):
+        return "gr_k_gdss"
+    if m in ("galdralag", "galdr"):
+        return "galdralag"
+    raise ValueError(
+        "key_derivation must be 'gr_k_gdss' (default) or 'galdralag' "
+        "(requires epk_initiator and epk_responder when using shared_secret)"
+    )
 
 
 def _build_set_key_msg(gdss_key: bytes, nonce: bytes) -> Any:
@@ -55,6 +72,13 @@ class key_injector(gr.basic_block):
     nonce. The block sends the key message automatically in start() so no
     trigger connection is needed. Connect key_out to set_key of spreader and
     despreader.
+
+    **Galdralag / gr-linux-crypto:** When ``key_derivation="galdralag"`` and
+    ``shared_secret`` is set at construction, pass ``epk_initiator`` and
+    ``epk_responder`` (uncompressed SEC1 ephemeral public keys). This matches
+    **gr-linux-crypto** ``gdss_set_key_source_block`` with
+    ``key_derivation="galdralag"``. The ``shared_secret`` message port path
+    always uses the default gr-k-gdss HKDF profile (no epk on the wire).
     """
 
     def __init__(
@@ -63,17 +87,45 @@ class key_injector(gr.basic_block):
         session_id: int = 1,
         tx_seq: int = 0,
         keyring_id: Optional[int] = None,
+        key_derivation: str = "gr_k_gdss",
+        epk_initiator: Optional[bytes] = None,
+        epk_responder: Optional[bytes] = None,
     ) -> None:
         if derive_session_keys is None or gdss_nonce is None:
             raise RuntimeError(
                 "key_injector requires session_key_derivation (derive_session_keys, gdss_nonce)"
             )
+        mode = _normalize_key_derivation(key_derivation)
         if keyring_id is not None and shared_secret is not None:
             raise ValueError("provide exactly one of shared_secret or keyring_id")
         if keyring_id is None and (shared_secret is None or len(shared_secret) < 32):
             if shared_secret is not None:
                 raise ValueError("shared_secret must be at least 32 bytes")
             # deferred: wait for shared_secret message on shared_secret port
+        if mode == "galdralag":
+            if keyring_id is not None:
+                pass  # raw gdss bytes from keyring; derivation mode ignored
+            elif shared_secret is not None and len(shared_secret) >= 32:
+                if epk_initiator is None or epk_responder is None:
+                    raise ValueError(
+                        "key_derivation='galdralag' requires epk_initiator and epk_responder "
+                        "when using shared_secret at construction"
+                    )
+                if (
+                    derive_session_keys_from_galdralag is None
+                    or galdralag_kdf_available is None
+                    or not galdralag_kdf_available()
+                ):
+                    raise RuntimeError(
+                        "key_derivation='galdralag' requires gr-linux-crypto with "
+                        "derive_galdralag_session_keys (install gr-linux-crypto or set GR_LINUX_CRYPTO_DIR)"
+                    )
+            else:
+                raise ValueError(
+                    "key_derivation='galdralag' requires shared_secret at construction "
+                    "(with epk_initiator and epk_responder); the shared_secret message port "
+                    "only supports the default gr_k_gdss profile"
+                )
 
         gr.basic_block.__init__(
             self,
@@ -96,7 +148,13 @@ class key_injector(gr.basic_block):
             nonce = gdss_nonce(session_id, tx_seq)
             self._msg = _build_set_key_msg(gdss_key, nonce)
         elif shared_secret is not None and len(shared_secret) >= 32:
-            keys = derive_session_keys(shared_secret)
+            if mode == "galdralag":
+                assert epk_initiator is not None and epk_responder is not None
+                keys = derive_session_keys_from_galdralag(
+                    shared_secret, epk_initiator, epk_responder
+                )
+            else:
+                keys = derive_session_keys(shared_secret)
             gdss_key = keys["gdss_masking"]
             nonce = gdss_nonce(session_id, tx_seq)
             self._msg = _build_set_key_msg(gdss_key, nonce)

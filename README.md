@@ -1117,7 +1117,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`; headers in **include/gnuradio/kgdss/**. |
 | **Python helpers** (key derivation, keyring, sync burst, P.372) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`, `p372_baseline.py`, `p372_baseline_config.json`, `p372_receiver_profile.py`; package entry [`python/__init__.py`](python/__init__.py) re-exports the public `gnuradio.kgdss` API. Details in [docs/USAGE.md](docs/USAGE.md). |
 | **GRC block definitions** | **grc/** — `kgdss_spreader_cc.block.yml`, `kgdss_despreader_cc.block.yml`, `kgdss_key_injector.block.yml`. |
-| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_p372_receiver_profile.py`, `test_galdralag_kgdss_compat.py`, `test_cross_layer.py`; described in [docs/TESTING.md](docs/TESTING.md). |
+| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_p372_receiver_profile.py`, `test_galdralag_kgdss_compat.py`, `test_gr_linux_crypto_hkdf_compat.py`, `test_cross_layer.py`; described in [docs/TESTING.md](docs/TESTING.md). |
 | **IQ test file generator and analyser** | **tests/generate_iq_test_files.py** (builds 01–13 and metadata), **tests/analyse_iq_files.py** (PASS/FAIL checks), **tests/plot_iq_comparison.py** (plots); see [docs/TESTING.md](docs/TESTING.md). |
 | **Quick test run** | **tests/README.md** — Run commands; keyring/sandbox notes. |
 | **Python bindings** (C++ blocks to Python) | **python/bindings/** — `kgdss_spreader_cc_python.cc`, `kgdss_despreader_cc_python.cc`, `kgdss_python.cc`; expose spreader/despreader and `kgdss_sync_state` to `gnuradio.kgdss`. |
@@ -1143,8 +1143,8 @@ If you want to inspect specific behaviour in code, start with these files and fu
 
 - **GNU Radio key injector (Python `basic_block`)**
   - **Runtime code:**
-    - [`python/key_injector.py`](python/key_injector.py): **`key_injector`** — loads GDSS masking key from keyring or derives from `shared_secret` via **`derive_session_keys`** + **`gdss_nonce`**, emits **`set_key`** PMT for spreader/despreader.
-  - **Tests:** used indirectly by [`tests/test_cross_layer.py`](tests/test_cross_layer.py) (full stack with derived keys); block wiring is documented in [docs/USAGE.md](docs/USAGE.md).
+    - [`python/key_injector.py`](python/key_injector.py): **`key_injector`** — loads GDSS masking key from keyring or derives from `shared_secret` via **`derive_session_keys`** (default **`key_derivation="gr_k_gdss"`**) or **`derive_session_keys_from_galdralag`** when **`key_derivation="galdralag"`** with **`epk_initiator`** / **`epk_responder`** (aligned with **gr-linux-crypto** [`gdss_set_key_source_block`](https://github.com/Supermagnum/gr-linux-crypto/blob/master/python/gdss_set_key_source.py)); nonce from **`gdss_nonce`**; emits **`set_key`** PMT.
+  - **Tests:** used indirectly by [`tests/test_cross_layer.py`](tests/test_cross_layer.py); HKDF parity with **`CryptoHelpers.derive_key_hkdf`** in [`tests/test_gr_linux_crypto_hkdf_compat.py`](tests/test_gr_linux_crypto_hkdf_compat.py). Wiring: [docs/USAGE.md](docs/USAGE.md).
 
 - **Python package surface (`gnuradio.kgdss`)**
   - [`python/__init__.py`](python/__init__.py): conditional imports and **`__all__`** listing session helpers, sync/P.372 helpers, **`key_injector`**, and C++ bindings (`kgdss_spreader_cc`, `kgdss_despreader_cc`, `kgdss_sync_state`).
