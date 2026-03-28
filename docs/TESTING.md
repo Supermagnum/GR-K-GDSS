@@ -13,6 +13,7 @@ This document describes the unit tests for gr-k-gdss, how to run them, what each
   - [T2 — Sync burst (test_t2_sync_burst.py)](#t2--sync-burst-test_t2_sync_burstpy)
   - [P372 — Receiver PSD profile (test_p372_receiver_profile.py)](#p372--receiver-psd-profile-test_p372_receiver_profilepy)
   - [T3 — Key derivation (test_t3_key_derivation.py)](#t3--key-derivation-test_t3_key_derivationpy)
+  - [Galdralag mapping (test_galdralag_kgdss_compat.py)](#galdralag-mapping-test_galdralag_kgdss_compatpy)
   - [Cross-layer (test_cross_layer.py)](#cross-layer-test_cross_layerpy)
 - [Expected results](#expected-results)
 - [IQ test file generation and analysis](#iq-test-file-generation-and-analysis)
@@ -48,6 +49,7 @@ Prerequisites:
 - Module built and installed from `build/` (e.g. `cd build && make -j4 && sudo make install`).
 - Python environment with `gnuradio`, `numpy`, and `pytest` available.
 - For the keyring round-trip test: run in a normal terminal (not a sandbox) so `keyctl read` is allowed; `keyctl` must be on PATH. See [tests/README.md](../tests/README.md).
+- For **Galdralag / gr-linux-crypto** mapping tests: install gr-linux-crypto (with `python/galdralag_session_kdf.py`) or set **`GR_LINUX_CRYPTO_DIR`** to the gr-linux-crypto repository root. If a sibling directory `../gr-linux-crypto/python` exists, the test module sets it automatically.
 
 From the repository root, with the same Python that can import `gnuradio.kgdss`:
 
@@ -125,6 +127,7 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 | T2 | test_t2_sync_burst.py | Python sync-burst helpers: multi-burst schedule derivation, per-burst PN evolution, Gaussian envelope shape, keyed Gaussian mask for sync bursts, sync-burst nonce. |
 | P372 | test_p372_receiver_profile.py | P.372 baseline loader determinism, expected PSD profile shape, and robust calibration against measured receiver PSD bins. |
 | T3 | test_t3_key_derivation.py | Session key derivation (HKDF), nonce construction, and storing/loading the GDSS key via the Linux kernel keyring. |
+| Galdralag | test_galdralag_kgdss_compat.py | Maps gr-linux-crypto `derive_galdralag_session_keys` output to gr-k-gdss subkey names; swap-invariant GDSS keys; payload i2r vs r2i. Skips if Galdralag KDF is unavailable. |
 | Cross-layer | test_cross_layer.py | End-to-end: derive keys, build spreader/despreader, run a full spread/despread flow; output matches input. |
 
 ### T1 — Spreader/despreader (test_t1_spreader_despreader.py)
@@ -195,6 +198,17 @@ These tests cover HKDF-based session key derivation, nonce construction, and the
 
 The keyring round-trip is skipped if the keyring is not available (no keyctl) or if keyctl read fails (e.g. Permission denied in a sandbox).
 
+### Galdralag mapping (test_galdralag_kgdss_compat.py)
+
+These tests assert that **gr-linux-crypto** `derive_galdralag_session_keys` can be wrapped into the same four names as `derive_session_keys` (`payload_enc`, `gdss_masking`, `sync_pn`, `sync_timing`) for use with gr-k-gdss blocks and sync helpers.
+
+| Test | What it does |
+|------|----------------|
+| **TestGaldralagKgdssMapping** | Derives via `derive_session_keys_from_galdralag`, checks four 32-byte keys; verifies `payload_direction` changes `payload_enc` but not GDSS/sync keys; verifies swapping initiator/responder ephemeral public keys leaves GDSS and sync keys unchanged. |
+| **test_map_invalid_payload_direction** | `map_galdralag_keys_to_kgdss` rejects an invalid `payload_direction`. |
+
+The entire class is skipped when `galdralag_kdf_available()` is false (no `derive_galdralag_session_keys` in gr-linux-crypto).
+
 ### Cross-layer (test_cross_layer.py)
 
 | Test | What it does |
@@ -203,11 +217,11 @@ The keyring round-trip is skipped if the keyring is not available (no keyctl) or
 
 ## Expected results
 
-With the module installed, dependencies available, and tests run in a normal terminal (so keyctl read is allowed):
+With the module installed, **gr-linux-crypto** (including **galdralag_session_kdf** when you want Galdralag tests), dependencies available, and tests run in a normal terminal (so keyctl read is allowed):
 
-- **33 to 38 passed** — All tests pass. The exact count depends on build and environment: TestT1SetKeyMessagePort may be skipped (empty key/nonce support); keyring round-trip may be skipped (keyctl); and the new sync-burst tests (apply_keyed_gaussian_mask, gdss_sync_burst_nonce) run when the installed module exports them. After a full install from the current source, expect 38 tests when all features are available.
+- Expect on the order of **45–47 passed** and **1–5 skipped** depending on environment: one keyring test may skip; four Galdralag mapping tests skip if `derive_galdralag_session_keys` is missing; optional slow or environment-specific cases may skip. Run `pytest tests/ -q` for the exact tally on your machine.
 
-If the keyring round-trip is skipped with "Permission denied", run `pytest tests/ -v` in a normal system terminal (outside any sandbox) so the process can read keys from the session keyring. If gr_linux_crypto and gr-k-gdss are installed in the default Python search path (e.g. /usr/local), no PYTHONPATH is needed for normal use.
+If the keyring round-trip is skipped with "Permission denied", run `pytest tests/ -v` in a normal system terminal (outside any sandbox) so the process can read keys from the session keyring. If `gr_linux_crypto` and gr-k-gdss are installed in the default Python search path (e.g. `/usr/local`), no `PYTHONPATH` is needed for normal use. For co-development, set **`GR_LINUX_CRYPTO_DIR`** to the gr-linux-crypto repository root (see [USAGE.md](USAGE.md)).
 
 ## IQ test file generation and analysis
 

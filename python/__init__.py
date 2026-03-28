@@ -5,6 +5,9 @@ gr-k-gdss - Keyed Gaussian-Distributed Spread-Spectrum
 try:
     from .session_key_derivation import (
         derive_session_keys,
+        derive_session_keys_from_galdralag,
+        map_galdralag_keys_to_kgdss,
+        galdralag_kdf_available,
         store_session_keys,
         load_gdss_key,
         get_shared_secret_from_gnupg,
@@ -16,6 +19,9 @@ try:
     )
 except ImportError:
     derive_session_keys = None
+    derive_session_keys_from_galdralag = None
+    map_galdralag_keys_to_kgdss = None
+    galdralag_kdf_available = None
     store_session_keys = None
     load_gdss_key = None
     get_shared_secret_from_gnupg = None
@@ -73,6 +79,9 @@ except ImportError:
 __all__ = [
     "key_injector",
     "derive_session_keys",
+    "derive_session_keys_from_galdralag",
+    "map_galdralag_keys_to_kgdss",
+    "galdralag_kdf_available",
     "store_session_keys",
     "load_gdss_key",
     "get_shared_secret_from_gnupg",
