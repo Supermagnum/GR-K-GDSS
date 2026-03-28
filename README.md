@@ -19,6 +19,7 @@ The developer used curiosity to piece the suggested improvements in this project
 - [Hardware Security Module — Current Limitations and Future Direction](#hardware-security-module--current-limitations-and-future-direction)
 - [Active zeroisation, power-loss resume, and threat model](#active-zeroisation-power-loss-resume-and-threat-model)
 - [Hardware Security Token Platform](#hardware-security-token-platform)
+- [Galdralag firmware and Galdr (Baochip-1x track)](#galdralag-firmware-and-galdr)
 - [Likely candidates for future hardware](#likely-candidates-for-future-hardware)
 
 ### Main sections (this document)
@@ -708,11 +709,13 @@ The **architectural gap** is **forward secrecy**. The design uses **static long-
 
 **For a long time, no single USB-class product combined all of the above.** Devices such as Nitrokey 3, YubiKey 5, Solo2, and common OpenPGP smart cards each meet **part** of the list. A **Baochip-1x** SoC on the **Dabao** evaluation board has since been **evaluated against the full hardware bar**; see [Hardware Security Token Platform](#hardware-security-token-platform). That path satisfies the **silicon and boot-chain** requirements documented there; **firmware**, **PIN-exhaustion zeroisation extensions**, and a **production USB carrier** remain **implementation work**, not architectural blockers in the same class as missing accelerators or closed RTL.
 
+**Suggested firmware track:** [**Galdralag-firmware**](https://github.com/Supermagnum/Galdralag-firmware) (*Galdr*) is an **in-progress** Rust/Xous firmware workspace for **Baochip-1x** that targets the behaviours summarized under [Galdralag firmware and Galdr](#galdralag-firmware-and-galdr) below (authenticated ephemeral ECDH, HKDF, vault, PIN policy, documented hardware zeroisation). It is **experimental**; follow that repository’s status, test results, and hardware-verification caveats rather than treating it as a shipping product.
+
 **RISC-V** (open, royalty-free ISA) remains a plausible foundation for other programmes, whether as a **soft core on an FPGA** or as **dedicated silicon** with secure storage and crypto blocks. The Baochip-1x line is one concrete open-RTL example in that space.
 
 The GR-K-GDSS design is structured to **accommodate** a capable token once available. The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. A custom on-device application implementing ephemeral ECDH, on-device HKDF subkey derivation, and verifiable destruction of ephemeral secrets can be deployed **without** rewriting the radio or upper-layer crypto stacks—at which point forward secrecy can rest on **hardware-enforced** properties rather than **operator procedure alone**. Long-term, **algorithm-agnostic vault semantics** and **HKDF labels that can be extended** matter as much as any single cipher choice: they are what let the stack adopt **post-quantum or successor primitives** without a full ground-up redesign of the trust model.
 
-**Until the Baochip-based firmware path is complete and audited** (or an equivalent token is fielded), **Nitrokey 3** remains the **interim** recommendation for operators using today’s stack, with the forward-secrecy limitation **documented and understood** as above.
+**Until Baochip-1x firmware such as [Galdralag-firmware](https://github.com/Supermagnum/Galdralag-firmware) is complete, verified on silicon where it matters, and independently audited** (or an equivalent token is fielded), **Nitrokey 3** remains the **interim** recommendation for operators using today’s stack, with the forward-secrecy limitation **documented and understood** as above.
 
 ### Active zeroisation, power-loss resume, and threat model
 
@@ -757,6 +760,8 @@ The **zeroisation controller** should be implemented in the **FPGA fabric itself
 
 The Nitrokey's auto-brick behaviour after PIN attempts is **essentially passive** — it stops responding rather than actively overwriting. The TKey's current design does **not** implement this level of active zeroisation with power-loss resume. This is a **genuine gap** in available open hardware that would need to be addressed in any device targeting the threat model GR-K-GDSS implies.
 
+Firmware such as [**Galdralag-firmware**](https://github.com/Supermagnum/Galdralag-firmware) on **Baochip-1x** documents **TRNG-sourced multi-pass hardware zeroisation** and **PIN-threshold-triggered** full zeroisation consistent with the goals above, but **silicon-level physical verification** (JTAG, power-cycle resilience, side channels) is still **outstanding** upstream. Until that work completes, assume **deployed** Nitrokey-class and TKey-class limitations remain the default for most operators.
+
 ### Hardware Security Token Platform
 
 #### Background
@@ -765,7 +770,7 @@ The GR-K-GDSS design requires a hardware security token capable of performing **
 
 Additional requirements include **hardware acceleration** for BrainpoolP256r1 point multiplication, ChaCha20, Poly1305, HKDF, and a **TRNG** meeting NIST SP 800-90B; a **custom programmable application layer** so that ephemeral ECDH and subkey-derivation logic can be deployed and audited as **open source**; **measured boot** with key vault access bound to **verified application measurements**; and a **fully open stack** at every layer relevant to trust — HDL, firmware, application code, and hardware schematics.
 
-At time of writing, **no shipping product** in a **USB-stick form factor** fielded **all** of the above end-to-end; **Nitrokey 3** was recommended as an **interim** device, with the forward-secrecy limitation explicitly documented and understood. **Silicon-level** evaluation against the full bar is documented below for **Baochip-1x** on the **Dabao** board.
+At time of writing, **no shipping retail product** in a **USB-stick form factor** fielded **all** of the above end-to-end; **Nitrokey 3** was recommended as an **interim** device, with the forward-secrecy limitation explicitly documented and understood. **Silicon-level** evaluation against the full bar is documented below for **Baochip-1x** on the **Dabao** board. [**Galdralag-firmware**](https://github.com/Supermagnum/Galdralag-firmware) is an **experimental** Xous firmware workspace targeting that silicon; see [Galdralag firmware and Galdr](#galdralag-firmware-and-galdr).
 
 #### Platform Selection: Baochip-1x
 
@@ -849,9 +854,84 @@ Wrong response (or no kernel support) — falls back to mass storage, silently.
 
 The key-derivation pipeline, subkey layout, and host interface are **not** tied to a specific token. **No changes** to the radio or upper-layer crypto stacks are required.
 
+#### Galdralag firmware and Galdr
+
+Repository: [**github.com/Supermagnum/Galdralag-firmware**](https://github.com/Supermagnum/Galdralag-firmware) — GPL-3.0 firmware for **Baochip-1x** (Dabao) on **Xous**, built for `riscv32imac-unknown-none-elf`, with host tools (`galdra`, `galdrad`, `galdra-gtk`). The upstream README states the project is **experimental** and **not production-ready**; design and crypto choices there have **not** been reviewed by a professional cryptographer. The summaries below condense **that repository’s** own documentation for **orientation** only; they are **not** independent endorsement or audit.
+
+**What makes this token unusual** (per upstream project claims):
+
+- **Authenticated ephemeral ECDH on-device** — forward secrecy: each session uses a fresh ephemeral key pair from the token TRNG; the long-term key **signs** the ephemeral offer but does **not** participate in key agreement, so past sessions are not recoverable from a later long-term key compromise alone.
+- **Shamir K-of-N secret sharing on-device** — long-term key split into *N* shares with threshold *K*, with no single holder recovering the key alone.
+- **Cipher-agnostic profile system** — named profiles combining symmetric ciphers, ECDHE curves, and Shamir configuration; optional **cascade** of multiple ciphers (e.g. Serpent-256 + ChaCha20-Poly1305); profile selection logged in an audit trail.
+- **Optional PSRAM decoy volume** — with PSRAM fitted, an uninformed host sees ordinary USB mass storage and unremarkable decoy content; real key material stays in on-chip RRAM behind vault and PIN policy.
+- **Fully open stack** — CERN-OHL-W-2.0 RTL, open schematics, reproducible bootloader, Rust/Xous, IRIS-inspectable silicon (same family as the Baochip hardware description above).
+
+**Cryptographic capabilities** — upstream states primitives are **not** implemented in-tree; they use **audited workspace dependencies** (RustCrypto and related crates). Condensed capability matrices from their README:
+
+**Asymmetric / key agreement**
+
+| Algorithm | Standard | Notes |
+|-----------|----------|-------|
+| BrainpoolP256r1 ECDH + ECDSA | RFC 5639, BSI TR-03111 | BSI-standardised |
+| BrainpoolP384r1 ECDH + ECDSA | RFC 5639, BSI TR-03111 | ~192-bit security |
+| BrainpoolP512r1 ECDH + ECDSA | RFC 5639, BSI TR-03111 | ~256-bit security |
+| X25519 ECDH | RFC 7748 | |
+| Ed25519 sign / verify | RFC 8032 | |
+| RSA-2048 / 3072 / 4096 OAEP, PSS | RFC 8017 | Minimum 2048-bit enforced |
+| P-256, P-384 | NIST | Via `p256` / `p384` workspace deps |
+
+**Symmetric / AEAD**
+
+| Algorithm | Standard | Notes |
+|-----------|----------|-------|
+| AES-256-GCM | FIPS 197, NIST SP 800-38D | Hardware AES on Baochip-1x |
+| ChaCha20-Poly1305 | RFC 8439 | |
+| Twofish-256 | Schneier et al. 1998 | AES finalist |
+| Serpent-256 | Anderson / Biham / Knudsen 1998 | AES finalist, 32 rounds |
+
+**Key derivation / MAC / digest**
+
+| Algorithm | Standard |
+|-----------|----------|
+| HKDF (SHA-256 / SHA-512) | RFC 5869 |
+| HMAC (SHA-256 / SHA-512) | RFC 2104 |
+| PBKDF2 | RFC 8018 |
+| SHA-2 (224 / 256 / 384 / 512) | FIPS 180-4 |
+| SHA-3 family | FIPS 202 |
+| BLAKE2b / BLAKE2s | RFC 7693 |
+| BLAKE3 | BLAKE3 specification |
+
+**Key management** (feature names per upstream)
+
+| Feature | Notes |
+|---------|-------|
+| Shamir K-of-N secret sharing | `vsss-rs` — on-device split and recovery |
+| Authenticated ephemeral ECDH | Forward-secret session protocol — `ephemeral-session` crate |
+| Cipher profile system | User-configurable cipher cascade — `cipher-profile` crate |
+
+**Security properties** (as stated upstream)
+
+| Property | Implementation |
+|----------|----------------|
+| Forward secrecy | Ephemeral ECDH: long-term key signs only, never agrees |
+| PIN counter before compare | Counter flushed to RRAM before `subtle::ConstantTimeEq` |
+| Hardware zeroisation | TRNG-sourced multi-pass overwrite; boot0 zeroises before USB enumeration |
+| No secret on USB bus | Uninformed host sees standard mass-storage only |
+| Monotonic tamper evidence | Hardware one-way counters in always-on domain |
+| Constant-time operations | Secret comparisons via `subtle`; dudect harnesses |
+| `test-hal` never in production | Enforced by `check-fw` xtask |
+
+**PIN policy** (per upstream)
+
+- Minimum length: **5** alphanumeric characters — enforced at parser boundary before `pin-policy`; short inputs do not increment the counter.
+- Default attempt threshold: **3** (configurable 3–10 at provisioning); on threshold, **full hardware zeroisation** triggered.
+- Challenge/response passphrase (informed-host USB path): minimum **5** characters, transmitted only as `HMAC-SHA256(HostChallengeKey, nonce || passphrase)`.
+
+For build commands, workspace layout, fuzzing, and vector timing tables, see the [**Galdralag-firmware**](https://github.com/Supermagnum/Galdralag-firmware) README and `docs/TEST_RESULTS.md` in that repository.
+
 ### Likely candidates for future hardware
 
-The **Baochip-1x / Dabao** evaluation path is documented under [Hardware Security Token Platform](#hardware-security-token-platform). The following are **not endorsements** and **not commitments** from those parties; they are **additional** plausible directions and organisations whose existing work is **closest in spirit** to an open, programmable security token ecosystem.
+The **Baochip-1x / Dabao** path and the [**Galdralag-firmware**](https://github.com/Supermagnum/Galdralag-firmware) implementation track are documented under [Hardware Security Token Platform](#hardware-security-token-platform). The following are **not endorsements** and **not commitments** from those parties; they are **additional** plausible directions and organisations whose existing work is **closest in spirit** to an open, programmable security token ecosystem.
 
 #### Tillitis
 
@@ -1116,7 +1196,7 @@ If you want to inspect specific behaviour in code, start with these files and fu
 
 ### Available APIs (gr-linux-crypto)
 
-GR-K-GDSS uses **gr-linux-crypto** for key derivation (CryptoHelpers, KeyringHelper) and optionally for payload encryption. The following gr-linux-crypto APIs are available and can be combined with keyed GDSS as needed.
+GR-K-GDSS uses [**gr-linux-crypto**](https://github.com/Supermagnum/gr-linux-crypto) for key derivation (`CryptoHelpers`, `KeyringHelper`) and optionally for payload encryption. The following **Python-facing** APIs (class and function names as exposed by that module) are available and can be combined with keyed GDSS as needed. For signatures, parameters, and C++ blocks, see the gr-linux-crypto repository and its documentation.
 
 **Shamir low-level**
 
@@ -1135,6 +1215,13 @@ GR-K-GDSS uses **gr-linux-crypto** for key derivation (CryptoHelpers, KeyringHel
 **HPKE-style**
 
 - `HPKEBrainpool.seal(...)` / `open(...)` / `seal_with_auth(...)` / `open_with_auth(...)`
+
+**Galdralag / Baochip session KDF (interoperable with Galdralag-firmware)**
+
+- `derive_galdralag_session_keys(ecdh_shared_secret, epk_initiator, epk_responder)` — HKDF labels and salt match **Galdralag-firmware** `ephemeral-session`; returns `payload_key_i2r`, `payload_key_r2i`, `gdss_mask_key`, `gdss_sync_key`, `gdss_timing_key`, `mac_key`
+- `derive_galdralag_gdss_masking_key(...)` — convenience: 32-byte GDSS masking key only
+
+**gr-k-gdss mapping:** `derive_session_keys_from_galdralag` (in `gnuradio.kgdss`) calls the above and returns `payload_enc`, `gdss_masking`, `sync_pn`, `sync_timing` for use with spreader, sync helpers, and payload AEAD.
 
 **Nitrokey / card**
 
@@ -1155,9 +1242,15 @@ GR-K-GDSS uses **gr-linux-crypto** for key derivation (CryptoHelpers, KeyringHel
 | Hardware-backed keys | Nitrokey C++ block or decrypt_with_card |
 
 **Usage documentation** is in **[docs/USAGE.md](docs/USAGE.md)**. There you will find:
+
 - **Block API:** stream and message inputs/outputs, parameters, and usage for the three GNU Radio blocks (Keyed GDSS Spreader, Despreader, Key Injector), plus how to connect gr-linux-crypto and SOQPSK for TX/RX.
 - **Real SDR hardware:** how to account for **DC spike** (LO leakage at 0 Hz) and **IQ imbalance** (mirror image) in GNU Radio; the GDSS blocks do not correct these (see the section *DC spike and IQ imbalance* in USAGE.md).
-- **Python helper functions:** session key derivation and keyring (`derive_session_keys`, `store_session_keys`, `load_gdss_key`, `get_shared_secret_from_gnupg`, `gdss_nonce`, `payload_nonce`, `keyring_available`, `keyring_import_error`) and sync burst utilities (`derive_sync_schedule`, `derive_sync_pn_sequence`, `gaussian_envelope`). These are documented in the "Python helper functions" section; the blocks are documented in the "Keyed GDSS blocks" section.
+- **Python helper functions** (package **`gnuradio.kgdss`**; import `from gnuradio import kgdss` or `import gnuradio.kgdss as kgdss` after `make install`):
+  - **Session keys and keyring:** `derive_session_keys` (GnuPG static-ECDH HKDF profile), `derive_session_keys_from_galdralag` / `map_galdralag_keys_to_kgdss` / `galdralag_kdf_available` (wire **Galdralag** / **gr-linux-crypto** `derive_galdralag_session_keys` into the same four subkey names), `store_session_keys`, `load_gdss_key`, `get_shared_secret_from_gnupg`, `gdss_nonce`, `gdss_sync_burst_nonce`, `payload_nonce`, `keyring_available`, `keyring_import_error`. Set **`GR_LINUX_CRYPTO_DIR`** to a gr-linux-crypto source tree so these resolve without a system install.
+  - **Sync burst utilities:** `derive_sync_schedule` (ordered **multi-burst** epoch list in ms since session start; Pareto-skewed inter-burst intervals; parameters such as `session_duration_s`, `n_bursts`, `mean_interval_s`, `pareto_alpha`, `min_interval_s`), `derive_sync_pn_sequence` (optional **`burst_index`** for a **unique PN per scheduled burst**), `derive_sync_amplitude_scaling` (deterministic per-burst log-normal scale), `gaussian_envelope` (default **`rise_fraction=0.15`**), `apply_keyed_gaussian_mask` (keyed Gaussian masking for sync bursts; use with `gdss_sync_burst_nonce`).
+  - **P.372 / receiver PSD helpers:** `load_p372_params`, `P372Params`, `p372_expected_psd_profile_dbm_per_hz`, `calibrate_p372_profile_to_measured_psd`, `P372ReceiverProfile` (static baseline config and lightweight FFT-bin PSD calibration against a reference shape; see **[docs/TESTING.md](docs/TESTING.md)** for `test_p372_receiver_profile.py`).
+
+  These are summarized in USAGE.md under *Python helper functions*; the GNU Radio blocks are under *Keyed GDSS blocks*. If USAGE.md lags a signature (for example older `derive_sync_schedule` wording), treat **[`python/sync_burst_utils.py`](python/sync_burst_utils.py)** and **[`python/__init__.py`](python/__init__.py)** exports as authoritative.
 
 ### Examples
 
@@ -1174,7 +1267,7 @@ The **[examples/](examples/)** directory contains a ready-made GNU Radio Compani
 - **pybind11** (for Python bindings to the C++ blocks)
 - **gr-linux-crypto** — install and build this module first; the Python helpers depend on it for `KeyringHelper` and `CryptoHelpers`
 - **gr-qradiolink** — optional; provides the original GDSS blocks and SOQPSK; useful for reference and flowgraph examples
-- **Python:** `pycryptodome`, `cryptography`, `numpy` (for the Python helpers and tests)
+- **Python:** `pycryptodome` or `cryptography` (ChaCha20 for sync helpers), `numpy`, **`scipy`** (pytest IQ/statistical paths and `tests/generate_iq_test_files.py` / `tests/analyse_iq_files.py`); optional **`matplotlib`** for IQ plotting scripts under `tests/`
 
 On Debian/Ubuntu you can install build dependencies and libsodium with:
 
@@ -1216,8 +1309,8 @@ export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 pytest tests/ -v
 ```
 
-- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results (30 passed when keyctl and dependencies are available).
-- **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — Recorded pytest and IQ file analysis results (30 unit tests passed, 29 IQ checks passed).
+- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results. A recent full-environment run (GNU Radio, gr-linux-crypto with **galdralag_session_kdf**, `keyctl` for keyring tests) reported **46 passed, 1 skipped**; without Galdralag KDF, four mapping tests skip; without `keyctl`, the keyring round-trip skips.
+- **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — Recorded pytest and IQ file analysis snapshot (update when you refresh results; IQ checks remain **29** unless the IQ suite changes).
 - **tests/README.md** — Quick run instructions and per-suite notes; keyring round-trip is skipped if the Linux kernel keyring or `keyctl` is not available.
 
 ---

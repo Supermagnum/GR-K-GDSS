@@ -11,6 +11,9 @@ with domain-separation info strings.
 
 Exported API:
   - derive_session_keys(ecdh_shared_secret, salt=None) -> dict of name -> 32-byte key
+  - derive_session_keys_from_galdralag(ecdh, epk_i, epk_r, ...) -> same dict via gr-linux-crypto Galdralag KDF
+  - map_galdralag_keys_to_kgdss(galdralag_keys, ...) -> map Galdralag dict to gr-k-gdss names
+  - galdralag_kdf_available() -> bool
   - store_session_keys(keys) -> dict of name -> keyring ID
   - load_gdss_key(keyring_id) -> 32-byte GDSS masking key
   - gdss_nonce(session_id, tx_seq) -> 12-byte nonce for ChaCha20 masking
@@ -25,6 +28,10 @@ Compatibility with gr-linux-crypto:
   For GDSS key storage/load, keyctl (keyutils) is required so 32-byte keys are
   stored as raw bytes; KeyringHelper.add_key stores a path, so load_gdss_key
   cannot return key bytes for keys stored that way. See docs/USAGE.md.
+
+  Set environment variable GR_LINUX_CRYPTO_DIR to the top-level path of a
+  gr-linux-crypto source checkout so KeyringHelper, CryptoHelpers, and (when
+  present) derive_galdralag_session_keys load without a prior make install.
 """
 
 from __future__ import annotations
@@ -32,10 +39,21 @@ from __future__ import annotations
 import os
 import subprocess
 import shutil
-from typing import Any, Dict, Optional, Type
+import sys
+from typing import Any, Callable, Dict, Optional, Type, cast
 
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
+
+
+def _prepend_gr_linux_crypto_python_path() -> None:
+    """Insert gr-linux-crypto's python/ on sys.path when GR_LINUX_CRYPTO_DIR is set."""
+    root = os.environ.get("GR_LINUX_CRYPTO_DIR")
+    if not root:
+        return
+    python_dir = os.path.join(root, "python")
+    if os.path.isdir(python_dir) and python_dir not in sys.path:
+        sys.path.insert(0, python_dir)
 
 
 def _get_keyring_helper() -> Optional[Type[Any]]:
@@ -46,12 +64,7 @@ def _get_keyring_helper() -> Optional[Type[Any]]:
     gr_linux_crypto is missing. Returns the KeyringHelper class or None.
     """
     import importlib
-    # If gr-linux-crypto source tree is set, add its python/ so keyring_helper can be imported
-    gr_crypto_dir = os.environ.get("GR_LINUX_CRYPTO_DIR")
-    if gr_crypto_dir:
-        python_dir = os.path.join(gr_crypto_dir, "python")
-        if os.path.isdir(python_dir) and python_dir not in __import__("sys").path:
-            __import__("sys").path.insert(0, python_dir)
+    _prepend_gr_linux_crypto_python_path()
     # gr-linux-crypto: CMake installs to .../gr_linux_crypto/ (__init__.py, keyring_helper.py, crypto_helpers.py).
     # Standard install: from gr_linux_crypto import KeyringHelper
     for import_path in (
@@ -88,6 +101,7 @@ def _get_crypto_helpers() -> Optional[Any]:
     Used for ECDH (BrainpoolP256r1). Returns the CryptoHelpers class or None.
     Matches gr-linux-crypto python/__init__.py: from .crypto_helpers import CryptoHelpers.
     """
+    _prepend_gr_linux_crypto_python_path()
     try:
         from gr_linux_crypto import CryptoHelpers
         return CryptoHelpers
@@ -159,6 +173,7 @@ def keyring_available() -> bool:
 def keyring_import_error() -> Optional[str]:
     """Return the first import error message if keyring is not available, else None."""
     import importlib
+    _prepend_gr_linux_crypto_python_path()
     for import_path in (
         "gr_linux_crypto",
         "gr_linux_crypto.keyring_helper",
@@ -179,6 +194,108 @@ def keyring_import_error() -> Optional[str]:
         except AttributeError:
             pass
     return "KeyringHelper not found in any tried path"
+
+
+def _get_derive_galdralag_session_keys() -> Optional[Callable[..., Dict[str, bytes]]]:
+    """
+    Lazy import of derive_galdralag_session_keys from gr-linux-crypto.
+
+    Matches Galdralag-firmware HKDF labels (see gr-linux-crypto
+    python/galdralag_session_kdf.py). Returns None if the installed
+    gr-linux-crypto predates that module.
+    """
+    _prepend_gr_linux_crypto_python_path()
+    import importlib
+
+    for import_path in (
+        "gr_linux_crypto",
+        "gr_linux_crypto.galdralag_session_kdf",
+        "galdralag_session_kdf",  # flat python/ tree when GR_LINUX_CRYPTO_DIR/python is on path
+    ):
+        try:
+            mod = importlib.import_module(import_path)
+            fn = getattr(mod, "derive_galdralag_session_keys", None)
+            if fn is not None:
+                return cast(Callable[..., Dict[str, bytes]], fn)
+        except ImportError:
+            continue
+    return None
+
+
+def galdralag_kdf_available() -> bool:
+    """True if gr-linux-crypto exposes derive_galdralag_session_keys (Galdralag-compatible KDF)."""
+    return _get_derive_galdralag_session_keys() is not None
+
+
+def map_galdralag_keys_to_kgdss(
+    galdralag_keys: Dict[str, bytes],
+    *,
+    payload_direction: str = "i2r",
+) -> Dict[str, bytes]:
+    """
+    Map gr-linux-crypto Galdralag session dict to gr-k-gdss derive_session_keys names.
+
+    Galdralag uses payload_key_i2r / payload_key_r2i; gr-k-gdss uses a single
+    payload_enc. Choose which payload key feeds payload_enc with payload_direction.
+
+    Args:
+        galdralag_keys: Output of derive_galdralag_session_keys from gr-linux-crypto.
+        payload_direction: ``i2r`` (initiator to responder) or ``r2i`` (reverse).
+
+    Returns:
+        Dict with keys payload_enc, gdss_masking, sync_pn, sync_timing (each 32 bytes).
+    """
+    if payload_direction not in ("i2r", "r2i"):
+        raise ValueError("payload_direction must be 'i2r' or 'r2i'")
+    pk = "payload_key_i2r" if payload_direction == "i2r" else "payload_key_r2i"
+    need = ("gdss_mask_key", "gdss_sync_key", "gdss_timing_key", pk)
+    for name in need:
+        if name not in galdralag_keys:
+            raise KeyError("galdralag_keys missing {!r}".format(name))
+        if len(galdralag_keys[name]) != 32:
+            raise ValueError("{!r} must be 32 bytes".format(name))
+    return {
+        "payload_enc": galdralag_keys[pk],
+        "gdss_masking": galdralag_keys["gdss_mask_key"],
+        "sync_pn": galdralag_keys["gdss_sync_key"],
+        "sync_timing": galdralag_keys["gdss_timing_key"],
+    }
+
+
+def derive_session_keys_from_galdralag(
+    ecdh_shared_secret: bytes,
+    epk_initiator: bytes,
+    epk_responder: bytes,
+    *,
+    payload_direction: str = "i2r",
+) -> Dict[str, bytes]:
+    """
+    Derive gr-k-gdss session subkeys using gr-linux-crypto's Galdralag KDF.
+
+    Same HKDF labels and salt construction as Galdralag-firmware
+    (ephemeral-session crate). Use this when the shared secret and uncompressed
+    ephemeral public keys come from a Galdralag/Baochip session exchange.
+
+    Requires a current gr-linux-crypto with python/galdralag_session_kdf.py, or
+    GR_LINUX_CRYPTO_DIR pointing at such a source tree.
+
+    Args:
+        ecdh_shared_secret: Raw ECDH output (32 / 48 / 64 bytes for Brainpool P256/P384/P512).
+        epk_initiator: Initiator ephemeral public key, uncompressed SEC1.
+        epk_responder: Responder ephemeral public key, same length as initiator.
+        payload_direction: Which Galdralag payload subkey maps to payload_enc (``i2r`` or ``r2i``).
+
+    Returns:
+        Same shape as derive_session_keys: payload_enc, gdss_masking, sync_pn, sync_timing.
+    """
+    fn = _get_derive_galdralag_session_keys()
+    if fn is None:
+        raise RuntimeError(
+            "derive_galdralag_session_keys not found. Install gr-linux-crypto that "
+            "includes galdralag_session_kdf, or set GR_LINUX_CRYPTO_DIR to its repository root."
+        )
+    raw = fn(ecdh_shared_secret, epk_initiator, epk_responder)
+    return map_galdralag_keys_to_kgdss(raw, payload_direction=payload_direction)
 
 
 def derive_session_keys(

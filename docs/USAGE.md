@@ -16,7 +16,7 @@ This document describes how to use the keyed GDSS blocks (spreader, despreader, 
   - [kgdss_spreader_cc (Keyed GDSS Spreader)](#kgdss_spreader_cc-keyed-gdss-spreader)
   - [kgdss_despreader_cc (Keyed GDSS Despreader)](#kgdss_despreader_cc-keyed-gdss-despreader)
   - [kgdss_key_injector (Keyed GDSS Key Injector)](#kgdss_key_injector-keyed-gdss-key-injector)
-  - [Sync burst timing and epoch window](#sync-burst-timing-and-epoch-window)
+  - [Sync burst timing and multi-burst schedule](#sync-burst-timing-and-multi-burst-schedule)
 - [Connecting gr-linux-crypto and SOQPSK (TX/RX chains)](#connecting-gr-linux-crypto-and-soqpsk-txrx-chains)
   - [Getting keys into the GDSS blocks (automated, no manual entry)](#getting-keys-into-the-gdss-blocks-automated-no-manual-entry)
   - [gr-linux-crypto compatibility](#gr-linux-crypto-compatibility)
@@ -49,11 +49,16 @@ All three blocks are in GRC under category **KGDSS / DSSS**.
 
 The module exposes Python helpers (not GNU Radio blocks) for session key derivation, keyring storage, and sync burst generation. Import with `from gnuradio import kgdss` or `import gnuradio.kgdss as kgdss`.
 
+For **gr-linux-crypto** development without installing it system-wide, set environment variable **`GR_LINUX_CRYPTO_DIR`** to the top-level **gr-linux-crypto** repository path. Session helpers then prepend that tree’s `python/` directory so `CryptoHelpers`, `KeyringHelper`, and (when present) **`derive_galdralag_session_keys`** resolve the same way as after `make install`.
+
 ### Session key derivation and keyring
 
 | Function | Purpose |
 |----------|---------|
-| **`derive_session_keys(ecdh_shared_secret, salt=None)`** | Derive session subkeys from the ECDH shared secret via HKDF-SHA256. Returns a dict with 32-byte keys: `"payload_enc"`, `"gdss_masking"`, `"sync_pn"`, `"sync_timing"`. Use `gdss_masking` for the spreader/despreader; `sync_pn` and `sync_timing` for sync burst helpers. |
+| **`derive_session_keys(ecdh_shared_secret, salt=None)`** | Derive session subkeys from the ECDH shared secret via HKDF-SHA256 (gr-k-gdss **GnuPG static long-term ECDH** profile). Returns a dict with 32-byte keys: `"payload_enc"`, `"gdss_masking"`, `"sync_pn"`, `"sync_timing"`. Use `gdss_masking` for the spreader/despreader; `sync_pn` and `sync_timing` for sync burst helpers. |
+| **`galdralag_kdf_available()`** | Returns `True` if **gr-linux-crypto** exposes `derive_galdralag_session_keys` (Galdralag-firmware-compatible HKDF labels). |
+| **`derive_session_keys_from_galdralag(ecdh_shared_secret, epk_initiator, epk_responder, payload_direction="i2r")`** | Derive the **same four** subkey names as `derive_session_keys`, using gr-linux-crypto’s **Galdralag** KDF (salt = ordered uncompressed ephemeral public keys; labels match **Galdralag-firmware** `ephemeral-session`). Requires ephemeral ECDH output plus both parties’ **uncompressed SEC1** ephemeral public keys. `payload_direction` is `"i2r"` or `"r2i"` and selects which Galdralag payload subkey maps to `payload_enc`. |
+| **`map_galdralag_keys_to_kgdss(galdralag_keys, payload_direction="i2r")`** | Map a full dict from `gr_linux_crypto.derive_galdralag_session_keys` into `payload_enc` / `gdss_masking` / `sync_pn` / `sync_timing` without re-deriving. |
 | **`store_session_keys(keys)`** | Store a dict of name -> 32-byte key bytes in the Linux kernel keyring. Prefers `keyctl` (raw bytes); falls back to gr-linux-crypto KeyringHelper when keyctl is unavailable. Returns dict of name -> keyring key ID (string). Use the ID for `gdss_masking` with `load_gdss_key(int(id))`. |
 | **`load_gdss_key(keyring_id)`** | Load the 32-byte GDSS masking key from the keyring by key ID (integer). Use the ID returned by `store_session_keys` for `"gdss_masking"`. Raises if the key is not 32 bytes or keyring is unavailable. |
 | **`get_shared_secret_from_gnupg(my_private_pem, peer_public_pem)`** | Perform ECDH with BrainpoolP256r1 keys (PEM bytes). Returns raw shared secret; pass to `derive_session_keys()`. Requires gr-linux-crypto CryptoHelpers. |
@@ -67,11 +72,12 @@ The module exposes Python helpers (not GNU Radio blocks) for session key derivat
 
 | Function | Purpose |
 |----------|---------|
-| **`derive_sync_schedule(master_key, session_id, window_ms=50)`** | Returns a callable `get_offset(epoch_ms)` that maps a nominal epoch (ms) to a burst offset in **[-window_ms, +window_ms]** ms. Use key `sync_timing` from `derive_session_keys`. Placement is deterministic for TX/RX, unpredictable to observers. See **Sync burst timing and epoch window** below for details. |
-| **`derive_sync_pn_sequence(master_key, session_id, chips=10000)`** | Derive a session-unique pseudo-noise sequence for sync bursts. Uses `sync_pn` from `derive_session_keys`. Returns a float32 array of length `chips` with values +1.0 or -1.0 (BPSK-like). TX and RX get the same sequence for the same key and session_id. |
-| **`gaussian_envelope(samples, rise_fraction=0.1)`** | Apply a Gaussian-shaped amplitude envelope to a burst (reduces sidelobes). `samples`: complex or real array; `rise_fraction`: fraction of length for rise/fall (default 0.1). Returns the array multiplied by the envelope (unity in center, ramps at edges). |
-| **`apply_keyed_gaussian_mask(burst, gdss_key, nonce, variance=1.0)`** | Apply the same keyed Gaussian masking to a sync burst as used for GDSS data (ChaCha20 + Box-Muller). The burst becomes statistically indistinguishable from the GDSS waveform so a passive observer cannot tell sync from data or noise. Use `gdss_sync_burst_nonce(session_id)` for `nonce` so the sync keystream does not overlap the data keystream. See **Sync burst keyed masking** below. |
-| **`gdss_sync_burst_nonce(session_id)`** | Returns the 12-byte nonce for sync-burst masking (session key derivation). Use with `gdss_masking` key when calling `apply_keyed_gaussian_mask` so the sync burst uses a keystream distinct from the data keystream. |
+| **`derive_sync_schedule(master_key, session_id, ...)`** | Returns an **ordered list** of burst epoch times (**milliseconds** since session start). Inter-burst gaps use a **heavy-tailed Pareto** mapping from key-derived uniforms. Keyword parameters include `session_duration_s`, `n_bursts`, `mean_interval_s`, `pareto_alpha`, `min_interval_s`. Use **`sync_timing`** from `derive_session_keys` or `derive_session_keys_from_galdralag`. |
+| **`derive_sync_pn_sequence(master_key, session_id, chips=10000, burst_index=0)`** | Derive a pseudo-noise sequence for one sync burst. Pass **`burst_index`** matching the burst’s index in the schedule so each burst gets a **distinct** PN (`sync_pn` / `gdss_sync_key` subkey). Default `burst_index=0` preserves single-burst behaviour. |
+| **`derive_sync_amplitude_scaling(master_key, session_id, n_bursts, ...)`** | Deterministic **per-burst** log-normal amplitude scale factors (same length as the number of scheduled bursts you render). |
+| **`gaussian_envelope(samples, rise_fraction=0.15)`** | Gaussian-shaped amplitude envelope (default **`rise_fraction=0.15`**). |
+| **`apply_keyed_gaussian_mask(burst, gdss_key, nonce, variance=1.0)`** | Keyed Gaussian masking for sync bursts (ChaCha20 + Box-Muller). Use `gdss_sync_burst_nonce(session_id)` for `nonce`. |
+| **`gdss_sync_burst_nonce(session_id)`** | 12-byte nonce for sync-burst masking (distinct from the data-path `gdss_nonce`). |
 
 ---
 
@@ -193,34 +199,33 @@ Provides the GDSS key and nonce to the spreader and despreader via the `set_key`
 
 Together, `kgdss_spreader_cc`, `kgdss_despreader_cc`, and `kgdss_key_injector` implement a keyed, Gaussian-distributed spread-spectrum layer: the key injector feeds key/nonce to both ends, and the spreader/despreader handle the symbol stream as long as both ends share the same ChaCha20 key/nonce and spreading parameters.
 
-### Sync burst timing and epoch window
+### Sync burst timing and multi-burst schedule
 
-The optional **sync burst** (a short DSSS burst used for timing alignment) uses Python helpers in `gnuradio.kgdss` (or `sync_burst_utils`): `derive_sync_schedule`, `derive_sync_pn_sequence`, and `gaussian_envelope`. These are not GNU Radio blocks; you use them in your own logic or flowgraph code to decide when and where to insert a burst.
+The optional **sync burst** (a short DSSS burst used for timing alignment) uses Python helpers in `gnuradio.kgdss` (or `sync_burst_utils`): `derive_sync_schedule`, `derive_sync_pn_sequence`, `derive_sync_amplitude_scaling`, `gaussian_envelope`, and optionally `apply_keyed_gaussian_mask`. These are not GNU Radio blocks; you use them in your own logic or flowgraph code to place bursts on a timeline.
 
-**How placement inside the epoch window is defined**
+**Scheduled multi-burst cadence**
 
-- **`derive_sync_schedule(master_key, session_id, window_ms=50)`** returns a callable **`get_offset(epoch_ms)`**.
-- **Epoch** is a nominal time index in **milliseconds** (e.g. milliseconds since session start). You choose what values of `epoch_ms` correspond to “sync opportunities” (see below).
-- **Window:** The parameter **`window_ms`** is the half-width of the offset window in ms. The burst’s **offset** (in ms) is in the range **[-window_ms, +window_ms]** relative to that nominal epoch time.
-- **Placement:** For a given `epoch_ms`, the offset is computed deterministically from the session key (HMAC-SHA256 of `master_key` and `session_id` with domain `"sync-timing-v1"`), then ChaCha20 indexed by `epoch_ms` produces a value mapped into **[-window_ms, +window_ms]**. So TX and RX, with the same key and session_id, get the same offset for each epoch; different sessions get different patterns. **To an observer without the key, the placement is unpredictable** (they see only that bursts fall somewhere in the window); **TX and RX stay in agreement** because they both compute the same offset from the shared secret.
+- **`derive_sync_schedule(master_key, session_id, ...)`** returns **`list[int]`**: burst **epoch times in milliseconds** since session start (ordered). Gaps between successive epochs come from a **Pareto** (heavy-tailed) mapping of key-derived uniform draws (`sync-schedule-v2` domain in code). Tune **`session_duration_s`**, **`n_bursts`**, **`mean_interval_s`**, **`pareto_alpha`**, **`min_interval_s`** to match your session length and receiver timing tolerance.
+- TX and RX run the **same** function with the same **`sync_timing`** subkey (from `derive_session_keys` or `derive_session_keys_from_galdralag`) and **`session_id`**; no extra timing metadata is sent on-air.
 
-**How often sync bursts occur**
+**Per-burst PN and amplitude**
 
-- **gr-k-gdss does not define the sync burst rate.** The schedule only maps “epoch index” -> “offset in window”. Your **application or protocol** decides how often there is a sync epoch (e.g. every 10 s, every 60 s) and what `epoch_ms` to pass (e.g. 0, 10000, 20000, …). So the **frequency of sync bursts is an application choice**, not fixed by the module.
-- Burst **duration** (e.g. 2 ms) and **window** (e.g. +/-50 ms) are parameters you use when generating the burst and calling `get_offset`; the **period between bursts** is whatever your design uses for epoch spacing.
+- For the *i*-th epoch in the list, call **`derive_sync_pn_sequence(sync_pn_key, session_id, chips, burst_index=i)`** so each burst uses a **different** spreading sequence (`sync-pn-v2` binds the index).
+- Optional: **`derive_sync_amplitude_scaling(master_key, session_id, n_bursts, ...)`** returns one scale factor per burst (log-normal, key-derived). The IQ test generator passes the **`sync_timing`** subkey for both schedule and scaling; your deployment can follow the same convention or keep scaling separate as long as TX/RX agree.
 
 **Sync burst keyed masking (indistinguishable from GDSS data)**
 
-Without masking, a sync burst is a recognizable DSSS waveform (chip-rate, BPSK-like), which can reveal to a passive observer that a transmission is occurring even if content stays protected. To avoid that, **apply the same keyed Gaussian masking to the sync burst as to the data** using `apply_keyed_gaussian_mask`. Then the burst has the same Gaussian-noise-like statistics as the GDSS data waveform and does not stand out against the noise floor. Timing remains hidden by the ChaCha20-derived offset from `derive_sync_schedule`; only the burst waveform itself is masked.
+Without masking, a sync burst is a recognizable DSSS waveform (chip-rate, BPSK-like), which can reveal to a passive observer that a transmission is occurring even if content stays protected. To avoid that, **apply the same keyed Gaussian masking to the sync burst as to the data** using `apply_keyed_gaussian_mask`. Then the burst has the same Gaussian-noise-like statistics as the GDSS data waveform and does not stand out against the noise floor.
 
-Recommended flow for generating a keyed sync burst:
+Recommended flow for each scheduled burst *i*:
 
-1. Derive the PN sequence with `derive_sync_pn_sequence(sync_pn_key, session_id, chips)`.
-2. Shape the burst (e.g. cast to complex, apply `gaussian_envelope`).
-3. Call `apply_keyed_gaussian_mask(burst, gdss_masking_key, gdss_sync_burst_nonce(session_id), variance=1.0)`.
-4. Scale the result so its power matches the surrounding GDSS or noise floor (e.g. same RMS as data), then insert it at the offset given by `derive_sync_schedule`.
+1. `epochs = derive_sync_schedule(sync_timing_key, session_id, ...)`
+2. `scales = derive_sync_amplitude_scaling(...)` if used (length matches number of bursts you render).
+3. `pn = derive_sync_pn_sequence(sync_pn_key, session_id, chips, burst_index=i)`
+4. Build complex chips, apply **`gaussian_envelope`** (default **`rise_fraction=0.15`**), then **`apply_keyed_gaussian_mask(..., gdss_masking_key, gdss_sync_burst_nonce(session_id))`**.
+5. Scale to target RMS (and multiply by `scales[i]` if used), add into the sample buffer at sample index `(epochs[i] / 1000.0) * sample_rate`.
 
-Use `gdss_sync_burst_nonce(session_id)` (not the data nonce) so the sync-burst ChaCha20 keystream is separate from the data keystream. The receiver inverts the mask with the same key and nonce, then correlates with the known PN to detect the burst.
+Use `gdss_sync_burst_nonce(session_id)` (not the data nonce) so the sync-burst ChaCha20 keystream is separate from the data keystream. The receiver inverts the mask with the same key and nonce, then correlates with the PN for that **`burst_index`**.
 
 ---
 
@@ -314,12 +319,17 @@ gr-linux-crypto and other ECDH implementations can use different Brainpool curve
 
 ### Compatibility with gr-linux-crypto
 
-GR-K-GDSS is designed to work with [gr-linux-crypto](https://github.com/gnuradio/gr-linux-crypto) (Python package `gr_linux_crypto`) for key derivation and optional kernel keyring storage. Compatibility has been verified against the current gr-linux-crypto Python package: `KeyringHelper`, `CryptoHelpers`, `CallsignKeyStore`, `MultiRecipientECIES`, `HPKEBrainpool`, Shamir helpers (`split`, `reconstruct`, `create_shamir_backed_key`, `reconstruct_session_key`, etc.), `nitrokey_bridge` (`decrypt_with_card`, `get_keygrip_from_key_id`), `fips_status`, `secure_zero`, and BSI algorithm boundary (`check_algorithm_compliance`, `require_bsi_approved`, `list_approved_algorithms`). GR-K-GDSS only requires `KeyringHelper` and `CryptoHelpers`; the rest are optional for payload encryption and key management. The same shared secret and HKDF usage (full secret, info `gdss-chacha20-masking-v1`, salt, nonce format) are used so that gr-linux-crypto's GDSS Set Key Source and GR-K-GDSS key injector derive the same GDSS key and nonce for a given session.
+GR-K-GDSS is designed to work with [gr-linux-crypto](https://github.com/Supermagnum/gr-linux-crypto) (Python package `gr_linux_crypto`) for key derivation and optional kernel keyring storage. Compatibility targets the current tree: `KeyringHelper`, `CryptoHelpers`, `CallsignKeyStore`, `MultiRecipientECIES`, `HPKEBrainpool`, Shamir helpers (`split`, `reconstruct`, `create_shamir_backed_key`, `reconstruct_session_key`, etc.), `derive_galdralag_session_keys` / `derive_galdralag_gdss_masking_key`, `nitrokey_bridge` (`decrypt_with_card`, `get_keygrip_from_key_id`), `fips_status`, `secure_zero`, and BSI algorithm boundary (`check_algorithm_compliance`, `require_bsi_approved`, `list_approved_algorithms`). GR-K-GDSS only **requires** `KeyringHelper` and `CryptoHelpers` for the default GnuPG/ECDH path; Galdralag KDF integration is **optional** and requires a gr-linux-crypto build that includes `python/galdralag_session_kdf.py`.
+
+Set environment variable **`GR_LINUX_CRYPTO_DIR`** to the repository root of a local gr-linux-crypto checkout so `session_key_derivation` prepends its `python/` directory: `CryptoHelpers`, `KeyringHelper`, and `derive_galdralag_session_keys` resolve the same way as after `sudo make install`, which is useful when co-developing the two trees.
+
+The same shared secret and HKDF usage (full secret, info `gdss-chacha20-masking-v1`, salt, nonce format) are used so that gr-linux-crypto's **GDSS Set Key Source** and GR-K-GDSS **key_injector** derive the same GDSS key and nonce for a given session when both use the **gr-k-gdss** `derive_session_keys` profile (not the Galdralag profile).
 
 **Required gr-linux-crypto APIs**
 
 - **CryptoHelpers** (for ECDH and PEM key loading): `load_brainpool_private_key`, `load_brainpool_public_key`, `brainpool_ecdh`. Used by `get_shared_secret_from_gnupg()` in `session_key_derivation`.
 - **KeyringHelper** (optional, for keyring store/load): `add_key`, `read_key`. Used by `store_session_keys()` and `load_gdss_key()` when keyctl is not available.
+- **derive_galdralag_session_keys** (optional): used by `derive_session_keys_from_galdralag()` for **Galdralag-firmware**-compatible sessions.
 
 **Import paths**
 
