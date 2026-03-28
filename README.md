@@ -1109,15 +1109,15 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 
 | What you need | Where it is |
 |---------------|-------------|
-| **Block API and Python helpers** (spreader, despreader, key injector; session key derivation, sync burst functions) | **[docs/USAGE.md](docs/USAGE.md)** — Block I/O and parameters, helper function reference, gr-linux-crypto/SOQPSK wiring, sync epoch window. |
-| **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Test suites T1/T2/T3 and cross-layer; per-test description; IQ file generation and analysis. |
+| **Block API and Python helpers** (spreader, despreader, key injector; session key derivation, sync burst functions) | **[docs/USAGE.md](docs/USAGE.md)** — Block I/O and parameters, helper function reference, gr-linux-crypto/SOQPSK wiring, multi-burst sync schedule and P.372 receiver PSD notes. |
+| **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Suites T1, T2, T3, P372 receiver profile, Galdralag/gr-linux-crypto mapping, cross-layer; IQ file generation and analysis. |
 | **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** |
 | **Technical terms index** (glossary of acronyms and terms) | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** |
 | **Example flowgraph** (TX with Codec2, ECIES, SOQPSK, GDSS) | **[examples/](examples/)** — `tx_example_kgdss.grc` and verification; see [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md). |
 | **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`; headers in **include/gnuradio/kgdss/**. |
-| **Python helpers** (key derivation, keyring, sync burst) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`; API details in [docs/USAGE.md](docs/USAGE.md). |
+| **Python helpers** (key derivation, keyring, sync burst, P.372) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`, `p372_baseline.py`, `p372_baseline_config.json`, `p372_receiver_profile.py`; package entry [`python/__init__.py`](python/__init__.py) re-exports the public `gnuradio.kgdss` API. Details in [docs/USAGE.md](docs/USAGE.md). |
 | **GRC block definitions** | **grc/** — `kgdss_spreader_cc.block.yml`, `kgdss_despreader_cc.block.yml`, `kgdss_key_injector.block.yml`. |
-| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_cross_layer.py`; described in [docs/TESTING.md](docs/TESTING.md). |
+| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_p372_receiver_profile.py`, `test_galdralag_kgdss_compat.py`, `test_cross_layer.py`; described in [docs/TESTING.md](docs/TESTING.md). |
 | **IQ test file generator and analyser** | **tests/generate_iq_test_files.py** (builds 01–13 and metadata), **tests/analyse_iq_files.py** (PASS/FAIL checks), **tests/plot_iq_comparison.py** (plots); see [docs/TESTING.md](docs/TESTING.md). |
 | **Quick test run** | **tests/README.md** — Run commands; keyring/sandbox notes. |
 | **Python bindings** (C++ blocks to Python) | **python/bindings/** — `kgdss_spreader_cc_python.cc`, `kgdss_despreader_cc_python.cc`, `kgdss_python.cc`; expose spreader/despreader and `kgdss_sync_state` to `gnuradio.kgdss`. |
@@ -1127,11 +1127,27 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 
 If you want to inspect specific behaviour in code, start with these files and functions:
 
-- **HKDF key derivation and session subkeys**
-  - **Runtime code (actual key schedule path):**
-    - [`python/session_key_derivation.py`](python/session_key_derivation.py): `derive_session_keys(ecdh_shared_secret)` derives four domain-separated subkeys via HKDF-SHA256 (RFC 5869 style expand labels)
+- **HKDF key derivation, keyring, nonces, and Galdralag mapping**
+  - **Runtime code (gr-k-gdss session path):**
+    - [`python/session_key_derivation.py`](python/session_key_derivation.py):
+      - **`derive_session_keys(ecdh_shared_secret)`** — four domain-separated 32-byte subkeys via HKDF-SHA256 (labels `payload-chacha20poly1305-v1`, `gdss-chacha20-masking-v1`, `sync-dsss-pn-sequence-v1`, `sync-burst-timing-offset-v1`); used with **static long-term** Brainpool ECDH (e.g. GnuPG).
+      - **`get_shared_secret_from_gnupg(...)`** — Brainpool PEM ECDH via **gr-linux-crypto** `CryptoHelpers` when installed.
+      - **`store_session_keys` / `load_gdss_key`** — Linux keyring (prefers **`keyctl padd`** raw bytes; falls back to `KeyringHelper` when needed).
+      - **`gdss_nonce`**, **`gdss_sync_burst_nonce`**, **`payload_nonce`** — 12-byte nonces for data-path masking, sync-burst masking, and payload AEAD respectively.
+      - **`derive_session_keys_from_galdralag(...)`**, **`map_galdralag_keys_to_kgdss(...)`**, **`galdralag_kdf_available()`** — wrap **gr-linux-crypto** `derive_galdralag_session_keys` into the same four subkey names for **Galdralag-firmware**-compatible ephemeral sessions.
+      - **`GR_LINUX_CRYPTO_DIR`** — if set to a **gr-linux-crypto** repository root, `python/` is prepended so `CryptoHelpers`, `KeyringHelper`, and the Galdralag KDF import without a prior install.
+  - **Upstream (companion repo, not in this tree):** [`gr-linux-crypto` `python/galdralag_session_kdf.py`](https://github.com/Supermagnum/gr-linux-crypto/blob/master/python/galdralag_session_kdf.py) — authoritative Galdralag HKDF labels and salt rule.
   - **Tests:**
-    - [`tests/test_t3_key_derivation.py`](tests/test_t3_key_derivation.py): domain separation, determinism, input sensitivity, and nonce-construction checks
+    - [`tests/test_t3_key_derivation.py`](tests/test_t3_key_derivation.py): domain separation, determinism, input sensitivity, nonce construction, sync-burst nonce vs data nonce, keyring round-trip (when `keyctl` allows).
+    - [`tests/test_galdralag_kgdss_compat.py`](tests/test_galdralag_kgdss_compat.py): Galdralag-derived keys mapped to gr-k-gdss names; skips if `derive_galdralag_session_keys` is unavailable.
+
+- **GNU Radio key injector (Python `basic_block`)**
+  - **Runtime code:**
+    - [`python/key_injector.py`](python/key_injector.py): **`key_injector`** — loads GDSS masking key from keyring or derives from `shared_secret` via **`derive_session_keys`** + **`gdss_nonce`**, emits **`set_key`** PMT for spreader/despreader.
+  - **Tests:** used indirectly by [`tests/test_cross_layer.py`](tests/test_cross_layer.py) (full stack with derived keys); block wiring is documented in [docs/USAGE.md](docs/USAGE.md).
+
+- **Python package surface (`gnuradio.kgdss`)**
+  - [`python/__init__.py`](python/__init__.py): conditional imports and **`__all__`** listing session helpers, sync/P.372 helpers, **`key_injector`**, and C++ bindings (`kgdss_spreader_cc`, `kgdss_despreader_cc`, `kgdss_sync_state`).
 
 - **ChaCha20 keystream generation (chip masking)**
   - **Runtime code (actual processing path):**
@@ -1144,35 +1160,40 @@ If you want to inspect specific behaviour in code, start with these files and fu
   - **Runtime code (actual processing path):**
     - [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc): `box_muller()`, keyed chip masking in spreader
     - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): `box_muller()`, keyed mask reconstruction in despreader
-    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `_box_muller()` used by sync-burst keyed masking helper
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `_box_muller()` inside **`apply_keyed_gaussian_mask`** (ChaCha20 IETF + Box-Muller, matches C++ spreader statistics)
   - **Test / simulation code:**
     - [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `_box_muller()`, `_chacha20_gaussian_masks()`
     - [`paper/ber_simulation.py`](paper/ber_simulation.py): `_box_muller_pair()` (Monte Carlo model used for BER figures)
     - [`docs/TESTING.md`](docs/TESTING.md): `TestT1GaussianDistribution` explains the distribution checks
+
+- **Keyed sync-burst masking (Python helper)**
+  - **Runtime:** [`python/sync_burst_utils.py`](python/sync_burst_utils.py): **`apply_keyed_gaussian_mask(burst, gdss_key, nonce, ...)`** — use **`gdss_masking`** with **`gdss_sync_burst_nonce(session_id)`** from [`python/session_key_derivation.py`](python/session_key_derivation.py) so the sync keystream does not overlap the data path.
+  - **Tests:** [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2KeyedGaussianMask`, `TestT2SyncBurstNonce`
 
 - **PN spreading sequence derived from Key 3 (`sync_pn`)**
   - **Runtime code (actual helper used by applications):**
     - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_pn_sequence(master_key, session_id, chips, burst_index=0)` (per-burst PN evolution; backward-compatible default)
     - [`python/session_key_derivation.py`](python/session_key_derivation.py): `derive_session_keys(...)` returns `sync_pn`
   - **Documentation / tests:**
-    - [`docs/USAGE.md`](docs/USAGE.md): `derive_session_keys(...)` -> `sync_pn` -> `derive_sync_pn_sequence(...)`
-    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): PN determinism/key-sensitivity, per-burst uniqueness, and `burst_index=0` compatibility checks
+    - [`docs/USAGE.md`](docs/USAGE.md): `derive_session_keys(...)` / `derive_session_keys_from_galdralag(...)` -> `sync_pn` -> `derive_sync_pn_sequence(..., burst_index=...)`
+    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2PNDeterminism`, `TestT2PNKeySensitivity`, `TestT2PNBalance`, `TestT2PerBurstPNUniqueness` (`burst_index` / default compatibility)
 
-- **Burst timing randomised using Key 4 (`sync_timing`)**
+- **Burst timing randomised using Key 4 (`sync_timing`) or Galdralag `gdss_timing_key`**
   - **Runtime code (actual helper used by applications):**
-    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_schedule(...)` returning an ordered multi-burst epoch list (Pareto heavy-tailed inter-burst intervals)
-    - [`python/session_key_derivation.py`](python/session_key_derivation.py): `derive_session_keys(...)` returns `sync_timing`
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): **`derive_sync_schedule(...)`** returns **`list[int]`** burst epochs in **ms** since session start (Pareto heavy-tailed inter-burst gaps; domain `sync-schedule-v2`)
+    - [`python/session_key_derivation.py`](python/session_key_derivation.py): **`derive_session_keys`** returns **`sync_timing`**; **`derive_session_keys_from_galdralag`** maps **`gdss_timing_key`** -> **`sync_timing`**
   - **Documentation / tests:**
-    - [`docs/USAGE.md`](docs/USAGE.md): sync helpers and receiver integration sections
-    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): schedule determinism/range/ordering/non-collision checks
+    - [`docs/USAGE.md`](docs/USAGE.md): multi-burst sync flow
+    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2TimingOffsetDeterminism` (schedule repeatability), `TestT2TimingScheduleRange`, `TestT2TimingScheduleProperties`
 
-- **Gaussian amplitude envelope for sync bursts**
+- **Gaussian amplitude envelope and per-burst amplitude scaling for sync bursts**
   - **Runtime code (actual helper used by applications):**
-    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `gaussian_envelope(samples, rise_fraction=0.15)` (current default)
-    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `derive_sync_amplitude_scaling(...)` deterministic per-burst log-normal scaling
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): **`gaussian_envelope(samples, rise_fraction=0.15)`** (default rise/fall fraction)
+    - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): **`derive_sync_amplitude_scaling(master_key, session_id, n_bursts, ...)`** — deterministic per-burst log-normal scale sequence (`sync-amp-scale-v1`); IQ generator passes **`sync_timing`** for both schedule and scaling (see [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py)).
   - **Documentation / tests:**
-    - [`docs/USAGE.md`](docs/USAGE.md): helper reference and recommended sync-burst flow
-    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2GaussianEnvelope`
+    - [`docs/USAGE.md`](docs/USAGE.md): multi-burst sync flow
+    - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2GaussianEnvelope`; schedule/PN tests cover multi-burst cadence
+    - [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `_gaussian_envelope`, `_derive_sync_amplitude_scaling` (self-contained copies aligned with `sync_burst_utils`)
 
 - **P.372 baseline and receiver PSD profile integration**
   - **Runtime code (receiver-side model helpers):**
