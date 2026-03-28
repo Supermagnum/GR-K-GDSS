@@ -195,6 +195,11 @@ Provides the GDSS key and nonce to the spreader and despreader via the `set_key`
 - `session_id` (int): Session identifier; must match on TX and RX.
 - `tx_seq` (int): Transmission sequence number; must match on TX and RX.
 
+**Python API (`kgdss.key_injector`, not all fields are in GRC yet):** You may pass **`key_derivation`**, **`epk_initiator`**, and **`epk_responder`** as keyword arguments:
+
+- **`key_derivation`:** `"gr_k_gdss"` (default) uses **`derive_session_keys`**; **`"galdralag"`** uses **`derive_session_keys_from_galdralag`** with the same KDF as **gr-linux-crypto** [`gdss_set_key_source_block`](https://github.com/Supermagnum/gr-linux-crypto/blob/master/python/gdss_set_key_source.py) when `key_derivation="galdralag"`.
+- **`epk_initiator` / `epk_responder`:** Uncompressed SEC1 ephemeral public keys (bytes); **required** when `key_derivation="galdralag"` and `shared_secret` is passed at construction. **Not** supported on the `shared_secret` message port (that path stays **gr_k_gdss** only). **`keyring_id`** loads raw `gdss_masking` bytes and ignores `key_derivation`.
+
 **Usage:** Add the block, set either `keyring_id` or `shared_secret_hex` (with `keyring_id` = 0), set `session_id` and `tx_seq` to match the other side. Connect `key_out` to `set_key` on both the spreader and the despreader. No trigger connection is needed; the key is sent when the flowgraph starts.
 
 Together, `kgdss_spreader_cc`, `kgdss_despreader_cc`, and `kgdss_key_injector` implement a keyed, Gaussian-distributed spread-spectrum layer: the key injector feeds key/nonce to both ends, and the spreader/despreader handle the symbol stream as long as both ends share the same ChaCha20 key/nonce and spreading parameters.
@@ -264,6 +269,16 @@ injector = kgdss.key_injector(keyring_id=12345, session_id=1, tx_seq=0)
 shared_secret = ...  # bytes, at least 32
 injector = kgdss.key_injector(shared_secret=shared_secret, session_id=1, tx_seq=0)
 
+# Galdralag / Baochip-style session (matches gr-linux-crypto GDSS Set Key Source galdralag mode):
+# injector = kgdss.key_injector(
+#     shared_secret=ecdh_output,
+#     session_id=1,
+#     tx_seq=0,
+#     key_derivation="galdralag",
+#     epk_initiator=epk_i_bytes,
+#     epk_responder=epk_r_bytes,
+# )
+
 # Connect injector.key_out to spreader.set_key and despreader.set_key (message ports)
 # Key is sent automatically on flowgraph start.
 ```
@@ -323,7 +338,7 @@ GR-K-GDSS is designed to work with [gr-linux-crypto](https://github.com/Supermag
 
 Set environment variable **`GR_LINUX_CRYPTO_DIR`** to the repository root of a local gr-linux-crypto checkout so `session_key_derivation` prepends its `python/` directory: `CryptoHelpers`, `KeyringHelper`, and `derive_galdralag_session_keys` resolve the same way as after `sudo make install`, which is useful when co-developing the two trees.
 
-The same shared secret and HKDF usage (full secret, info `gdss-chacha20-masking-v1`, salt, nonce format) are used so that gr-linux-crypto's **GDSS Set Key Source** and GR-K-GDSS **key_injector** derive the same GDSS key and nonce for a given session when both use the **gr-k-gdss** `derive_session_keys` profile (not the Galdralag profile).
+The same shared secret and HKDF usage (full secret, info `gdss-chacha20-masking-v1`, 32-byte zero salt, nonce format) are used so that gr-linux-crypto's **GDSS Set Key Source** (`key_derivation="gr_k_gdss"`) and GR-K-GDSS **key_injector** (default) derive the same GDSS key and nonce. For **Galdralag**, use **`key_derivation="galdralag"`** with ephemeral public keys on **key_injector** or on **gdss_set_key_source_block**; see [`tests/test_gr_linux_crypto_hkdf_compat.py`](../tests/test_gr_linux_crypto_hkdf_compat.py) for the default-profile HKDF cross-check against **`CryptoHelpers.derive_key_hkdf`**.
 
 **Required gr-linux-crypto APIs**
 
