@@ -8,7 +8,6 @@
 
 This document captures proposed improvements to the KGDSS synchronisation subsystem, ordered by implementation priority. The core change — replacing the single sync burst with a scheduled multi-burst cadence — is addressed first and is the primary deliverable. Subsequent sections describe further enhancements ranked by importance, each buildable independently on top of the core change.
 
-Operating SNR: −12 to −14 dB
 
 ---
 
