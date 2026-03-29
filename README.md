@@ -304,13 +304,13 @@ the original design's elegant receiver-ignorance property — the receiver
 now needs the key — but in exchange, the masking becomes
 cryptographically opaque.
 
-### The Sync Burst
+### The Sync Bursts
 
-The synchronisation burst is **2 ms** in the documented RF design; the
+The synchronisation bursts is **2 ms** in the documented RF design; the
 number of chips is whatever you pass to `derive_sync_pn_sequence` (API
 default `chips=10000`). The IQ test generator uses **1000** chips at
-**500 kHz** sample rate so each burst is still 2 ms long. The Python
-helpers in [`python/sync_burst_utils.py`](python/sync_burst_utils.py)
+**500 kHz** sample rate so each burst is still 2 ms long. The minimum feasible sync burst is probably around 0.25 ms, so 1ms is reasonable.
+The Python helpers in [`python/sync_burst_utils.py`](python/sync_burst_utils.py)
 implement the following (see also the code map later in this README):
 
 - **PN spreading (Key 3 — `sync_pn`):** `derive_sync_pn_sequence` derives
