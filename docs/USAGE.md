@@ -102,7 +102,8 @@ Both must be configured with **matching parameters and the same ChaCha20 key/non
 
 The real and imaginary parts of each chip are multiplied by keyed Gaussian mask values derived from:
     - A fixed Gaussian spreading sequence (length `sequence_length`, variance `variance`, RNG `seed`).
-    - A ChaCha20 keystream keyed by `chacha_key` and `chacha_nonce`, converted to Gaussian via Box-Muller and clamped away from zero.
+    - A ChaCha20-IETF keystream keyed by `chacha_key` and `chacha_nonce`, converted to Gaussian via Box-Muller and clamped away from zero. The C++ implementation uses **`gr::kgdss::detail::produce_chacha_ietf_keystream`** in **`lib/chacha_ietf_keystream.h`** (shared with the despreader).
+
 
 **Key parameters (must match despreader):**
 

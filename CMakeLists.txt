@@ -17,6 +17,8 @@ include(GNUInstallDirs)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SODIUM libsodium)
 
+option(KGDSS_ENABLE_CRYPTO_TESTS "Build native ChaCha20/spreader GTest suite (libsodium + GTest)" OFF)
+
 if(SODIUM_FOUND)
     message(STATUS "Using libsodium for ChaCha20")
     add_compile_definitions(HAVE_LIBSODIUM=1)

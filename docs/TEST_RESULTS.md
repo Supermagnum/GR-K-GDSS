@@ -2,10 +2,11 @@
 
 This document records snapshot results from the gr-k-gdss test suite. For how to run the tests and what they do, see [TESTING.md](TESTING.md).
 
-**Last recorded run: 25 March 2026**
+**Last recorded run: 28 March 2026**
 
-- **pytest:** 42 passed, 1 skipped (43 collected). `TestT3KeyringRoundTrip::test_keyring_round_trip` is skipped when no keyring is available (expected in many environments).
-- **IQ file analysis:** 29 passed, 0 failed, 0 warnings. Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
+- **pytest:** 48 passed, 1 skipped (49 collected, `PYTHONPATH=python` from repo root in CI-style run). `TestT3KeyringRoundTrip::test_keyring_round_trip` is skipped when no keyring is available (expected in many environments).
+- **C++ crypto tests (optional):** Not part of the pytest tally. With **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**, build and run **`ctest -R 'kgdss_test_'`** (see [TESTING.md](TESTING.md#c-crypto-tests-optional)).
+- **IQ file analysis:** 29 passed, 0 failed, 0 warnings (unchanged methodology). Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
 - **Preprint BER / channel simulations (not pytest):** Statistical Monte Carlo figures for [Section 7](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.tex) live under `paper/figures/` (`fig7_awgn_ber.png` through `fig10_ldpc.png`). Regenerate via [paper/README.md](../paper/README.md) (`ber_simulation.py`, `gen_figures.py`). See [Preprint BER and ITU/STANAG-style channel figures](#preprint-ber-and-itustanag-style-channel-figures) below.
 
 ---
@@ -38,7 +39,7 @@ Full explanation: [Round trip (what it means)](TESTING.md#round-trip-what-it-mea
 
 ## Unit tests (pytest)
 
-Run: `pytest tests/ -v` from the repository root (after installing the module and gr-linux-crypto). Example result (Linux, Python 3.12):
+Run: `pytest tests/ -v` from the repository root (after installing the module and gr-linux-crypto). The **verbatim log below** is from an older capture (43 collected); the current suite has more tests. For the authoritative count, run `pytest tests/ -q` (see [TESTING.md](TESTING.md#expected-results)). Example log shape (Linux, Python 3.12):
 
 ```
 ============================= test session starts ==============================
@@ -94,7 +95,7 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 ======================== 42 passed, 1 skipped in 0.42s =========================
 ```
 
-**Summary:** 42 passed, 1 skipped (43 collected). With a keyring available, the keyring round-trip test may run instead of skip (43 passed, 0 skipped).
+**Summary (historical log above):** 42 passed, 1 skipped (43 collected). With a keyring available, the keyring round-trip test may run instead of skip (43 passed, 0 skipped). **Current suite (28 March 2026):** 48 passed, 1 skipped when using `PYTHONPATH=python` from the repository root with dependencies present; see the bullet list at the top of this file.
 
 ---
 

@@ -9,11 +9,13 @@
 
 #include <gnuradio/kgdss/kgdss_despreader_cc.h>
 #include <pmt/pmt.h>
+#include <array>
 #include <vector>
 #include <deque>
 #include <mutex>
 #include <complex>
 #include <cstdint>
+#include <cstddef>
 #include <sodium.h>
 
 namespace gr {
@@ -67,7 +69,10 @@ private:
     std::vector<uint8_t> d_nonce; // 12 bytes ChaCha20 nonce
     uint64_t d_counter;           // keystream position counter
     bool d_key_set;               // true once key/nonce set (constructor or set_key message)
-    std::mutex d_key_mutex;       // protects d_key, d_nonce, d_counter, d_key_set
+    std::mutex d_key_mutex; // protects key material, d_counter, remainder, d_key_set
+    std::array<uint8_t, 64> d_ks_remainder;
+    size_t d_ks_remainder_len;
+    std::vector<uint8_t> d_ks_buf;
 
     void build_sequence_complex(const std::vector<float>& spreading_sequence);
     void handle_key_msg(pmt::pmt_t msg);
@@ -76,7 +81,6 @@ private:
     void update_lock_detection(float correlation);
     void update_snr_estimate(gr_complex symbol, float correlation);
 
-    void fill_keystream(uint8_t* buf, size_t len);
     float box_muller(float u1, float u2);
 
     void forecast(int noutput_items, gr_vector_int& ninput_items_required) override;
