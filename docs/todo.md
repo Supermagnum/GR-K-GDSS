@@ -8,6 +8,7 @@
 
 This document captures proposed improvements to the KGDSS synchronisation subsystem, ordered by implementation priority. The core change — replacing the single sync burst with a scheduled multi-burst cadence — is addressed first and is the primary deliverable. Subsequent sections describe further enhancements ranked by importance, each buildable independently on top of the core change.
 
+
 ---
 
 ## 2. Completed in this repository
@@ -31,6 +32,8 @@ This document now tracks the remaining priorities.
 **Importance: high. Dependency: Priority 1**
 
 The SDR is already running, already has the RF window open, and is already computing spectral data for despreading and correlation. Measuring the noise floor is computationally free — it is a statistical operation on samples already being processed. No additional DSP chain is required.
+
+Minimum operating SNR: −12dB, maybe -14dB.
 
 A running estimate of the noise floor power spectral density across the monitored RF window is computed as the median magnitude across a rolling time window. The median is used rather than the mean because it is robust against the impulse events themselves skewing the estimate upward. The result is a calibrated noise floor level in dBm per bin updated continuously during operation.
 
