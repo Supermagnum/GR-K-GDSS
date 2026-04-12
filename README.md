@@ -1116,10 +1116,10 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** |
 | **Technical terms index** (glossary of acronyms and terms) | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** |
 | **Example flowgraph** (TX with Codec2, ECIES, SOQPSK, GDSS) | **[examples/](examples/)** — `tx_example_kgdss.grc` and verification; see [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md). |
-| **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`; headers in **include/gnuradio/kgdss/**. |
+| **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`, shared ChaCha20-IETF helper **`lib/chacha_ietf_keystream.h`**; headers in **include/gnuradio/kgdss/**. |
 | **Python helpers** (key derivation, keyring, sync burst, P.372) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`, `p372_baseline.py`, `p372_baseline_config.json`, `p372_receiver_profile.py`; package entry [`python/__init__.py`](python/__init__.py) re-exports the public `gnuradio.kgdss` API. Details in [docs/USAGE.md](docs/USAGE.md). |
 | **GRC block definitions** | **grc/** — `kgdss_spreader_cc.block.yml`, `kgdss_despreader_cc.block.yml`, `kgdss_key_injector.block.yml`. |
-| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_p372_receiver_profile.py`, `test_galdralag_kgdss_compat.py`, `test_gr_linux_crypto_hkdf_compat.py`, `test_cross_layer.py`; described in [docs/TESTING.md](docs/TESTING.md). |
+| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_p372_receiver_profile.py`, `test_galdralag_kgdss_compat.py`, `test_gr_linux_crypto_hkdf_compat.py`, `test_cross_layer.py`; optional **C++** Google Test sources under **`tests/cpp/`** (see [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional)). |
 | **IQ test file generator and analyser** | **tests/generate_iq_test_files.py** (builds 01–13 and metadata), **tests/analyse_iq_files.py** (PASS/FAIL checks), **tests/plot_iq_comparison.py** (plots); see [docs/TESTING.md](docs/TESTING.md). |
 | **Quick test run** | **tests/README.md** — Run commands; keyring/sandbox notes. |
 | **Python bindings** (C++ blocks to Python) | **python/bindings/** — `kgdss_spreader_cc_python.cc`, `kgdss_despreader_cc_python.cc`, `kgdss_python.cc`; expose spreader/despreader and `kgdss_sync_state` to `gnuradio.kgdss`. |
@@ -1153,10 +1153,12 @@ If you want to inspect specific behaviour in code, start with these files and fu
 
 - **ChaCha20 keystream generation (chip masking)**
   - **Runtime code (actual processing path):**
-    - [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc): `fill_keystream()` using libsodium `crypto_stream_chacha20_ietf_xor_ic`
-    - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): `fill_keystream()` matching the spreader byte-for-byte for mask reconstruction
+    - [`lib/chacha_ietf_keystream.h`](lib/chacha_ietf_keystream.h): **`gr::kgdss::detail::produce_chacha_ietf_keystream`** — 64-byte block ChaCha20-IETF via libsodium `crypto_stream_chacha20_ietf_xor_ic`, with a **remainder buffer** so arbitrary byte lengths and split calls stay aligned; IETF block counter is the byte offset divided by 64 (guarded against **`UINT32_MAX`** overflow).
+    - [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc): **`work()`** snapshots key/nonce/counter/remainder under **`d_key_mutex`**, calls **`produce_chacha_ietf_keystream`** into a grow-only **`d_ks_buf`**, commits state if the key is unchanged, then applies **`box_muller`** masks under **`d_mutex`**.
+    - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): same keystream primitive per symbol (snapshot/commit pattern); masks match the spreader byte-for-byte for the same key/nonce/counter.
   - **Tests:**
     - [`tests/test_t1_spreader_despreader.py`](tests/test_t1_spreader_despreader.py): `TestT1KeystreamDeterminism`, `TestT1KeySensitivity`, `TestT1WrongKeyDespreader`
+    - Optional native suite: **`tests/cpp/`** with **`KGDSS_ENABLE_CRYPTO_TESTS=ON`** (see [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional)).
 
 - **Box-Muller Gaussian masking and statistical properties**
   - **Runtime code (actual processing path):**
@@ -1310,6 +1312,8 @@ cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 make -j$(nproc)
 ```
 
+Optional **native ChaCha20 / spreader crypto tests** (Google Test): configure with **`-DKGDSS_ENABLE_CRYPTO_TESTS=ON`** (requires **libsodium**; first configure may fetch GoogleTest and nlohmann_json). See [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional).
+
 If CMake reports that libsodium was not found, it will fall back to OpenSSL; ensure `libssl-dev` is installed in that case.
 
 ### Install
@@ -1332,7 +1336,7 @@ export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 pytest tests/ -v
 ```
 
-- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results. A recent full-environment run (GNU Radio, gr-linux-crypto with **galdralag_session_kdf**, `keyctl` for keyring tests) reported **46 passed, 1 skipped**; without Galdralag KDF, four mapping tests skip; without `keyctl`, the keyring round-trip skips.
+- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results. A recent full-environment run (GNU Radio, gr-linux-crypto with **galdralag_session_kdf**, `keyctl` for keyring tests) reported **48 passed, 1 skipped**; without Galdralag KDF, four mapping tests skip; without `keyctl`, the keyring round-trip skips. With **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**, `ctest` also runs **`kgdss_test_chacha_keystream`** and **`kgdss_test_spreader_stats`** (see [C++ crypto tests](docs/TESTING.md#c-crypto-tests-optional)).
 - **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — Recorded pytest and IQ file analysis snapshot (update when you refresh results; IQ checks remain **29** unless the IQ suite changes).
 - **tests/README.md** — Quick run instructions and per-suite notes; keyring round-trip is skipped if the Linux kernel keyring or `keyctl` is not available.
 
@@ -1358,7 +1362,7 @@ Start from [Where key functions are implemented (quick code map)](#where-key-fun
 2. **Python bindings:** **`python/bindings/`** (`*_python.cc`, `kgdss_python.cc` as needed).
 3. **GRC:** **`grc/*.block.yml`** if block parameters or documentation strings change.
 4. **Rebuild and install:** from a build directory, `cmake .. && make -j$(nproc)` then `make install` (use `sudo` only if your prefix requires it). Run **`sudo ldconfig`** after installing shared libraries to a system lib path if the loader does not see the new `.so`.
-5. **Tests:** extend **`tests/test_t1_spreader_despreader.py`** and/or **`tests/test_cross_layer.py`** for behaviour that flows through the bindings.
+5. **Tests:** extend **`tests/test_t1_spreader_despreader.py`** and/or **`tests/test_cross_layer.py`** for behaviour that flows through the bindings. For **ChaCha20 keystream** and **`work()`** mask statistics at the C++ level, extend **`tests/cpp/`** and rebuild with **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**; run **`ctest -R 'kgdss_test_'`** (see [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional)).
 
 ### Flowgraphs and examples
 
@@ -1380,6 +1384,8 @@ Use the same interpreter and **`PYTHONPATH`** as **`pytest`**.
 pytest tests/test_t2_sync_burst.py -v
 pytest tests/test_t3_key_derivation.py::SomeClass::test_name -v
 ```
+
+With **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**, from the build directory: **`ctest -R 'kgdss_test_' -V`**.
 
 **Python:** run with **`python3 -X dev`** to surface more warnings; add temporary logging or assertions in tests rather than only in GUI flowgraphs.
 

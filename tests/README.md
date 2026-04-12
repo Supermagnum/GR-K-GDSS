@@ -53,6 +53,8 @@ python -m unittest discover -s tests -v
 - **T3** (test_t3_key_derivation.py): Key derivation and nonce construction. Keyring round-trip is skipped if the Linux keyring is not available.
 - **Cross-layer** (test_cross_layer.py): Full stack round-trip using derived keys and keyed blocks.
 
+**Optional C++ crypto tests (Google Test):** Sources live under **`tests/cpp/`**. Configure the project with **`-DKGDSS_ENABLE_CRYPTO_TESTS=ON`**, build, then run **`ctest -R 'kgdss_test_'`** from the build directory. Requires **libsodium**; first configure may download GoogleTest and nlohmann_json. See **[docs/TESTING.md](../docs/TESTING.md#c-crypto-tests-optional)**.
+
 **Keyring test skipped:** If the keyring round-trip test is skipped, the skip message now shows the import error (e.g. `No module named 'gr_linux_crypto'`). Ensure gr-linux-crypto is installed for the same Python you use for pytest, and that its install path is on `PYTHONPATH` before you run tests. For example, if gr-linux-crypto is in `/usr/local/lib/python3.12/dist-packages`, that path must be in `PYTHONPATH` (as in the examples above).
 
 Install pytest if needed: `pip install pytest`

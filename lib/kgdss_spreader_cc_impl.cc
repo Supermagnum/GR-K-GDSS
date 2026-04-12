@@ -27,11 +27,14 @@
 #endif
 
 #include <gnuradio/kgdss/kgdss_spreader_cc.h>
+#include "chacha_ietf_keystream.h"
 #include "kgdss_spreader_cc_impl.h"
 #include <gnuradio/io_signature.h>
 #include <pmt/pmt.h>
+#include <cassert>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
 
@@ -102,7 +105,8 @@ kgdss_spreader_cc_impl::kgdss_spreader_cc_impl(int sequence_length,
       d_key(chacha_key),
       d_nonce(chacha_nonce),
       d_counter(0),
-      d_key_set(chacha_key.size() == 32 && chacha_nonce.size() == 12)
+      d_key_set(chacha_key.size() == 32 && chacha_nonce.size() == 12),
+      d_ks_remainder_len(0)
 {
     if (d_sequence_length <= 0) {
         throw std::invalid_argument("Sequence length must be positive");
@@ -152,6 +156,7 @@ void kgdss_spreader_cc_impl::handle_key_msg(pmt::pmt_t msg)
     d_key.assign(k, k + 32);
     d_nonce.assign(n, n + 12);
     d_counter = 0;
+    d_ks_remainder_len = 0;
     d_key_set = true;
 }
 
@@ -225,26 +230,6 @@ std::vector<float> kgdss_spreader_cc_impl::get_spreading_sequence() const
     return out;
 }
 
-/* Fill buffer with ChaCha20 IETF keystream. Counter is in 64-byte blocks; skip
- * bytes within the current block so we stay in sync with the spreader/despreader
- * symbol stream. */
-void kgdss_spreader_cc_impl::fill_keystream(uint8_t* buf, size_t len)
-{
-    if (len == 0) return;
-    const size_t block = d_counter / 64;
-    const size_t skip = d_counter % 64;
-    const size_t to_gen = skip + len;
-    if (to_gen > 0) {
-        std::vector<uint8_t> tmp(to_gen);
-        std::memset(tmp.data(), 0, to_gen);
-        crypto_stream_chacha20_ietf_xor_ic(
-            tmp.data(), tmp.data(), to_gen, d_nonce.data(),
-            static_cast<uint32_t>(block), d_key.data());
-        std::memcpy(buf, tmp.data() + skip, len);
-    }
-    d_counter += len;
-}
-
 /* Box-Muller transform: convert two uniform [0,1) values to one Gaussian(0, variance).
  * u1 must be > 0 (log(u1) defined); u2 is the angle. Result scaled by sqrt(d_variance). */
 float kgdss_spreader_cc_impl::box_muller(float u1, float u2)
@@ -264,25 +249,80 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
     const gr_complex* in = (const gr_complex*)input_items[0];
     gr_complex* out = (gr_complex*)output_items[0];
 
+    std::array<uint8_t, 32> key_snap{};
+    std::array<uint8_t, 12> nonce_snap{};
+    uint64_t ctr_snap = 0;
+    std::array<uint8_t, 64> rem_snap{};
+    size_t rem_len_snap = 0;
+    bool key_ok = false;
+
     {
-        std::unique_lock<std::mutex> key_lock(d_key_mutex);
-        if (!d_key_set) {
-            std::fill(out, out + noutput_items, gr_complex(0.0f, 0.0f));
-            return noutput_items;
+        std::lock_guard<std::mutex> key_lock(d_key_mutex);
+        key_ok = d_key_set;
+        if (key_ok) {
+            std::memcpy(key_snap.data(), d_key.data(), 32);
+            std::memcpy(nonce_snap.data(), d_nonce.data(), 12);
+            ctr_snap = d_counter;
+            rem_len_snap = d_ks_remainder_len;
+            if (rem_len_snap > 0) {
+                std::memcpy(rem_snap.data(), d_ks_remainder.data(), rem_len_snap);
+            }
         }
+    }
+
+    if (!key_ok) {
+        std::fill(out, out + noutput_items, gr_complex(0.0f, 0.0f));
+        return noutput_items;
+    }
+
+    const size_t need = static_cast<size_t>(noutput_items) * 16U;
+    if (need > 0) {
+        const uint64_t last_byte = ctr_snap + need - 1ULL;
+        const uint64_t last_block = last_byte / 64ULL;
+        assert(last_block <= static_cast<uint64_t>(UINT32_MAX));
+        if (last_block > static_cast<uint64_t>(UINT32_MAX)) {
+            throw std::runtime_error(
+                "kgdss_spreader_cc: ChaCha20-IETF block counter would exceed UINT32_MAX "
+                "(counter limit); reduce burst length or re-key.");
+        }
+    }
+
+    if (need > d_ks_buf.size()) {
+        d_ks_buf.resize(need);
+    }
+
+    detail::produce_chacha_ietf_keystream(d_ks_buf.data(),
+                                          need,
+                                          key_snap.data(),
+                                          nonce_snap.data(),
+                                          ctr_snap,
+                                          rem_snap,
+                                          rem_len_snap);
+
+    bool committed = false;
+    {
+        std::lock_guard<std::mutex> key_lock(d_key_mutex);
+        if (d_key_set && d_key.size() == 32 && d_nonce.size() == 12 &&
+            std::memcmp(d_key.data(), key_snap.data(), 32) == 0 &&
+            std::memcmp(d_nonce.data(), nonce_snap.data(), 12) == 0) {
+            d_counter = ctr_snap;
+            d_ks_remainder_len = rem_len_snap;
+            if (rem_len_snap > 0) {
+                std::memcpy(d_ks_remainder.data(), rem_snap.data(), rem_len_snap);
+            }
+            committed = true;
+        }
+    }
+
+    if (!committed) {
+        std::fill(out, out + noutput_items, gr_complex(0.0f, 0.0f));
+        return noutput_items;
     }
 
     std::lock_guard<std::mutex> lock(d_mutex);
 
     int ninput_items = noutput_items / d_chips_per_symbol;
     int output_idx = 0;
-
-    // Generate keyed Gaussian masking using ChaCha20 + Box-Muller (mask clamp 1e-4f)
-    std::vector<uint8_t> ks(static_cast<size_t>(noutput_items) * 16);
-    {
-        std::lock_guard<std::mutex> key_lock(d_key_mutex);
-        fill_keystream(ks.data(), ks.size());
-    }
 
     auto to_uniform = [](const uint8_t* b) -> float {
         uint32_t v;
@@ -296,7 +336,7 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
 
         for (int chip = 0; chip < d_chips_per_symbol; chip++) {
             int out_index = output_idx++;
-            const uint8_t* base = ks.data() + static_cast<size_t>(out_index) * 16;
+            const uint8_t* base = d_ks_buf.data() + static_cast<size_t>(out_index) * 16;
 
             float mask_i = box_muller(to_uniform(base + 0), to_uniform(base + 4));
             float mask_q = box_muller(to_uniform(base + 8), to_uniform(base + 12));

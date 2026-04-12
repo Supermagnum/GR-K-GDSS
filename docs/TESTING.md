@@ -5,6 +5,7 @@ This document describes the unit tests for gr-k-gdss, how to run them, what each
 ## Table of Contents
 
 - [Running the tests](#running-the-tests)
+- [C++ crypto tests (optional)](#c-crypto-tests-optional)
 - [Documented test run](#documented-test-run)
 - [Round trip (what it means)](#round-trip-what-it-means)
 - [What the tests do](#what-the-tests-do)
@@ -69,6 +70,19 @@ Install pytest if needed: `pip install pytest`.
 **Keyring test:** The keyring round-trip test is skipped with "Permission denied" when run inside a restricted environment (e.g. some sandboxes). Run `pytest tests/ -v` in a normal system terminal so the process can read keys from the session keyring.
 
 **Compile check:** From the repo root, run `mkdir -p build && cd build && cmake .. && make -j4` to verify the C++ and Python build. Install with `make install` (or `sudo make install` for system prefix) so that the unit tests see the installed module.
+
+### C++ crypto tests (optional)
+
+Google Test binaries exercise **`gr::kgdss::detail::produce_chacha_ietf_keystream`** (the same ChaCha20-IETF path used by the spreader and despreader) and **`kgdss_spreader_cc::work()`** mask statistics. They are **off by default** and require **libsodium** (already required for the keyed blocks).
+
+Configure with **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**. The first configure **fetches** GoogleTest and nlohmann_json via CMake `FetchContent` (network required once). A **small Wycheproof-derived** JSON subset is committed under **`tests/cpp/data/`** (empty-AAD ChaCha20-Poly1305 cases; message XOR ciphertext equals the raw ChaCha20 keystream from byte offset 64 per RFC 7539 AEAD layout). The upstream C2SP Wycheproof tree no longer ships a standalone **`chacha20_test.json`**; those cases still validate the raw keystream primitive used by the spreader.
+
+```bash
+mkdir -p build && cd build
+cmake .. -DKGDSS_ENABLE_CRYPTO_TESTS=ON
+cmake --build . -j$(nproc)
+ctest -R 'kgdss_test_' --output-on-failure
+```
 
 ## Documented test run
 
@@ -229,7 +243,7 @@ Skipped when `gr_linux_crypto.CryptoHelpers` cannot be imported (install gr-linu
 
 With the module installed, **gr-linux-crypto** (including **galdralag_session_kdf** when you want Galdralag tests), dependencies available, and tests run in a normal terminal (so keyctl read is allowed):
 
-- Expect on the order of **45–47 passed** and **1–5 skipped** depending on environment: one keyring test may skip; four Galdralag mapping tests skip if `derive_galdralag_session_keys` is missing; optional slow or environment-specific cases may skip. Run `pytest tests/ -q` for the exact tally on your machine.
+- With **gr-linux-crypto** (including **galdralag_session_kdf**), **GNU Radio** / bindings installed, and keyring access where applicable, expect about **48 passed** and **1 skipped** (keyring round-trip often skips without `keyctl`). Fewer passes or more skips occur if Galdralag KDF is missing (four mapping tests skip) or the module is not installed. Run `pytest tests/ -q` for the exact tally on your machine.
 
 If the keyring round-trip is skipped with "Permission denied", run `pytest tests/ -v` in a normal system terminal (outside any sandbox) so the process can read keys from the session keyring. If `gr_linux_crypto` and gr-k-gdss are installed in the default Python search path (e.g. `/usr/local`), no `PYTHONPATH` is needed for normal use. For co-development, set **`GR_LINUX_CRYPTO_DIR`** to the gr-linux-crypto repository root (see [USAGE.md](USAGE.md)).
 

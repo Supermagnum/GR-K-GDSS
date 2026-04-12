@@ -110,22 +110,31 @@ def apply_keyed_gaussian_mask(
     num_bytes = n * 16
     cipher = ChaCha20.new(key=gdss_key, nonce=nonce)
     keystream = cipher.encrypt(b"\x00" * num_bytes)
-    out = np.empty_like(burst)
-    for i in range(n):
-        base = i * 16
-        u1 = _to_uniform(keystream[base : base + 4])
-        u2 = _to_uniform(keystream[base + 4 : base + 8])
-        u3 = _to_uniform(keystream[base + 8 : base + 12])
-        u4 = _to_uniform(keystream[base + 12 : base + 16])
-        mask_i = _box_muller(u1, u2, variance)
-        mask_q = _box_muller(u3, u4, variance)
-        if abs(mask_i) < _MIN_MASK:
-            mask_i = _MIN_MASK if mask_i >= 0 else -_MIN_MASK
-        if abs(mask_q) < _MIN_MASK:
-            mask_q = _MIN_MASK if mask_q >= 0 else -_MIN_MASK
-        out[i] = np.complex64(
-            complex(float(burst[i].real) * mask_i, float(burst[i].imag) * mask_q)
-        )
+    w = np.frombuffer(keystream, dtype="<u4", count=n * 4).reshape(n, 4)
+    u = (w.astype(np.float64) + 0.5) / 4294967296.0
+    u1 = u[:, 0]
+    u2 = u[:, 1]
+    u3 = u[:, 2]
+    u4 = u[:, 3]
+    u1c = np.maximum(u1, 1e-10)
+    u3c = np.maximum(u3, 1e-10)
+    mask_i = np.sqrt(-2.0 * np.log(u1c)) * np.cos(2.0 * np.pi * u2) * np.sqrt(variance)
+    mask_q = np.sqrt(-2.0 * np.log(u3c)) * np.cos(2.0 * np.pi * u4) * np.sqrt(variance)
+    mask_i = np.where(
+        np.abs(mask_i) < _MIN_MASK,
+        np.where(mask_i >= 0, _MIN_MASK, -_MIN_MASK),
+        mask_i,
+    )
+    mask_q = np.where(
+        np.abs(mask_q) < _MIN_MASK,
+        np.where(mask_q >= 0, _MIN_MASK, -_MIN_MASK),
+        mask_q,
+    )
+    out = np.empty(n, dtype=np.complex64)
+    br = burst.real.astype(np.float64, copy=False)
+    bi = burst.imag.astype(np.float64, copy=False)
+    out.real[...] = (br * mask_i).astype(np.float32)
+    out.imag[...] = (bi * mask_q).astype(np.float32)
     return out
 
 

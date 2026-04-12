@@ -9,11 +9,13 @@
 
 #include <gnuradio/kgdss/kgdss_spreader_cc.h>
 #include <pmt/pmt.h>
+#include <array>
 #include <vector>
 #include <mutex>
 #include <random>
 #include <complex>
 #include <cstdint>
+#include <cstddef>
 #include <sodium.h>
 
 namespace gr {
@@ -36,11 +38,13 @@ private:
     std::vector<uint8_t> d_nonce; // 12 bytes ChaCha20 nonce
     uint64_t d_counter;           // keystream position counter
     bool d_key_set;               // true once key/nonce set (constructor or set_key message)
-    std::mutex d_key_mutex;       // protects d_key, d_nonce, d_counter, d_key_set
+    std::mutex d_key_mutex; // protects key material, d_counter, remainder, d_key_set
+    std::array<uint8_t, 64> d_ks_remainder;
+    size_t d_ks_remainder_len;
+    std::vector<uint8_t> d_ks_buf;
 
     void generate_sequence();
     void handle_key_msg(pmt::pmt_t msg);
-    void fill_keystream(uint8_t* buf, size_t len);
     float box_muller(float u1, float u2);
 
 public:
