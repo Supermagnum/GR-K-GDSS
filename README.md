@@ -49,6 +49,7 @@ The developer used curiosity to piece the suggested improvements in this project
 19. [Publication and IP Protection](#publication-and-ip-protection)
 20. [Sync Burst Improvements Roadmap](docs/todo.md)
 21. [Extending and debugging without maintainer support](#12-extending-and-debugging-without-maintainer-support)
+22. [GnuPG ECDH key derivation examples](docs/GNUPG_ECDH_KDF_EXAMPLES.md)
 
 ---
 
