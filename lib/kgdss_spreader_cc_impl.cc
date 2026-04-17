@@ -232,14 +232,15 @@ std::vector<float> kgdss_spreader_cc_impl::get_spreading_sequence() const
 
 /* Box-Muller transform: convert two uniform [0,1) values to one Gaussian(0, variance).
  * u1 must be > 0 (log(u1) defined); u2 is the angle. Result scaled by sqrt(d_variance). */
-float kgdss_spreader_cc_impl::box_muller(float u1, float u2)
+void kgdss_spreader_cc_impl::box_muller_pair(float u1, float u2, float& g0, float& g1)
 {
     if (u1 < 1e-10f) {
         u1 = 1e-10f;
     }
-    float g = std::sqrt(-2.0f * std::log(u1)) *
-              std::cos(2.0f * static_cast<float>(M_PI) * u2);
-    return g * std::sqrt(d_variance);
+    const float radius = std::sqrt(-2.0f * std::log(u1)) * std::sqrt(d_variance);
+    const float angle = 2.0f * static_cast<float>(M_PI) * u2;
+    g0 = radius * std::cos(angle);
+    g1 = radius * std::sin(angle);
 }
 
 int kgdss_spreader_cc_impl::work(int noutput_items,
@@ -270,10 +271,7 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
         }
     }
 
-    if (!key_ok) {
-        std::fill(out, out + noutput_items, gr_complex(0.0f, 0.0f));
-        return noutput_items;
-    }
+    if (!key_ok) return 0;
 
     const size_t need = static_cast<size_t>(noutput_items) * 16U;
     if (need > 0) {
@@ -314,10 +312,7 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
         }
     }
 
-    if (!committed) {
-        std::fill(out, out + noutput_items, gr_complex(0.0f, 0.0f));
-        return noutput_items;
-    }
+    if (!committed) return 0;
 
     std::lock_guard<std::mutex> lock(d_mutex);
 
@@ -325,12 +320,16 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
     int output_idx = 0;
 
     auto to_uniform = [](const uint8_t* b) -> float {
-        uint32_t v;
-        std::memcpy(&v, b, 4);
+        const uint32_t v = static_cast<uint32_t>(b[0]) |
+                           (static_cast<uint32_t>(b[1]) << 8) |
+                           (static_cast<uint32_t>(b[2]) << 16) |
+                           (static_cast<uint32_t>(b[3]) << 24);
         return (static_cast<float>(v) + 0.5f) / 4294967296.0f;
     };
 
     const float MIN_MASK = 1e-4f;
+    const float MIN_SEQ = 1e-4f;
+    int chip_index = d_chip_index;
     for (int sym_idx = 0; sym_idx < ninput_items; sym_idx++) {
         gr_complex symbol = in[sym_idx];
 
@@ -338,17 +337,23 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
             int out_index = output_idx++;
             const uint8_t* base = d_ks_buf.data() + static_cast<size_t>(out_index) * 16;
 
-            float mask_i = box_muller(to_uniform(base + 0), to_uniform(base + 4));
-            float mask_q = box_muller(to_uniform(base + 8), to_uniform(base + 12));
+            float mask_i = 0.0f;
+            float mask_q = 0.0f;
+            box_muller_pair(to_uniform(base + 0), to_uniform(base + 4), mask_i, mask_q);
             if (std::abs(mask_i) < MIN_MASK) mask_i = (mask_i >= 0 ? MIN_MASK : -MIN_MASK);
             if (std::abs(mask_q) < MIN_MASK) mask_q = (mask_q >= 0 ? MIN_MASK : -MIN_MASK);
+            gr_complex mask(mask_i, mask_q);
 
-            out[out_index] = gr_complex(symbol.real() * mask_i,
-                                        symbol.imag() * mask_q);
+            const gr_complex seq_raw = d_spreading_sequence_complex[chip_index];
+            const float seq_mag = std::abs(seq_raw);
+            const gr_complex seq =
+                (seq_mag < MIN_SEQ) ? gr_complex(MIN_SEQ, 0.0f) : seq_raw;
+
+            out[out_index] = symbol * seq * mask;
+            chip_index = (chip_index + 1) % d_sequence_length;
         }
-
-        d_chip_index = (d_chip_index + d_chips_per_symbol) % d_sequence_length;
     }
+    d_chip_index = chip_index;
 
     return output_idx;
 }

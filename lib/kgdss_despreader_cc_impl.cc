@@ -363,13 +363,15 @@ float kgdss_despreader_cc_impl::get_frequency_error() const
 
 /* Box-Muller: same formula as spreader but without variance scaling (despreader
  * uses mask only for divide; variance cancels in the ratio). */
-float kgdss_despreader_cc_impl::box_muller(float u1, float u2)
+void kgdss_despreader_cc_impl::box_muller_pair(float u1, float u2, float& g0, float& g1)
 {
     if (u1 < 1e-10f) {
         u1 = 1e-10f;
     }
-    return std::sqrt(-2.0f * std::log(u1)) *
-           std::cos(2.0f * static_cast<float>(M_PI) * u2);
+    const float radius = std::sqrt(-2.0f * std::log(u1));
+    const float angle = 2.0f * static_cast<float>(M_PI) * u2;
+    g0 = radius * std::cos(angle);
+    g1 = radius * std::sin(angle);
 }
 
 int kgdss_despreader_cc_impl::general_work(int noutput_items,
@@ -389,21 +391,16 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
 
     {
         std::unique_lock<std::mutex> key_lock(d_key_mutex);
-        if (!d_key_set) {
-            for (int i = 0; i < actual_output_items; i++) {
-                out_symbols[i] = gr_complex(0.0f, 0.0f);
-                out_lock[i] = 0.0f;
-                out_snr[i] = 0.0f;
-            }
-            consume(0, actual_output_items * d_chips_per_symbol);
-            return actual_output_items;
-        }
+        if (!d_key_set) return 0;
     }
 
     const float MIN_MASK = 1e-4f;
+    const float MIN_DEN = 1e-4f;
     auto to_uniform = [](const uint8_t* b) -> float {
-        uint32_t v;
-        std::memcpy(&v, b, 4);
+        const uint32_t v = static_cast<uint32_t>(b[0]) |
+                           (static_cast<uint32_t>(b[1]) << 8) |
+                           (static_cast<uint32_t>(b[2]) << 16) |
+                           (static_cast<uint32_t>(b[3]) << 24);
         return (static_cast<float>(v) + 0.5f) / 4294967296.0f;
     };
 
@@ -437,14 +434,7 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
             }
         }
 
-        if (!key_ok) {
-            std::lock_guard<std::mutex> ml(d_mutex);
-            out_symbols[output_idx] = gr_complex(0.0f, 0.0f);
-            out_lock[output_idx] = 0.0f;
-            out_snr[output_idx] = 0.0f;
-            output_idx++;
-            continue;
-        }
+        if (!key_ok) break;
 
         if (ks_len > 0) {
             const uint64_t last_byte = ctr_snap + ks_len - 1ULL;
@@ -486,14 +476,7 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
 
         const uint8_t* ks = d_ks_buf.data();
 
-        if (!committed) {
-            std::lock_guard<std::mutex> ml(d_mutex);
-            out_symbols[output_idx] = gr_complex(0.0f, 0.0f);
-            out_lock[output_idx] = 0.0f;
-            out_snr[output_idx] = 0.0f;
-            output_idx++;
-            continue;
-        }
+        if (!committed) break;
 
         std::lock_guard<std::mutex> lock(d_mutex);
 
@@ -539,12 +522,21 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
             const int n_chips = std::min(d_chips_per_symbol, d_sequence_length);
             for (int chip = 0; chip < n_chips; chip++) {
                 const uint8_t* base = ks + static_cast<size_t>(chip) * 16;
-                float mask_i = box_muller(to_uniform(base + 0), to_uniform(base + 4));
-                float mask_q = box_muller(to_uniform(base + 8), to_uniform(base + 12));
+                float mask_i = 0.0f;
+                float mask_q = 0.0f;
+                box_muller_pair(to_uniform(base + 0), to_uniform(base + 4), mask_i, mask_q);
                 if (std::abs(mask_i) < MIN_MASK) mask_i = (mask_i >= 0 ? MIN_MASK : -MIN_MASK);
                 if (std::abs(mask_q) < MIN_MASK) mask_q = (mask_q >= 0 ? MIN_MASK : -MIN_MASK);
-                sum_i += in[input_offset + chip].real() / mask_i;
-                sum_q += in[input_offset + chip].imag() / mask_q;
+                const int seq_idx = (d_code_phase + chip) % d_sequence_length;
+                gr_complex seq = d_spreading_sequence_complex[seq_idx];
+                gr_complex den = seq * gr_complex(mask_i, mask_q);
+                const float den_mag = std::abs(den);
+                if (den_mag < MIN_DEN) {
+                    den = gr_complex(MIN_DEN, 0.0f);
+                }
+                const gr_complex deweighted = in[input_offset + chip] / den;
+                sum_i += deweighted.real();
+                sum_q += deweighted.imag();
             }
             const float nf = static_cast<float>(n_chips);
             out_symbols[output_idx] = gr_complex(sum_i / nf, sum_q / nf);
@@ -587,12 +579,21 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
             const int n_chips = std::min(d_chips_per_symbol, d_sequence_length);
             for (int chip = 0; chip < n_chips; chip++) {
                 const uint8_t* base = ks + static_cast<size_t>(chip) * 16;
-                float mask_i = box_muller(to_uniform(base + 0), to_uniform(base + 4));
-                float mask_q = box_muller(to_uniform(base + 8), to_uniform(base + 12));
+                float mask_i = 0.0f;
+                float mask_q = 0.0f;
+                box_muller_pair(to_uniform(base + 0), to_uniform(base + 4), mask_i, mask_q);
                 if (std::abs(mask_i) < MIN_MASK) mask_i = (mask_i >= 0 ? MIN_MASK : -MIN_MASK);
                 if (std::abs(mask_q) < MIN_MASK) mask_q = (mask_q >= 0 ? MIN_MASK : -MIN_MASK);
-                sum_i += in[despread_offset + chip].real() / mask_i;
-                sum_q += in[despread_offset + chip].imag() / mask_q;
+                const int seq_idx = (d_code_phase + chip) % d_sequence_length;
+                gr_complex seq = d_spreading_sequence_complex[seq_idx];
+                gr_complex den = seq * gr_complex(mask_i, mask_q);
+                const float den_mag = std::abs(den);
+                if (den_mag < MIN_DEN) {
+                    den = gr_complex(MIN_DEN, 0.0f);
+                }
+                const gr_complex deweighted = in[despread_offset + chip] / den;
+                sum_i += deweighted.real();
+                sum_q += deweighted.imag();
             }
             const float nf = static_cast<float>(n_chips);
             out_symbols[output_idx] = gr_complex(sum_i / nf, sum_q / nf);

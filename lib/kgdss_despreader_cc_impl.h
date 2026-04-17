@@ -81,7 +81,7 @@ private:
     void update_lock_detection(float correlation);
     void update_snr_estimate(gr_complex symbol, float correlation);
 
-    float box_muller(float u1, float u2);
+    void box_muller_pair(float u1, float u2, float& g0, float& g1);
 
     void forecast(int noutput_items, gr_vector_int& ninput_items_required) override;
 
