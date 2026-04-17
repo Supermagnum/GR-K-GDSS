@@ -46,6 +46,8 @@ public:
     virtual void set_chips_per_symbol(int chips_per_symbol);
     virtual void regenerate_sequence(float variance, unsigned int seed);
     virtual std::vector<float> get_spreading_sequence() const;
+    virtual void set_counter(uint64_t counter);
+    virtual bool get_overflow_occurred() const;
 
     virtual ~kgdss_spreader_cc();
 

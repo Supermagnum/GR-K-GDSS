@@ -16,6 +16,7 @@
 #include <complex>
 #include <cstdint>
 #include <cstddef>
+#include <atomic>
 #include <sodium.h>
 
 namespace gr {
@@ -73,9 +74,11 @@ private:
     std::array<uint8_t, 64> d_ks_remainder;
     size_t d_ks_remainder_len;
     std::vector<uint8_t> d_ks_buf;
+    std::atomic<bool> d_overflow_occurred{ false };
 
     void build_sequence_complex(const std::vector<float>& spreading_sequence);
     void handle_key_msg(pmt::pmt_t msg);
+    void handle_counter_msg(pmt::pmt_t msg);
     gr_complex correlate(const gr_complex* samples, int offset, int length);
     void update_timing();
     void update_lock_detection(float correlation);
@@ -101,6 +104,8 @@ public:
     float get_snr_estimate() const override;
     float get_last_soft_metric() const override;
     float get_frequency_error() const override;
+    void set_counter(uint64_t counter) override;
+    bool get_overflow_occurred() const override;
 
     int general_work(int noutput_items,
                      gr_vector_int& ninput_items,

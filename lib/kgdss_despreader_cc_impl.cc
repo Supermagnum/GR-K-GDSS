@@ -8,11 +8,11 @@
  * tracking (early-prompt-late timing), and lock detection.
  *
  * Algorithm:
- *   - Keystream and Box-Muller match the spreader (16 bytes per chip -> mask I,Q).
- *   - Despread: sum over chips of (chip_i / mask_i) and (chip_q / mask_q), then
- *     divide by chips_per_symbol. Mask clamp MIN_MASK (1e-4) avoids division blow-up.
- *   - Correlation: inner product of received chips with the spreading sequence
- *     (built from the same key) for lock detection and timing.
+ *   - Keystream and Box-Muller match the spreader (8 bytes per chip -> mask I,Q).
+ *   - Despread: sum over chips of chip / (sequence_chip * complex(mask_i, mask_q)),
+ *     then divide by chips_per_symbol. Small-denominator clamping avoids division blow-up.
+ *   - Correlation: inner product using complex sequence matching
+ *     sample * conj(sequence_chip) for lock detection and timing.
  *   - Lock: adaptive threshold (ADAPTIVE_THRESHOLD_MIN 0.2) and LOCK_THRESHOLD
  *     consecutive high correlations set is_locked; output ports 1 (lock 0/1) and
  *     2 (SNR estimate dB) are updated each symbol.
@@ -82,6 +82,16 @@ float kgdss_despreader_cc::get_last_soft_metric() const
 float kgdss_despreader_cc::get_frequency_error() const
 {
     return 0.0f;
+}
+
+void kgdss_despreader_cc::set_counter(uint64_t counter)
+{
+    (void)counter;
+}
+
+bool kgdss_despreader_cc::get_overflow_occurred() const
+{
+    return false;
 }
 
 kgdss_despreader_cc::sptr kgdss_despreader_cc::make(
@@ -170,6 +180,9 @@ kgdss_despreader_cc_impl::kgdss_despreader_cc_impl(
     message_port_register_in(pmt::mp("set_key"));
     set_msg_handler(pmt::mp("set_key"),
                     [this](pmt::pmt_t msg) { this->handle_key_msg(msg); });
+    message_port_register_in(pmt::mp("set_counter"));
+    set_msg_handler(pmt::mp("set_counter"),
+                    [this](pmt::pmt_t msg) { this->handle_counter_msg(msg); });
 }
 
 kgdss_despreader_cc_impl::~kgdss_despreader_cc_impl() {}
@@ -192,6 +205,34 @@ void kgdss_despreader_cc_impl::handle_key_msg(pmt::pmt_t msg)
     d_counter = 0;
     d_ks_remainder_len = 0;
     d_key_set = true;
+    d_overflow_occurred.store(false);
+    {
+        std::lock_guard<std::mutex> state_lock(d_mutex);
+        d_state = STATE_ACQUISITION;
+        d_code_phase = 0;
+        d_lock_counter = 0;
+        d_is_locked = false;
+        d_have_prev_corr = false;
+        d_freq_error_rad_per_sym = 0.0f;
+        d_acquisition_counter = 0;
+    }
+}
+
+void kgdss_despreader_cc_impl::handle_counter_msg(pmt::pmt_t msg)
+{
+    uint64_t ctr = 0;
+    if (pmt::is_uint64(msg)) {
+        ctr = pmt::to_uint64(msg);
+    } else if (pmt::is_integer(msg)) {
+        const long val = pmt::to_long(msg);
+        if (val < 0) return;
+        ctr = static_cast<uint64_t>(val);
+    } else {
+        return;
+    }
+    std::unique_lock<std::mutex> lock(d_key_mutex);
+    d_counter = ctr;
+    d_ks_remainder_len = 0;
 }
 
 void kgdss_despreader_cc_impl::build_sequence_complex(const std::vector<float>& spreading_sequence)
@@ -235,6 +276,12 @@ gr_complex kgdss_despreader_cc_impl::correlate(const gr_complex* samples, int of
 
 void kgdss_despreader_cc_impl::update_timing()
 {
+    if (d_chips_per_symbol <= 1) {
+        d_timing_error = 0.0f;
+        d_timing_offset = 0;
+        return;
+    }
+
     float error = d_early_correlation - d_late_correlation;
     d_timing_error = error * 0.1f;
 
@@ -358,6 +405,18 @@ float kgdss_despreader_cc_impl::get_frequency_error() const
     return d_freq_error_rad_per_sym;
 }
 
+void kgdss_despreader_cc_impl::set_counter(uint64_t counter)
+{
+    std::unique_lock<std::mutex> lock(d_key_mutex);
+    d_counter = counter;
+    d_ks_remainder_len = 0;
+}
+
+bool kgdss_despreader_cc_impl::get_overflow_occurred() const
+{
+    return d_overflow_occurred.load();
+}
+
 /* Box-Muller: same formula as spreader but without variance scaling (despreader
  * uses mask only for divide; variance cancels in the ratio). */
 void kgdss_despreader_cc_impl::box_muller_pair(float u1, float u2, float& g0, float& g1)
@@ -409,7 +468,7 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
             break;
         }
 
-        const size_t ks_len = static_cast<size_t>(d_chips_per_symbol) * 16;
+        const size_t ks_len = static_cast<size_t>(d_chips_per_symbol) * 8;
 
         std::array<uint8_t, 32> key_snap{};
         std::array<uint8_t, 12> nonce_snap{};
@@ -438,9 +497,8 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
             const uint64_t last_block = last_byte / 64ULL;
             assert(last_block <= static_cast<uint64_t>(UINT32_MAX));
             if (last_block > static_cast<uint64_t>(UINT32_MAX)) {
-                throw std::runtime_error(
-                    "kgdss_despreader_cc: ChaCha20-IETF block counter would exceed UINT32_MAX "
-                    "for this symbol; reduce burst length or re-key.");
+                d_overflow_occurred.store(true);
+                return WORK_DONE;
             }
         }
 
@@ -518,7 +576,7 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
             float sum_q = 0.0f;
             const int n_chips = std::min(d_chips_per_symbol, d_sequence_length);
             for (int chip = 0; chip < n_chips; chip++) {
-                const uint8_t* base = ks + static_cast<size_t>(chip) * 16;
+                const uint8_t* base = ks + static_cast<size_t>(chip) * 8;
                 float mask_i = 0.0f;
                 float mask_q = 0.0f;
                 box_muller_pair(to_uniform(base + 0), to_uniform(base + 4), mask_i, mask_q);
@@ -526,7 +584,7 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
                 if (std::abs(mask_q) < MIN_MASK) mask_q = (mask_q >= 0 ? MIN_MASK : -MIN_MASK);
                 const int seq_idx = (d_code_phase + chip) % d_sequence_length;
                 gr_complex seq = d_spreading_sequence_complex[seq_idx];
-                gr_complex den = seq * gr_complex(mask_i, mask_q);
+                gr_complex den = gr_complex(mask_i, mask_q);
                 const float den_mag = std::abs(den);
                 if (den_mag < MIN_DEN) {
                     den = gr_complex(MIN_DEN, 0.0f);
@@ -575,7 +633,7 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
             float sum_q = 0.0f;
             const int n_chips = std::min(d_chips_per_symbol, d_sequence_length);
             for (int chip = 0; chip < n_chips; chip++) {
-                const uint8_t* base = ks + static_cast<size_t>(chip) * 16;
+                const uint8_t* base = ks + static_cast<size_t>(chip) * 8;
                 float mask_i = 0.0f;
                 float mask_q = 0.0f;
                 box_muller_pair(to_uniform(base + 0), to_uniform(base + 4), mask_i, mask_q);
@@ -583,7 +641,7 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
                 if (std::abs(mask_q) < MIN_MASK) mask_q = (mask_q >= 0 ? MIN_MASK : -MIN_MASK);
                 const int seq_idx = (d_code_phase + chip) % d_sequence_length;
                 gr_complex seq = d_spreading_sequence_complex[seq_idx];
-                gr_complex den = seq * gr_complex(mask_i, mask_q);
+                gr_complex den = gr_complex(mask_i, mask_q);
                 const float den_mag = std::abs(den);
                 if (den_mag < MIN_DEN) {
                     den = gr_complex(MIN_DEN, 0.0f);

@@ -16,6 +16,7 @@
 #include <complex>
 #include <cstdint>
 #include <cstddef>
+#include <atomic>
 #include <sodium.h>
 
 namespace gr {
@@ -42,9 +43,11 @@ private:
     std::array<uint8_t, 64> d_ks_remainder;
     size_t d_ks_remainder_len;
     std::vector<uint8_t> d_ks_buf;
+    std::atomic<bool> d_overflow_occurred{ false };
 
     void generate_sequence();
     void handle_key_msg(pmt::pmt_t msg);
+    void handle_counter_msg(pmt::pmt_t msg);
     void box_muller_pair(float u1, float u2, float& g0, float& g1);
 
 public:
@@ -60,6 +63,8 @@ public:
     void set_chips_per_symbol(int chips_per_symbol) override;
     void regenerate_sequence(float variance, unsigned int seed) override;
     std::vector<float> get_spreading_sequence() const override;
+    void set_counter(uint64_t counter) override;
+    bool get_overflow_occurred() const override;
 
     int work(int noutput_items,
              gr_vector_const_void_star& input_items,

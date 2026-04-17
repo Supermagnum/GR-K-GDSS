@@ -10,11 +10,11 @@
  * Algorithm:
  *   - ChaCha20 IETF (libsodium) produces a keystream from key (32 bytes) and
  *     nonce (12 bytes). The 64-byte block counter is implicit (starts at 0).
- *   - Every 16 keystream bytes form two uniform [0,1) values (uint32 LE) that
+ *   - Every 8 keystream bytes form two uniform [0,1) values (uint32 LE) that
  *     are fed to Box-Muller to produce two Gaussian samples (I and Q mask).
  *   - Mask values are clamped to minimum magnitude MIN_MASK (1e-4) to avoid
  *     division instability in the despreader.
- *   - Output: out[i] = symbol.real() * mask_i + j * symbol.imag() * mask_q.
+ *   - Output: out[i] = symbol * sequence_chip * complex(mask_i, mask_q).
  *
  * Key/nonce can be set at construction or later via the set_key message port
  * (PMT dict with "key" u8vector length 32, "nonce" u8vector length 12).
@@ -62,6 +62,16 @@ void kgdss_spreader_cc::regenerate_sequence(float variance, unsigned int seed)
 std::vector<float> kgdss_spreader_cc::get_spreading_sequence() const
 {
     return std::vector<float>();
+}
+
+void kgdss_spreader_cc::set_counter(uint64_t counter)
+{
+    (void)counter;
+}
+
+bool kgdss_spreader_cc::get_overflow_occurred() const
+{
+    return false;
 }
 
 kgdss_spreader_cc::sptr kgdss_spreader_cc::make(int sequence_length,
@@ -136,6 +146,9 @@ kgdss_spreader_cc_impl::kgdss_spreader_cc_impl(int sequence_length,
     message_port_register_in(pmt::mp("set_key"));
     set_msg_handler(pmt::mp("set_key"),
                     [this](pmt::pmt_t msg) { this->handle_key_msg(msg); });
+    message_port_register_in(pmt::mp("set_counter"));
+    set_msg_handler(pmt::mp("set_counter"),
+                    [this](pmt::pmt_t msg) { this->handle_counter_msg(msg); });
 }
 
 kgdss_spreader_cc_impl::~kgdss_spreader_cc_impl() {}
@@ -158,6 +171,28 @@ void kgdss_spreader_cc_impl::handle_key_msg(pmt::pmt_t msg)
     d_counter = 0;
     d_ks_remainder_len = 0;
     d_key_set = true;
+    d_overflow_occurred.store(false);
+    {
+        std::lock_guard<std::mutex> state_lock(d_mutex);
+        d_chip_index = 0;
+    }
+}
+
+void kgdss_spreader_cc_impl::handle_counter_msg(pmt::pmt_t msg)
+{
+    uint64_t ctr = 0;
+    if (pmt::is_uint64(msg)) {
+        ctr = pmt::to_uint64(msg);
+    } else if (pmt::is_integer(msg)) {
+        const long val = pmt::to_long(msg);
+        if (val < 0) return;
+        ctr = static_cast<uint64_t>(val);
+    } else {
+        return;
+    }
+    std::unique_lock<std::mutex> lock(d_key_mutex);
+    d_counter = ctr;
+    d_ks_remainder_len = 0;
 }
 
 void kgdss_spreader_cc_impl::generate_sequence()
@@ -230,6 +265,18 @@ std::vector<float> kgdss_spreader_cc_impl::get_spreading_sequence() const
     return out;
 }
 
+void kgdss_spreader_cc_impl::set_counter(uint64_t counter)
+{
+    std::unique_lock<std::mutex> lock(d_key_mutex);
+    d_counter = counter;
+    d_ks_remainder_len = 0;
+}
+
+bool kgdss_spreader_cc_impl::get_overflow_occurred() const
+{
+    return d_overflow_occurred.load();
+}
+
 /* Box-Muller transform: convert two uniform [0,1) values to one Gaussian(0, variance).
  * u1 must be > 0 (log(u1) defined); u2 is the angle. Result scaled by sqrt(d_variance). */
 void kgdss_spreader_cc_impl::box_muller_pair(float u1, float u2, float& g0, float& g1)
@@ -273,15 +320,16 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
 
     if (!key_ok) return 0;
 
-    const size_t need = static_cast<size_t>(noutput_items) * 16U;
+    const int ninput_items = noutput_items / d_chips_per_symbol;
+    const int nchips_to_produce = ninput_items * d_chips_per_symbol;
+    const size_t need = static_cast<size_t>(nchips_to_produce) * 8U;
     if (need > 0) {
         const uint64_t last_byte = ctr_snap + need - 1ULL;
         const uint64_t last_block = last_byte / 64ULL;
         assert(last_block <= static_cast<uint64_t>(UINT32_MAX));
         if (last_block > static_cast<uint64_t>(UINT32_MAX)) {
-            throw std::runtime_error(
-                "kgdss_spreader_cc: ChaCha20-IETF block counter would exceed UINT32_MAX "
-                "(counter limit); reduce burst length or re-key.");
+            d_overflow_occurred.store(true);
+            return WORK_DONE;
         }
     }
 
@@ -316,7 +364,6 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
 
     std::lock_guard<std::mutex> lock(d_mutex);
 
-    int ninput_items = noutput_items / d_chips_per_symbol;
     int output_idx = 0;
 
     auto to_uniform = [](const uint8_t* b) -> float {
@@ -335,7 +382,7 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
 
         for (int chip = 0; chip < d_chips_per_symbol; chip++) {
             int out_index = output_idx++;
-            const uint8_t* base = d_ks_buf.data() + static_cast<size_t>(out_index) * 16;
+            const uint8_t* base = d_ks_buf.data() + static_cast<size_t>(out_index) * 8;
 
             float mask_i = 0.0f;
             float mask_q = 0.0f;
@@ -349,7 +396,7 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
             const gr_complex seq =
                 (seq_mag < MIN_SEQ) ? gr_complex(MIN_SEQ, 0.0f) : seq_raw;
 
-            out[out_index] = symbol * seq * mask;
+            out[out_index] = symbol * mask;
             chip_index = (chip_index + 1) % d_sequence_length;
         }
     }
