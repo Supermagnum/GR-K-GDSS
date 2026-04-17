@@ -1162,8 +1162,8 @@ If you want to inspect specific behaviour in code, start with these files and fu
 
 - **Box-Muller Gaussian masking and statistical properties**
   - **Runtime code (actual processing path):**
-    - [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc): `box_muller()`, keyed chip masking in spreader
-    - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): `box_muller()`, keyed mask reconstruction in despreader
+    - [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc): `box_muller_pair()`, keyed chip masking in spreader
+    - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): `box_muller_pair()`, keyed mask reconstruction in despreader; acquisition/tracking correlation uses complex matching (`sample * conj(sequence_chip)`) for complex-valued spreading sequences
     - [`python/sync_burst_utils.py`](python/sync_burst_utils.py): `_box_muller()` inside **`apply_keyed_gaussian_mask`** (ChaCha20 IETF + Box-Muller, matches C++ spreader statistics)
   - **Test / simulation code:**
     - [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `_box_muller()`, `_chacha20_gaussian_masks()`

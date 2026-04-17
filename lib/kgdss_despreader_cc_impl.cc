@@ -217,23 +217,20 @@ void kgdss_despreader_cc_impl::forecast(int noutput_items, gr_vector_int& ninput
 
 gr_complex kgdss_despreader_cc_impl::correlate(const gr_complex* samples, int offset, int length)
 {
-    float sum_i = 0.0f;
-    float sum_q = 0.0f;
+    gr_complex sum(0.0f, 0.0f);
     int n = std::min(length, d_sequence_length);
 
     for (int i = 0; i < n; i++) {
         int seq_idx = (d_code_phase + i) % d_sequence_length;
         gr_complex s = samples[offset + i];
-        float m_re = d_spreading_sequence_complex[seq_idx].real();
-        sum_i += s.real() * m_re;
-        sum_q += s.imag() * m_re;
+        const gr_complex seq = d_spreading_sequence_complex[seq_idx];
+        sum += s * std::conj(seq);
     }
 
     if (n > 0) {
-        sum_i /= static_cast<float>(n);
-        sum_q /= static_cast<float>(n);
+        sum /= static_cast<float>(n);
     }
-    return gr_complex(sum_i, sum_q);
+    return sum;
 }
 
 void kgdss_despreader_cc_impl::update_timing()
