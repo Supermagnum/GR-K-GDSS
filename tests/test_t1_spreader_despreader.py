@@ -92,6 +92,44 @@ class TestT1RoundTrip(unittest.TestCase):
         np.testing.assert_allclose(out, data, atol=TOL, rtol=TOL)
 
 
+@unittest.skipUnless(BINDINGS_AVAILABLE, "C++ bindings (gnuradio.kgdss) not available")
+class TestT1ComplexSequenceRoundTrip(unittest.TestCase):
+    """Round-trip also works when spreading sequence has non-zero I and Q."""
+
+    def test_round_trip_complex_sequence(self):
+        key = KEY_32
+        nonce = NONCE_12
+        n_syms = 16
+        data = np.exp(2j * np.pi * np.arange(n_syms) / 9).astype(np.complex64)
+
+        rng = np.random.default_rng(SEED)
+        seq_i = rng.normal(0.0, np.sqrt(VARIANCE), SEQ_LEN).astype(np.float32)
+        seq_q = rng.normal(0.0, np.sqrt(VARIANCE), SEQ_LEN).astype(np.float32)
+        seq_interleaved = np.empty(2 * SEQ_LEN, dtype=np.float32)
+        seq_interleaved[0::2] = seq_i
+        seq_interleaved[1::2] = seq_q
+
+        spreader = kgdss.kgdss_spreader_cc(
+            SEQ_LEN, CHIPS_PER_SYMBOL, VARIANCE, SEED, key, nonce
+        )
+        spreader.set_spreading_sequence(seq_interleaved.tolist())
+        despreader = kgdss.kgdss_despreader_cc(
+            seq_interleaved.tolist(),
+            CHIPS_PER_SYMBOL,
+            CORR_THRESHOLD,
+            TIMING_TOLERANCE,
+            key,
+            nonce,
+        )
+
+        out = _run_flowgraph(data, spreader, despreader)
+        self.assertEqual(len(out), n_syms, "output length")
+        np.testing.assert_allclose(
+            out, data, atol=TOL, rtol=TOL,
+            err_msg="round-trip mismatch with complex-valued spreading sequence",
+        )
+
+
 @unittest.skipUnless(BINDINGS_AVAILABLE, "C++ bindings not available")
 class TestT1KeystreamDeterminism(unittest.TestCase):
     """Same input, key, nonce twice -> bit-identical spreader output."""

@@ -39,7 +39,7 @@ All three blocks are in GRC under category **KGDSS / DSSS**.
 | **Keyed GDSS Despreader** (`kgdss_despreader_cc`) | 1 complex (chip rate) | 3: complex (symbols), float (lock), float (SNR dB) | `set_key` (optional) | none | spreading_sequence, chips_per_symbol, correlation_threshold, timing_error_tolerance, chacha_key, chacha_nonce |
 | **Keyed GDSS Key Injector** (`kgdss_key_injector`) | none | none | `trigger` (optional), `shared_secret` (optional) | `key_out` | keyring_id, shared_secret_hex, session_id, tx_seq |
 
-**Spreader / Despreader message input `set_key`:** PMT dict with `"key"` (u8vector 32 bytes) and `"nonce"` (u8vector 12 bytes). Until a key is set, the spreader outputs zeros and the despreader outputs zeros on all stream ports. Connect **Key Injector** output `key_out` to both blocks' `set_key` input.
+**Spreader / Despreader message input `set_key`:** PMT dict with `"key"` (u8vector 32 bytes) and `"nonce"` (u8vector 12 bytes). Until a key is set, both blocks withhold stream output (`work()`/`general_work()` returns 0). Connect **Key Injector** output `key_out` to both blocks' `set_key` input.
 
 **Despreader status (query in Python after flowgraph runs):** `get_sync_state()` (returns `kgdss_sync_state` enum), `is_locked()`, `get_snr_estimate()`, `get_last_soft_metric()`, `get_frequency_error()`. The `kgdss_sync_state` enum values indicate sync/lock state of the despreader.
 
@@ -91,7 +91,7 @@ The core of this OOT module is three blocks:
 
 Both must be configured with **matching parameters and the same ChaCha20 key/nonce pair** for a given session. Key and nonce can be set at construction time or at runtime via the **set_key** message port.
 
-**set_key message port:** Both blocks have a message input port `set_key`. When a message arrives (PMT dict with keys `"key"` and `"nonce"`, each a u8vector of 32 and 12 bytes), the block updates its internal ChaCha20 context and resets the keystream counter. Until a key is set (either at construction or via message), the block outputs zeros. This allows key material to stay in the kernel keyring until the moment it is needed and supports re-keying without restarting the flowgraph.
+**set_key message port:** Both blocks have a message input port `set_key`. When a message arrives (PMT dict with keys `"key"` and `"nonce"`, each a u8vector of 32 and 12 bytes), the block updates its internal ChaCha20 context and resets the keystream counter. Until a key is set (either at construction or via message), the block withholds stream output (returns 0 items). This allows key material to stay in the kernel keyring until the moment it is needed and supports re-keying without restarting the flowgraph.
 
 ### `kgdss_spreader_cc` (Keyed GDSS Spreader)
 
@@ -177,6 +177,7 @@ The real and imaginary parts of each chip are multiplied by keyed Gaussian mask 
   ```
 
 - The spreading sequence passed to the despreader must be the same as the one used by the spreader. With the provided GRC blocks, both sides independently regenerate the same sequence from `(sequence_length, variance, seed)`; in Python you can share the exact list of floats.
+- In acquisition/tracking correlation, the despreader now uses **complex sequence matching** (`sample * conj(sequence_chip)`), consistent with complex-valued spreading sequences.
 
 ### `kgdss_key_injector` (Keyed GDSS Key Injector)
 
@@ -290,7 +291,7 @@ If you use gr-linux-crypto, add the **GDSS Set Key Source** block (category [gr-
 
 **Alternative: key at construction**
 
-You can still pass key and nonce at construction (32 and 12 bytes). In **GRC** encode them as hex in `chacha_key` and `chacha_nonce`. In **Python** pass the bytes. If you pass empty key/nonce, the block outputs zeros until it receives a valid set_key message.
+You can still pass key and nonce at construction (32 and 12 bytes). In **GRC** encode them as hex in `chacha_key` and `chacha_nonce`. In **Python** pass the bytes. If you pass empty key/nonce, the block withholds stream output until it receives a valid set_key message.
 
 **Payload encryption** (ChaCha20-Poly1305) remains separate: use gr-linux-crypto's encrypt/decrypt blocks with `payload_enc` and `payload_nonce` from the same session key derivation.
 
