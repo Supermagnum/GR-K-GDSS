@@ -45,7 +45,7 @@ private:
 
     void generate_sequence();
     void handle_key_msg(pmt::pmt_t msg);
-    float box_muller(float u1, float u2);
+    void box_muller_pair(float u1, float u2, float& g0, float& g1);
 
 public:
     kgdss_spreader_cc_impl(int sequence_length,
