@@ -54,5 +54,7 @@ void bind_kgdss_spreader_cc(py::module& m)
              &kgdss_spreader_cc::regenerate_sequence,
              py::arg("variance"),
              py::arg("seed") = 0)
+        .def("set_counter", &kgdss_spreader_cc::set_counter, py::arg("counter"))
+        .def("get_overflow_occurred", &kgdss_spreader_cc::get_overflow_occurred)
         .def("get_spreading_sequence", &kgdss_spreader_cc::get_spreading_sequence);
 }

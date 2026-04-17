@@ -53,7 +53,9 @@ void bind_kgdss_despreader_cc(py::module& m)
         .def("is_locked", &kgdss_despreader_cc::is_locked)
         .def("get_snr_estimate", &kgdss_despreader_cc::get_snr_estimate)
         .def("get_last_soft_metric", &kgdss_despreader_cc::get_last_soft_metric)
-        .def("get_frequency_error", &kgdss_despreader_cc::get_frequency_error);
+        .def("get_frequency_error", &kgdss_despreader_cc::get_frequency_error)
+        .def("set_counter", &kgdss_despreader_cc::set_counter, py::arg("counter"))
+        .def("get_overflow_occurred", &kgdss_despreader_cc::get_overflow_occurred);
 
     py::enum_<kgdss_despreader_cc::sync_state>(m, "kgdss_sync_state")
         .value("STATE_ACQUISITION", kgdss_despreader_cc::STATE_ACQUISITION)

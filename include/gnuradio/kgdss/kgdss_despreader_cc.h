@@ -24,6 +24,7 @@
 #include <gnuradio/kgdss/api.h>
 #include <gnuradio/block.h>
 #include <vector>
+#include <cstdint>
 
 namespace gr {
 namespace kgdss {
@@ -54,6 +55,8 @@ public:
     virtual float get_snr_estimate() const;
     virtual float get_last_soft_metric() const;
     virtual float get_frequency_error() const;
+    virtual void set_counter(uint64_t counter);
+    virtual bool get_overflow_occurred() const;
 
     virtual ~kgdss_despreader_cc();
 
