@@ -122,14 +122,30 @@ class TestT2TimingScheduleProperties(unittest.TestCase):
     """Schedule is ordered, unique, and non-degenerate."""
 
     def test_schedule_properties(self):
-        key = os.urandom(32)
-        epochs = derive_sync_schedule(key, 1, session_duration_s=600.0, n_bursts=25)
-        self.assertGreaterEqual(len(epochs), 5, "schedule should contain bursts")
-        self.assertEqual(sorted(epochs), epochs, "epochs must be ordered")
-        self.assertEqual(len(set(epochs)), len(epochs), "no collisions")
-        # Heavy-tailed cadence should have some variability (not constant interval).
-        intervals = np.diff(np.array(epochs, dtype=np.int64))
-        self.assertGreater(np.max(intervals), np.min(intervals), "non-uniform intervals expected")
+        # The schedule API is "best-effort": with a heavy-tailed Pareto cadence,
+        # rare keys produce early large intervals that exhaust the session
+        # budget before n_bursts are placed. Use parameters whose expected
+        # cumulative time fits well inside session_duration_s so the structural
+        # checks below see enough epochs across all keys, and sample several
+        # independent keys so the test does not depend on a single draw.
+        rng = np.random.default_rng(0xC0FFEE)
+        for _ in range(16):
+            key = bytes(rng.integers(0, 256, size=32, dtype=np.uint8).tolist())
+            epochs = derive_sync_schedule(
+                key,
+                1,
+                session_duration_s=600.0,
+                n_bursts=10,
+                mean_interval_s=20.0,
+            )
+            self.assertGreaterEqual(len(epochs), 3, "schedule should contain bursts")
+            self.assertEqual(sorted(epochs), epochs, "epochs must be ordered")
+            self.assertEqual(len(set(epochs)), len(epochs), "no collisions")
+            # Heavy-tailed cadence should have some variability (not constant).
+            intervals = np.diff(np.array(epochs, dtype=np.int64))
+            self.assertGreater(
+                np.max(intervals), np.min(intervals), "non-uniform intervals expected"
+            )
 
 
 @unittest.skipUnless(T2_AVAILABLE, "sync_burst_utils not available")
