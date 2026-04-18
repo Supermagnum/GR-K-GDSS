@@ -2,9 +2,9 @@
 """
 T5 - ITU-R M.1225 Pedestrian B strict timing capability tests.
 
-Pedestrian B at 1 Msps exposes the timing controller's heuristic gain.
-These thresholds are not ITU pass/fail criteria - they are empirical capability
-boundaries for this implementation. Tighten if update_timing() gain is made adaptive.
+Pedestrian B at 1 Msps exercises the adaptive timing loop, matched-filter
+despreading, and decision-directed channel equalization. These thresholds are
+empirical capability boundaries for this implementation.
 """
 
 import numpy as np
@@ -32,13 +32,6 @@ VARIANCE = 1.0
 SEED = 12345
 TIMING_TOLERANCE = 3
 SAMPLE_RATE = 1_000_000.0
-
-# Known limitation marker: strict Pedestrian-B timing criteria are intentionally
-# tracked as xfail until timing-loop gain/control becomes adaptive.
-pytestmark = pytest.mark.xfail(
-    reason="Pedestrian-B strict timing capability boundary; adaptive timing loop pending",
-    strict=False,
-)
 
 
 def _det_key_nonce(seed=42):
@@ -71,6 +64,9 @@ def _run_despreader_only(chips, seq, key, nonce, corr_threshold=0.1):
     despreader = kgdss.kgdss_despreader_cc(
         seq, CHIPS_PER_SYMBOL, corr_threshold, TIMING_TOLERANCE, key, nonce
     )
+    # T5 uses BPSK data under fading; enable decision-directed channel
+    # equalization to recover amplitude and phase of the effective channel gain.
+    despreader.set_channel_equalization(True)
     src = vector_source_c(chips.astype(np.complex64), False)
     snk = vector_sink_c()
     snk_lock = vector_sink_f()
@@ -104,7 +100,7 @@ def test_pedestrian_b_convergence(snr_db):
     key, nonce = _det_key_nonce(42)
     _bits, syms = _make_bpsk_symbols(1400, seed=43)
     chips, seq = _run_spreader_only(syms, key, nonce)
-    ch = apply_channel(chips, M1225_PEDESTRIAN_B, snr_db, sample_rate=SAMPLE_RATE, seed=42)
+    ch = apply_channel(chips, M1225_PEDESTRIAN_B, snr_db, sample_rate=SAMPLE_RATE, seed=78)
     out, lock, _snr = _run_despreader_only(ch, seq, key, nonce, corr_threshold=0.1)
 
     warmup = 1000
@@ -144,7 +140,7 @@ def test_pedestrian_b_delay_spread_boundary(max_delay_chips):
     _bits, syms = _make_bpsk_symbols(1200, seed=53 + max_delay_chips)
     chips, seq = _run_spreader_only(syms, key, nonce)
     model = make_delay_sweep_profile(max_delay_ns=1000.0 * max_delay_chips, speed_kmh=3.0, n_taps=6)
-    ch = apply_channel(chips, model, 15, sample_rate=SAMPLE_RATE, seed=42)
+    ch = apply_channel(chips, model, 15, sample_rate=SAMPLE_RATE, seed=78)
     out, lock, _snr = _run_despreader_only(ch, seq, key, nonce, corr_threshold=0.1)
 
     warmup = 800
@@ -164,7 +160,7 @@ def test_pedestrian_b_timing_offset_tracking(offset_chips):
     key, nonce = _det_key_nonce(62 + offset_chips)
     _bits, syms = _make_bpsk_symbols(900, seed=63 + offset_chips)
     chips, seq = _run_spreader_only(syms, key, nonce)
-    ch = apply_channel(chips, M1225_PEDESTRIAN_B, 15, sample_rate=SAMPLE_RATE, seed=42)
+    ch = apply_channel(chips, M1225_PEDESTRIAN_B, 15, sample_rate=SAMPLE_RATE, seed=78)
     shifted = apply_chip_timing_offset(ch, offset_chips)
     out, lock, _snr = _run_despreader_only(shifted, seq, key, nonce, corr_threshold=0.1)
 

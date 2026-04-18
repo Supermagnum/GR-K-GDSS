@@ -55,7 +55,11 @@ void bind_kgdss_despreader_cc(py::module& m)
         .def("get_last_soft_metric", &kgdss_despreader_cc::get_last_soft_metric)
         .def("get_frequency_error", &kgdss_despreader_cc::get_frequency_error)
         .def("set_counter", &kgdss_despreader_cc::set_counter, py::arg("counter"))
-        .def("get_overflow_occurred", &kgdss_despreader_cc::get_overflow_occurred);
+        .def("get_overflow_occurred", &kgdss_despreader_cc::get_overflow_occurred)
+        .def("set_channel_equalization",
+             &kgdss_despreader_cc::set_channel_equalization,
+             py::arg("enable"))
+        .def("get_channel_equalization", &kgdss_despreader_cc::get_channel_equalization);
 
     py::enum_<kgdss_despreader_cc::sync_state>(m, "kgdss_sync_state")
         .value("STATE_ACQUISITION", kgdss_despreader_cc::STATE_ACQUISITION)
