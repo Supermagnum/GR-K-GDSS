@@ -1,6 +1,9 @@
 /*
- * GTest: kgdss_spreader_cc work() Box-Muller mask statistics (input symbol (1,1) isolates
- * mask on I/Q outputs). Uses public block API only.
+ * GTest: kgdss_spreader_cc work() Box-Muller mask statistics. A real-valued
+ * input symbol (1,0) makes out = symbol * mask equal mask directly, so the
+ * I/Q components of the output are the raw mask_i / mask_q values and the
+ * per-chip clamp and Gaussian fit can be tested without sum/difference
+ * cancellation. Uses public block API only.
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
@@ -62,7 +65,7 @@ TEST(SpreaderWorkStats, BoxMullerGaussianApproximation)
 
     const int n_sym = 3907;
     const int n_out = n_sym * chips_per_symbol;
-    std::vector<gr_complex> in_buf(n_sym, gr_complex(1.0f, 1.0f));
+    std::vector<gr_complex> in_buf(n_sym, gr_complex(1.0f, 0.0f));
     std::vector<gr_complex> out_buf(n_out);
 
     gr_vector_const_void_star ins(1);
