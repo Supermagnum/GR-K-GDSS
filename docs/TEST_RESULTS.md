@@ -2,12 +2,12 @@
 
 This document records snapshot results from the gr-k-gdss test suite. For how to run the tests and what they do, see [TESTING.md](TESTING.md).
 
-**Last recorded run: 17 April 2026**
+**Last recorded run: 18 April 2026**
 
-- **pytest:** 95 passed, 1 skipped, 13 xfailed (109 collected, `PYTHONPATH=python` from repo root). `TestT3KeyringRoundTrip::test_keyring_round_trip` is skipped when no keyring is available (expected in many environments).
+- **pytest:** 106 passed, 1 skipped, 2 xpassed (109 collected, installed `kgdss` module). `TestT3KeyringRoundTrip::test_keyring_round_trip` is skipped when no keyring is available (expected in many environments).
 - **ITU channel-model regression suite:** 42 passed (`tests/test_t2_channel_models.py`, included in pytest total). Covers P.1238 indoor and M.1225 Pedestrian/Vehicular profiles with deterministic NumPy channel emulation.
 - **T4 counter-overflow/re-key recovery:** 2 passed (`tests/test_t4_counter_overflow.py`).
-- **T5 Pedestrian-B strict timing capability:** 13 xfailed (`tests/test_t5_pedestrian_b_timing.py`), all retained as explicit capability-boundary markers.
+- **T5 Pedestrian-B strict timing capability:** 11 passed, 2 xpassed (`tests/test_t5_pedestrian_b_timing.py`). The previous 13 xfail markers were retired after the despreader gained matched-filter despreading, decision-directed channel equalization, and an MF-power peak-tracking timing loop (opt-in via `set_channel_equalization(True)`).
 - **C++ crypto tests (optional):** Not part of the pytest tally. With **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**, build and run **`ctest -R 'kgdss_test_'`** (see [TESTING.md](TESTING.md#c-crypto-tests-optional)).
 - **IQ file analysis:** 29 passed, 0 failed, 0 warnings (unchanged methodology). Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
 - **Preprint BER / channel simulations (not pytest):** Statistical Monte Carlo figures for [Section 7](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.tex) live under `paper/figures/` (`fig7_awgn_ber.png` through `fig10_ldpc.png`). Regenerate via [paper/README.md](../paper/README.md) (`ber_simulation.py`, `gen_figures.py`). See [Preprint BER and ITU/STANAG-style channel figures](#preprint-ber-and-itustanag-style-channel-figures) below.
@@ -98,7 +98,7 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 ======================== 42 passed, 1 skipped in 0.42s =========================
 ```
 
-**Summary (historical log above):** 42 passed, 1 skipped (43 collected). With a keyring available, the keyring round-trip test may run instead of skip (43 passed, 0 skipped). **Current suite (17 April 2026):** 95 passed, 1 skipped, 13 xfailed when using `PYTHONPATH=python` from the repository root with dependencies present; see the bullet list at the top of this file.
+**Summary (historical log above):** 42 passed, 1 skipped (43 collected). With a keyring available, the keyring round-trip test may run instead of skip (43 passed, 0 skipped). **Current suite (18 April 2026):** 106 passed, 1 skipped, 2 xpassed (109 collected) against the installed `kgdss` module; see the bullet list at the top of this file.
 
 ---
 

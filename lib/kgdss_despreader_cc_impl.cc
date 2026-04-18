@@ -3,16 +3,21 @@
  *
  * Despreads keyed GDSS complex samples and recovers symbols. Uses the same
  * ChaCha20 key and nonce as the spreader to regenerate the Gaussian mask,
- * then divides each chip by its mask and integrates over chips_per_symbol to
- * produce one complex symbol per block. Supports acquisition (code-phase search),
- * tracking (early-prompt-late timing), and lock detection.
+ * then applies matched-filter despreading (chip * conj(mask)) to suppress
+ * inter-symbol interference under multipath fading.
  *
  * Algorithm:
  *   - Keystream and Box-Muller match the spreader (8 bytes per chip -> mask I,Q).
- *   - Despread: sum over chips of chip / (sequence_chip * complex(mask_i, mask_q)),
- *     then divide by chips_per_symbol. Small-denominator clamping avoids division blow-up.
- *   - Correlation: inner product using complex sequence matching
- *     sample * conj(sequence_chip) for lock detection and timing.
+ *   - Despread (matched filter): raw_sym = sum(chip * conj(mask)) / sum(|mask|^2).
+ *     This converts ISI from Cauchy-distributed (ZF) to Gaussian-distributed (MF),
+ *     which averages toward zero over chips_per_symbol chips.
+ *   - Channel equalization: decision-directed complex channel estimation.
+ *     raw_sym ~ h_eff * sym; decision = sign(Re(raw_sym * conj(h_est)));
+ *     h_est updated with IIR: h_est = (1-a)*h_est + a*raw_sym*decision.
+ *     Output equalized symbol = raw_sym * conj(h_est) / |h_est|^2.
+ *   - Correlation: inner product sample * conj(sequence_chip) for lock and timing.
+ *   - Timing loop: normalized S-curve discriminant with fractional accumulator
+ *     and adaptive gain proportional to lock quality.
  *   - Lock: adaptive threshold (ADAPTIVE_THRESHOLD_MIN 0.2) and LOCK_THRESHOLD
  *     consecutive high correlations set is_locked; output ports 1 (lock 0/1) and
  *     2 (SNR estimate dB) are updated each symbol.
@@ -94,6 +99,16 @@ bool kgdss_despreader_cc::get_overflow_occurred() const
     return false;
 }
 
+void kgdss_despreader_cc::set_channel_equalization(bool enable)
+{
+    (void)enable;
+}
+
+bool kgdss_despreader_cc::get_channel_equalization() const
+{
+    return false;
+}
+
 kgdss_despreader_cc::sptr kgdss_despreader_cc::make(
     const std::vector<float>& spreading_sequence,
     int chips_per_symbol,
@@ -141,6 +156,7 @@ kgdss_despreader_cc_impl::kgdss_despreader_cc_impl(
       d_prompt_correlation(0.0f),
       d_late_correlation(0.0f),
       d_timing_error(0.0f),
+      d_timing_accum(0.0f),
       d_correlation_peak(0.0f),
       d_correlation_avg(0.0f),
       d_is_locked(false),
@@ -148,6 +164,8 @@ kgdss_despreader_cc_impl::kgdss_despreader_cc_impl(
       d_noise_power(0.0f),
       d_snr_db(0.0f),
       d_last_soft_metric(0.0f),
+      d_channel_est(1.0f, 0.0f),
+      d_channel_eq_enabled(false),
       d_freq_error_rad_per_sym(0.0f),
       d_prev_corr_phase(0.0f),
       d_have_prev_corr(false),
@@ -215,6 +233,8 @@ void kgdss_despreader_cc_impl::handle_key_msg(pmt::pmt_t msg)
         d_have_prev_corr = false;
         d_freq_error_rad_per_sym = 0.0f;
         d_acquisition_counter = 0;
+        d_timing_accum = 0.0f;
+        d_channel_est = gr_complex(1.0f, 0.0f);
     }
 }
 
@@ -274,21 +294,57 @@ gr_complex kgdss_despreader_cc_impl::correlate(const gr_complex* samples, int of
     return sum;
 }
 
-void kgdss_despreader_cc_impl::update_timing()
+void kgdss_despreader_cc_impl::update_timing(float prompt_mf_power)
 {
     if (d_chips_per_symbol <= 1) {
         d_timing_error = 0.0f;
         d_timing_offset = 0;
+        d_timing_accum = 0.0f;
         return;
     }
 
-    float error = d_early_correlation - d_late_correlation;
-    d_timing_error = error * 0.1f;
+    // MF-power peak tracking is only meaningful when a channel estimator can
+    // correct the phase of the selected tap; without equalization, converging
+    // to the power peak can expose a sign-inverting channel phase that flips
+    // all BPSK decisions. Keep timing at the nominal input offset in that
+    // case so behaviour stays agnostic to channel phase.
+    if (!d_channel_eq_enabled) {
+        d_timing_error = 0.0f;
+        d_timing_accum = 0.0f;
+        d_timing_offset = 0;
+        return;
+    }
 
-    if (std::abs(d_timing_error) > 0.5f) {
-        d_timing_offset += (d_timing_error > 0) ? 1 : -1;
-        d_timing_offset = std::max(-d_timing_error_tolerance,
-                                  std::min(d_timing_error_tolerance, d_timing_offset));
+    // MF-power peak tracking. In a multipath channel the symmetric early-late
+    // S-curve is biased by asymmetric precursor/postcursor sidelobes; the
+    // correct timing is the power peak, not the S-curve zero. We therefore
+    // vote for the direction whose cumulative neighbor power strictly exceeds
+    // the prompt, using a hysteresis margin to avoid noise-driven ping-pong.
+    // d_early_correlation / d_late_correlation are the combined MF powers at
+    // despread_offset-{1..tol} and despread_offset+{1..tol}.
+    const float HYSTERESIS = 1.15f;
+    const float GAIN = 0.35f;
+    const int tol = std::min(3, d_timing_error_tolerance);
+
+    float vote = 0.0f;
+    // Prompt reference scales with number of offsets summed into each side.
+    float prompt_ref = static_cast<float>(tol) * prompt_mf_power;
+    if (d_late_correlation > HYSTERESIS * prompt_ref &&
+        d_late_correlation > d_early_correlation) {
+        vote = +1.0f;
+    } else if (d_early_correlation > HYSTERESIS * prompt_ref &&
+               d_early_correlation > d_late_correlation) {
+        vote = -1.0f;
+    }
+
+    d_timing_error = 0.7f * d_timing_error + 0.3f * vote;
+    d_timing_accum += d_timing_error * GAIN;
+    if (d_timing_accum > 0.5f) {
+        d_timing_offset = std::min(d_timing_error_tolerance, d_timing_offset + 1);
+        d_timing_accum -= 1.0f;
+    } else if (d_timing_accum < -0.5f) {
+        d_timing_offset = std::max(-d_timing_error_tolerance, d_timing_offset - 1);
+        d_timing_accum += 1.0f;
     }
 }
 
@@ -346,6 +402,57 @@ void kgdss_despreader_cc_impl::update_snr_estimate(gr_complex symbol, float corr
     }
 }
 
+/* Decision-directed channel equalization (BPSK assumption).
+ * raw_sym ~ h_eff * data_sym where h_eff is the effective fading channel gain
+ * and data_sym is assumed to be BPSK (+-1 real). A BPSK decision preserves
+ * the sign, so raw_sym * decision tracks h_eff in both amplitude and phase.
+ *
+ * The estimate is only updated when |raw_sym|^2 is large enough to indicate the
+ * MF is chip-aligned; updating on misaligned noise would pull h_est toward a
+ * random direction and cause a 180 degree phase inversion that never recovers.
+ *
+ * Disabled by default (pass-through). Callers that know they have BPSK data
+ * and want fading correction enable it with set_channel_equalization(true). */
+gr_complex kgdss_despreader_cc_impl::apply_channel_equalization(gr_complex raw_sym)
+{
+    if (!d_channel_eq_enabled) {
+        return raw_sym;
+    }
+
+    const float ALPHA = 0.05f;
+    const float POWER_GATE = 0.25f;
+
+    float h_mag_sq = std::norm(d_channel_est);
+    gr_complex out_sym;
+    if (h_mag_sq > 1e-10f) {
+        out_sym = raw_sym * std::conj(d_channel_est) / h_mag_sq;
+    } else {
+        out_sym = raw_sym;
+    }
+
+    // Only update when raw MF output has BPSK-like power. Misaligned-timing
+    // output has power ~1/n_chips which is much smaller than aligned output.
+    if (std::norm(raw_sym) > POWER_GATE) {
+        float decision = (out_sym.real() >= 0.0f) ? 1.0f : -1.0f;
+        d_channel_est = d_channel_est * (1.0f - ALPHA) + raw_sym * (decision * ALPHA);
+    }
+
+    return out_sym;
+}
+
+void kgdss_despreader_cc_impl::set_channel_equalization(bool enable)
+{
+    std::lock_guard<std::mutex> lock(d_mutex);
+    d_channel_eq_enabled = enable;
+    d_channel_est = gr_complex(1.0f, 0.0f);
+}
+
+bool kgdss_despreader_cc_impl::get_channel_equalization() const
+{
+    std::lock_guard<std::mutex> lock(d_mutex);
+    return d_channel_eq_enabled;
+}
+
 void kgdss_despreader_cc_impl::set_spreading_sequence(const std::vector<float>& spreading_sequence)
 {
     std::lock_guard<std::mutex> lock(d_mutex);
@@ -364,6 +471,8 @@ void kgdss_despreader_cc_impl::set_spreading_sequence(const std::vector<float>& 
     d_have_prev_corr = false;
     d_freq_error_rad_per_sym = 0.0f;
     d_last_soft_metric = 0.0f;
+    d_timing_accum = 0.0f;
+    d_channel_est = gr_complex(1.0f, 0.0f);
 }
 
 void kgdss_despreader_cc_impl::set_chips_per_symbol(int chips_per_symbol)
@@ -417,8 +526,10 @@ bool kgdss_despreader_cc_impl::get_overflow_occurred() const
     return d_overflow_occurred.load();
 }
 
-/* Box-Muller: same formula as spreader but without variance scaling (despreader
- * uses mask only for divide; variance cancels in the ratio). */
+/* Box-Muller: same formula as spreader but without variance scaling.
+ * For MF despreading: sum(chip*conj(mask))/sum(|mask|^2). When spreader uses
+ * the same keystream scaled by sqrt(variance), both numerator and denominator
+ * scale by variance, so the output is independent of variance. */
 void kgdss_despreader_cc_impl::box_muller_pair(float u1, float u2, float& g0, float& g1)
 {
     if (u1 < 1e-10f) {
@@ -451,7 +562,6 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
     }
 
     const float MIN_MASK = 1e-4f;
-    const float MIN_DEN = 1e-4f;
     auto to_uniform = [](const uint8_t* b) -> float {
         const uint32_t v = static_cast<uint32_t>(b[0]) |
                            (static_cast<uint32_t>(b[1]) << 8) |
@@ -574,6 +684,7 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
 
             float sum_i = 0.0f;
             float sum_q = 0.0f;
+            float mask_sq_sum = 0.0f;
             const int n_chips = std::min(d_chips_per_symbol, d_sequence_length);
             for (int chip = 0; chip < n_chips; chip++) {
                 const uint8_t* base = ks + static_cast<size_t>(chip) * 8;
@@ -582,19 +693,17 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
                 box_muller_pair(to_uniform(base + 0), to_uniform(base + 4), mask_i, mask_q);
                 if (std::abs(mask_i) < MIN_MASK) mask_i = (mask_i >= 0 ? MIN_MASK : -MIN_MASK);
                 if (std::abs(mask_q) < MIN_MASK) mask_q = (mask_q >= 0 ? MIN_MASK : -MIN_MASK);
-                const int seq_idx = (d_code_phase + chip) % d_sequence_length;
-                gr_complex seq = d_spreading_sequence_complex[seq_idx];
-                gr_complex den = gr_complex(mask_i, mask_q);
-                const float den_mag = std::abs(den);
-                if (den_mag < MIN_DEN) {
-                    den = gr_complex(MIN_DEN, 0.0f);
-                }
-                const gr_complex deweighted = in[input_offset + chip] / den;
-                sum_i += deweighted.real();
-                sum_q += deweighted.imag();
+                const float s_re = in[input_offset + chip].real();
+                const float s_im = in[input_offset + chip].imag();
+                sum_i += s_re * mask_i + s_im * mask_q;
+                sum_q += s_im * mask_i - s_re * mask_q;
+                mask_sq_sum += mask_i * mask_i + mask_q * mask_q;
             }
-            const float nf = static_cast<float>(n_chips);
-            out_symbols[output_idx] = gr_complex(sum_i / nf, sum_q / nf);
+            {
+                const float norm = std::max(mask_sq_sum, 1e-6f);
+                gr_complex raw_sym = gr_complex(sum_i / norm, sum_q / norm);
+                out_symbols[output_idx] = apply_channel_equalization(raw_sym);
+            }
 
             float peak = std::max(d_correlation_peak, 1e-6f);
             d_last_soft_metric = best_correlation / peak;
@@ -616,21 +725,29 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
                 break;
             }
 
-            int early_offset = std::max(0, input_offset - 1);
-            d_early_correlation = std::abs(correlate(in, early_offset, d_chips_per_symbol));
-
-            d_prompt_correlation = std::abs(correlate(in, input_offset, d_chips_per_symbol));
-
-            int late_offset = std::max(0, std::min(max_offset, input_offset + 1));
-            d_late_correlation = std::abs(correlate(in, late_offset, d_chips_per_symbol));
-
-            update_timing();
-
             int despread_offset = std::max(0, std::min(max_offset, input_offset + d_timing_offset));
+
+            // Sequence correlation for lock detection and SNR only (not timing).
+            d_prompt_correlation = std::abs(correlate(in, input_offset, d_chips_per_symbol));
             gr_complex despread = correlate(in, despread_offset, d_chips_per_symbol);
 
-            float sum_i = 0.0f;
-            float sum_q = 0.0f;
+            // MF despreading with early/late MF powers for timing discriminant.
+            // The sequence correlation is random for GDSS mask-only spreading, so
+            // early/late correlations cannot detect chip timing. MF power at an
+            // offset is non-zero only when that offset aligns mask with chips.
+            // MF powers at offsets [-tol .. +tol] are computed to handle chip
+            // timing offsets up to the configured tolerance.
+            const int tol = std::min(3, d_timing_error_tolerance);
+            int mf_e[3], mf_l[3];
+            float e_i[3] = {0.0f, 0.0f, 0.0f}, e_q[3] = {0.0f, 0.0f, 0.0f};
+            float l_i[3] = {0.0f, 0.0f, 0.0f}, l_q[3] = {0.0f, 0.0f, 0.0f};
+            for (int i = 0; i < tol; i++) {
+                mf_e[i] = std::max(0, despread_offset - (i + 1));
+                mf_l[i] = std::min(max_offset, despread_offset + (i + 1));
+            }
+
+            float sum_i = 0.0f, sum_q = 0.0f;
+            float mask_sq_sum = 0.0f;
             const int n_chips = std::min(d_chips_per_symbol, d_sequence_length);
             for (int chip = 0; chip < n_chips; chip++) {
                 const uint8_t* base = ks + static_cast<size_t>(chip) * 8;
@@ -639,19 +756,46 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
                 box_muller_pair(to_uniform(base + 0), to_uniform(base + 4), mask_i, mask_q);
                 if (std::abs(mask_i) < MIN_MASK) mask_i = (mask_i >= 0 ? MIN_MASK : -MIN_MASK);
                 if (std::abs(mask_q) < MIN_MASK) mask_q = (mask_q >= 0 ? MIN_MASK : -MIN_MASK);
-                const int seq_idx = (d_code_phase + chip) % d_sequence_length;
-                gr_complex seq = d_spreading_sequence_complex[seq_idx];
-                gr_complex den = gr_complex(mask_i, mask_q);
-                const float den_mag = std::abs(den);
-                if (den_mag < MIN_DEN) {
-                    den = gr_complex(MIN_DEN, 0.0f);
+
+                const float s_re = in[despread_offset + chip].real();
+                const float s_im = in[despread_offset + chip].imag();
+                sum_i += s_re * mask_i + s_im * mask_q;
+                sum_q += s_im * mask_i - s_re * mask_q;
+
+                for (int i = 0; i < tol; i++) {
+                    const float er = in[mf_e[i] + chip].real();
+                    const float em = in[mf_e[i] + chip].imag();
+                    e_i[i] += er * mask_i + em * mask_q;
+                    e_q[i] += em * mask_i - er * mask_q;
+
+                    const float lr = in[mf_l[i] + chip].real();
+                    const float lm = in[mf_l[i] + chip].imag();
+                    l_i[i] += lr * mask_i + lm * mask_q;
+                    l_q[i] += lm * mask_i - lr * mask_q;
                 }
-                const gr_complex deweighted = in[despread_offset + chip] / den;
-                sum_i += deweighted.real();
-                sum_q += deweighted.imag();
+
+                mask_sq_sum += mask_i * mask_i + mask_q * mask_q;
             }
-            const float nf = static_cast<float>(n_chips);
-            out_symbols[output_idx] = gr_complex(sum_i / nf, sum_q / nf);
+            float prompt_mf_power;
+            {
+                const float norm_sq = std::max(mask_sq_sum * mask_sq_sum, 1e-12f);
+                // Combined early/late MF powers across offsets up to tolerance.
+                float ep_sum = 0.0f, lp_sum = 0.0f;
+                for (int i = 0; i < tol; i++) {
+                    ep_sum += (e_i[i] * e_i[i] + e_q[i] * e_q[i]) / norm_sq;
+                    lp_sum += (l_i[i] * l_i[i] + l_q[i] * l_q[i]) / norm_sq;
+                }
+                d_early_correlation = ep_sum;
+                d_late_correlation  = lp_sum;
+                prompt_mf_power     = (sum_i * sum_i + sum_q * sum_q) / norm_sq;
+            }
+            update_timing(prompt_mf_power);
+
+            {
+                const float norm = std::max(mask_sq_sum, 1e-6f);
+                gr_complex raw_sym = gr_complex(sum_i / norm, sum_q / norm);
+                out_symbols[output_idx] = apply_channel_equalization(raw_sym);
+            }
 
             update_lock_detection(d_prompt_correlation);
             update_snr_estimate(despread, d_prompt_correlation);

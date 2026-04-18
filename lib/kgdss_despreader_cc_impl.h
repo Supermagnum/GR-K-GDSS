@@ -46,6 +46,7 @@ private:
     float d_prompt_correlation;
     float d_late_correlation;
     float d_timing_error;
+    float d_timing_accum;
 
     float d_correlation_peak;
     float d_correlation_avg;
@@ -56,6 +57,9 @@ private:
     float d_snr_db;
 
     float d_last_soft_metric;
+
+    gr_complex d_channel_est;
+    bool d_channel_eq_enabled;
 
     float d_freq_error_rad_per_sym;
     float d_prev_corr_phase;
@@ -80,9 +84,10 @@ private:
     void handle_key_msg(pmt::pmt_t msg);
     void handle_counter_msg(pmt::pmt_t msg);
     gr_complex correlate(const gr_complex* samples, int offset, int length);
-    void update_timing();
+    void update_timing(float prompt_mf_power);
     void update_lock_detection(float correlation);
     void update_snr_estimate(gr_complex symbol, float correlation);
+    gr_complex apply_channel_equalization(gr_complex raw_sym);
 
     void box_muller_pair(float u1, float u2, float& g0, float& g1);
 
@@ -106,6 +111,8 @@ public:
     float get_frequency_error() const override;
     void set_counter(uint64_t counter) override;
     bool get_overflow_occurred() const override;
+    void set_channel_equalization(bool enable) override;
+    bool get_channel_equalization() const override;
 
     int general_work(int noutput_items,
                      gr_vector_int& ninput_items,

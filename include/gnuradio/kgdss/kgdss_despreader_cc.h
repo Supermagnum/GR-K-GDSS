@@ -58,6 +58,13 @@ public:
     virtual void set_counter(uint64_t counter);
     virtual bool get_overflow_occurred() const;
 
+    /** Enable decision-directed channel equalization (amplitude + phase).
+     * When enabled the block assumes BPSK data and estimates the effective
+     * channel gain h from (raw_sym * decision), correcting amplitude and
+     * phase. Leave disabled (default) for arbitrary constellations. */
+    virtual void set_channel_equalization(bool enable);
+    virtual bool get_channel_equalization() const;
+
     virtual ~kgdss_despreader_cc();
 
 protected:
