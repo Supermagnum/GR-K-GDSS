@@ -43,6 +43,8 @@ All three blocks are in GRC under category **KGDSS / DSSS**.
 
 **Despreader status (query in Python after flowgraph runs):** `get_sync_state()` (returns `kgdss_sync_state` enum), `is_locked()`, `get_snr_estimate()`, `get_last_soft_metric()`, `get_frequency_error()`. The `kgdss_sync_state` enum values indicate sync/lock state of the despreader.
 
+**Despreader algorithm (informational):** Internally the despreader performs **matched-filter despreading** (chip * conj(mask) / sum(|mask|^2)), an **adaptive timing loop** that tracks the chip-timing peak by comparing matched-filter power at offsets up to `timing_error_tolerance` chips, and an **opt-in decision-directed channel equalizer** for BPSK fading recovery. Channel equalization is **disabled by default** to stay agnostic to constellation; enable it with `set_channel_equalization(True)` when the data is BPSK (real-valued) and you want amplitude/phase compensation under multipath. See [`kgdss_despreader_cc.set_channel_equalization`](#despreader-channel-equalization-bpsk-fading).
+
 ---
 
 ## Python helper functions
@@ -177,7 +179,30 @@ The real and imaginary parts of each chip are multiplied by keyed Gaussian mask 
   ```
 
 - The spreading sequence passed to the despreader must be the same as the one used by the spreader. With the provided GRC blocks, both sides independently regenerate the same sequence from `(sequence_length, variance, seed)`; in Python you can share the exact list of floats.
-- In acquisition/tracking correlation, the despreader now uses **complex sequence matching** (`sample * conj(sequence_chip)`), consistent with complex-valued spreading sequences.
+- In acquisition/tracking correlation, the despreader uses **complex sequence matching** (`sample * conj(sequence_chip)`), consistent with complex-valued spreading sequences.
+- **Per-symbol despreading** uses a **matched filter against the keyed Gaussian mask** (`chip * conj(mask) / sum(|mask|^2)`) rather than zero-forcing division; this turns inter-mask coupling into Gaussian noise instead of a 1/|mask| amplification of weak chips.
+- A **chip-timing peak tracker** compares matched-filter power at offsets `+/-1 .. +/-timing_error_tolerance` chips against the prompt power and slews the despread offset toward the peak via a fractional accumulator with hysteresis. The tracker is gated by prompt power so it does not drift on noise once aligned.
+
+#### Despreader channel equalization (BPSK fading)
+
+When the data is BPSK (real-valued symbols) and you want amplitude / phase recovery under multipath fading, enable the decision-directed channel equalizer:
+
+```python
+despreader = kgdss.kgdss_despreader_cc(
+    spreading_sequence,
+    chips_per_symbol,
+    correlation_threshold,
+    timing_error_tolerance,
+    list(chacha_key_bytes),
+    list(chacha_nonce_bytes),
+)
+despreader.set_channel_equalization(True)   # opt-in; BPSK only
+```
+
+- **Default is off** (pass-through). For non-BPSK constellations (QPSK, complex pilot symbols, T1 round-trip tests, etc.) leave it disabled.
+- Enabling it also turns on the chip-timing peak tracker described above; with equalization disabled the despreader stays at the nominal input offset, preserving previous T2 channel-model behaviour.
+- The estimator updates only when the matched-filter prompt power crosses an internal gate, so misaligned-noise samples cannot drag the estimate toward a sign-inverting phase.
+- Query the current setting with `despreader.get_channel_equalization()`.
 
 ### `kgdss_key_injector` (Keyed GDSS Key Injector)
 
