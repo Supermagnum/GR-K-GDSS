@@ -11,9 +11,12 @@ This document describes the unit tests for gr-k-gdss, how to run them, what each
 - [What the tests do](#what-the-tests-do)
   - [Suite overview](#suite-overview)
   - [T1 — Spreader/despreader (test_t1_spreader_despreader.py)](#t1--spreaderdespreader-test_t1_spreader_despreaderpy)
-  - [T2 — Sync burst (test_t2_sync_burst.py)](#t2--sync-burst-test_t2_sync_burstpy)
+  - [T2 channels — ITU-R channel models (test_t2_channel_models.py)](#suite-overview)
+  - [T2 sync — Sync burst (test_t2_sync_burst.py)](#t2--sync-burst-test_t2_sync_burstpy)
   - [P372 — Receiver PSD profile (test_p372_receiver_profile.py)](#p372--receiver-psd-profile-test_p372_receiver_profilepy)
   - [T3 — Key derivation (test_t3_key_derivation.py)](#t3--key-derivation-test_t3_key_derivationpy)
+  - [T4 — Counter overflow (test_t4_counter_overflow.py)](#suite-overview)
+  - [T5 — Pedestrian B timing (test_t5_pedestrian_b_timing.py)](#suite-overview)
   - [Galdralag mapping (test_galdralag_kgdss_compat.py)](#galdralag-mapping-test_galdralag_kgdss_compatpy)
   - [gr-linux-crypto HKDF (test_gr_linux_crypto_hkdf_compat.py)](#gr-linux-crypto-hkdf-test_gr_linux_crypto_hkdf_compatpy)
   - [Cross-layer (test_cross_layer.py)](#cross-layer-test_cross_layerpy)
@@ -139,9 +142,12 @@ tests/test_t3_key_derivation.py::TestT3KeyringRoundTrip::test_keyring_round_trip
 | Suite | File | What it tests |
 |-------|------|----------------|
 | T1 | test_t1_spreader_despreader.py | C++ spreader and despreader blocks: round-trip, keystream behaviour, key/nonce validation, Gaussian masking, block continuity. |
-| T2 | test_t2_sync_burst.py | Python sync-burst helpers: multi-burst schedule derivation, per-burst PN evolution, Gaussian envelope shape, keyed Gaussian mask for sync bursts, sync-burst nonce. |
+| T2 channels | test_t2_channel_models.py | ITU-R P.1238 indoor and M.1225 Pedestrian/Vehicular channel-model regressions: SNR-sweep BER monotonicity, lock and SNR-estimator behaviour, and timing-offset stress. |
+| T2 sync | test_t2_sync_burst.py | Python sync-burst helpers: multi-burst schedule derivation, per-burst PN evolution, Gaussian envelope shape, keyed Gaussian mask for sync bursts, sync-burst nonce. |
 | P372 | test_p372_receiver_profile.py | P.372 baseline loader determinism, expected PSD profile shape, and robust calibration against measured receiver PSD bins. |
 | T3 | test_t3_key_derivation.py | Session key derivation (HKDF), nonce construction, and storing/loading the GDSS key via the Linux kernel keyring. |
+| T4 | test_t4_counter_overflow.py | ChaCha20-IETF block counter overflow detection and re-key recovery. |
+| T5 | test_t5_pedestrian_b_timing.py | Strict capability tests for ITU-R M.1225 **Pedestrian B** at 1 Msps with chip-timing offsets. Exercises the matched-filter despreader, MF-power peak-tracking timing loop, and decision-directed BPSK channel equalization (`set_channel_equalization(True)`). |
 | Galdralag | test_galdralag_kgdss_compat.py | Maps gr-linux-crypto `derive_galdralag_session_keys` output to gr-k-gdss subkey names; swap-invariant GDSS keys; payload i2r vs r2i. Skips if Galdralag KDF is unavailable. |
 | gr-linux-crypto HKDF | test_gr_linux_crypto_hkdf_compat.py | `derive_session_keys(...)['gdss_masking']` matches `CryptoHelpers.derive_key_hkdf` with salt `bytes(32)` and info `gdss-chacha20-masking-v1` (gr-linux-crypto / GDSS Set Key Source default path). Skips if `CryptoHelpers` unavailable. |
 | Cross-layer | test_cross_layer.py | End-to-end: derive keys, build spreader/despreader, run a full spread/despread flow; output matches input. |
@@ -243,7 +249,9 @@ Skipped when `gr_linux_crypto.CryptoHelpers` cannot be imported (install gr-linu
 
 With the module installed, **gr-linux-crypto** (including **galdralag_session_kdf** when you want Galdralag tests), dependencies available, and tests run in a normal terminal (so keyctl read is allowed):
 
-- With **gr-linux-crypto** (including **galdralag_session_kdf**), **GNU Radio** / bindings installed, and keyring access where applicable, expect about **48 passed** and **1 skipped** (keyring round-trip often skips without `keyctl`). Fewer passes or more skips occur if Galdralag KDF is missing (four mapping tests skip) or the module is not installed. Run `pytest tests/ -q` for the exact tally on your machine.
+- Current expected pytest tally is **106 passed, 1 skipped, 2 xpassed** (109 collected). The skip is `TestT3KeyringRoundTrip::test_keyring_round_trip` when `keyctl` is unavailable; the two `xpassed` entries are inside `tests/test_t5_pedestrian_b_timing.py` and reflect retired capability-boundary markers that the new despreader (matched-filter despreading + adaptive timing peak tracker + opt-in BPSK channel equalization) now passes. Fewer passes or more skips occur if Galdralag KDF is missing (four mapping tests skip) or the module is not installed. Run `pytest tests/ -q` for the exact tally on your machine.
+
+The optional native crypto suite (build with **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**) reports **2/2 passed** under `ctest -R 'kgdss_test_'`: `kgdss_test_chacha_keystream` (Wycheproof-derived ChaCha20-IETF vectors) and `kgdss_test_spreader_stats` (Box-Muller mask K-S / clamp checks).
 
 If the keyring round-trip is skipped with "Permission denied", run `pytest tests/ -v` in a normal system terminal (outside any sandbox) so the process can read keys from the session keyring. If `gr_linux_crypto` and gr-k-gdss are installed in the default Python search path (e.g. `/usr/local`), no `PYTHONPATH` is needed for normal use. For co-development, set **`GR_LINUX_CRYPTO_DIR`** to the gr-linux-crypto repository root (see [USAGE.md](USAGE.md)).
 

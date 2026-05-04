@@ -49,9 +49,16 @@ python -m unittest discover -s tests -v
 ```
 
 - **T1** (test_t1_spreader_despreader.py): Keyed spreader/despreader C++ blocks via Python bindings. Skipped if bindings are not available.
-- **T2** (test_t2_sync_burst.py): Sync burst Python helpers (PN sequence, timing schedule, Gaussian envelope).
+- **T2 channels** (test_t2_channel_models.py): ITU-R P.1238 indoor and M.1225 Pedestrian/Vehicular channel-model regressions (BER vs SNR, lock and SNR-estimator behaviour, timing-offset stress).
+- **T2 sync** (test_t2_sync_burst.py): Sync burst Python helpers (PN sequence, timing schedule, Gaussian envelope).
 - **T3** (test_t3_key_derivation.py): Key derivation and nonce construction. Keyring round-trip is skipped if the Linux keyring is not available.
+- **T4** (test_t4_counter_overflow.py): ChaCha20-IETF block-counter overflow and re-key recovery.
+- **T5** (test_t5_pedestrian_b_timing.py): Strict ITU-R M.1225 Pedestrian B timing capability tests at 1 Msps. Exercises matched-filter despreading, the MF-power peak-tracking timing loop, and decision-directed BPSK channel equalization (`set_channel_equalization(True)`).
+- **Galdralag** (test_galdralag_kgdss_compat.py): Maps `gr_linux_crypto.derive_galdralag_session_keys` output to gr-k-gdss subkey names. Skipped if Galdralag KDF is unavailable.
+- **gr-linux-crypto HKDF** (test_gr_linux_crypto_hkdf_compat.py): Byte-equality between `derive_session_keys(...)['gdss_masking']` and `CryptoHelpers.derive_key_hkdf` for the GDSS default profile. Skipped if `CryptoHelpers` is unavailable.
 - **Cross-layer** (test_cross_layer.py): Full stack round-trip using derived keys and keyed blocks.
+
+Current expected pytest tally: **106 passed, 1 skipped, 2 xpassed** (109 collected) when the module is installed and gr-linux-crypto is available. The skip is the keyring round-trip when `keyctl` is unavailable; the two `xpassed` entries are inside the T5 suite.
 
 **Optional C++ crypto tests (Google Test):** Sources live under **`tests/cpp/`**. Configure the project with **`-DKGDSS_ENABLE_CRYPTO_TESTS=ON`**, build, then run **`ctest -R 'kgdss_test_'`** from the build directory. Requires **libsodium**; first configure may download GoogleTest and nlohmann_json. See **[docs/TESTING.md](../docs/TESTING.md#c-crypto-tests-optional)**.
 
