@@ -1,0 +1,10 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+
+Name: gnuradio4-gr-k-gdss
+Description: GNU Radio 4.0 Keyed Gaussian-Distributed Spread-Spectrum (GDSS) blocks
+Version: @PROJECT_VERSION@
+Requires: libsodium gnuradio4
+Cflags: -I${includedir}
