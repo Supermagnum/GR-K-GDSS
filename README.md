@@ -50,7 +50,7 @@ The developer used curiosity to piece the suggested improvements in this project
 20. [Sync Burst Improvements Roadmap](docs/todo.md)
 21. [Extending and debugging without maintainer support](#12-extending-and-debugging-without-maintainer-support)
 22. [GnuPG ECDH key derivation examples](docs/GNUPG_ECDH_KDF_EXAMPLES.md)
-23. [GNU Radio 4 port](https://github.com/Supermagnum/GR-K-GDSS/tree/gnuradio4/gnuradio4) — header-only C++ blocks, Boost.UT tests, and Python helpers for the GR4 runtime (branch `gnuradio4`)
+23. [GNU Radio 4.0 (`gnuradio4` branch)](https://github.com/Supermagnum/GR-K-GDSS/tree/gnuradio4) — [port sources under `gnuradio4/`](https://github.com/Supermagnum/GR-K-GDSS/tree/gnuradio4/gnuradio4): header-only C++ blocks, Boost.UT tests, and Python helpers for the GR4 runtime
 
 ---
 
