@@ -232,7 +232,7 @@ def session_material(sodium):
     test_secret = bytes(range(32))
     keys = derive_session_keys(test_secret)
     k = keys["gdss_masking"]
-    n = gdss_nonce("loopback-test-001", 0)
+    n = gdss_nonce(1, 0)
     assert len(k) == 32 and len(n) == 12
     return k, n
 
