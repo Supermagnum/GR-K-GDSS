@@ -1121,6 +1121,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Suites T1, T2, T3, P372 receiver profile, Galdralag/gr-linux-crypto mapping, cross-layer; IQ file generation and analysis. |
 | **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** |
 | **Technical terms index** (glossary of acronyms and terms) | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** |
+| **Keystream contract and verification reference** (ChaCha20-IETF alignment, Box-Muller, MF despread; measured \(\rho\) / correlation tables) | **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** |
 | **LinHT ZMQ integration** (UHF handheld RF path, Python bridge, GR4 PTT block) | **[docs/LINHT_INTEGRATION.md](docs/LINHT_INTEGRATION.md)**, **python/linht_bridge.py**, **gnuradio4/.../LinhtPttSource.hpp**, **examples/** `*_linht*` |
 | **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`, shared ChaCha20-IETF helper **`lib/chacha_ietf_keystream.h`**; headers in **include/gnuradio/kgdss/**. |
 | **Python helpers** (key derivation, keyring, sync burst, P.372) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`, `p372_baseline.py`, `p372_baseline_config.json`, `p372_receiver_profile.py`; package entry [`python/__init__.py`](python/__init__.py) re-exports the public `gnuradio.kgdss` API. Details in [docs/USAGE.md](docs/USAGE.md). |

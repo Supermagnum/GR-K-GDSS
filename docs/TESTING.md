@@ -45,6 +45,8 @@ In this project, **round trip** means running a **forward** transform and its ma
 
 For a short definition, see [Round trip (testing)](GLOSSARY.md#round-trip-testing) in [GLOSSARY.md](GLOSSARY.md).
 
+**Compatible receiver / keystream alignment:** [KEYSTREAM_CONTRACT.md](KEYSTREAM_CONTRACT.md) describes the ChaCha20-IETF byte contract, Box-Muller masking, matched-filter despreading, and **measured reference correlations** for independent implementations.
+
 ---
 
 ## Running the tests
