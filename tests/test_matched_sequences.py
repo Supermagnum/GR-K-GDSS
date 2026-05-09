@@ -209,8 +209,19 @@ def despread_symbols(
     return np.array(syms, dtype=np.complex128), ctr, rem, rem_len
 
 
+def _coherence_zero_lag(a: np.ndarray, b: np.ndarray) -> float:
+    """|sum conj(a)*b| / (||a|| ||b||) at zero lag; 1.0 when b is a complex scalar multiple of a."""
+    a = np.asarray(a, dtype=np.complex128).ravel()
+    b = np.asarray(b, dtype=np.complex128).ravel()
+    n = min(len(a), len(b))
+    a, b = a[:n], b[:n]
+    num = float(np.abs(np.vdot(a, b)))
+    den = float(np.linalg.norm(a) * np.linalg.norm(b)) + 1e-12
+    return num / den
+
+
 def _complex_corr(a: np.ndarray, b: np.ndarray) -> float:
-    """Normalized real inner product (phase-insensitive amplitude correlation)."""
+    """Normalized real inner product (legacy helper for wrong-key checks)."""
     a = np.asarray(a, dtype=np.complex128).ravel()
     b = np.asarray(b, dtype=np.complex128).ravel()
     n = min(len(a), len(b))
@@ -237,19 +248,22 @@ def session_material(sodium):
     return k, n
 
 
-def test_matched_key_high_correlation(session_material):
+@pytest.mark.parametrize("chips_per_symbol", [32, 64, 256])
+def test_matched_key_near_unity_coherence_zero_lag(session_material, chips_per_symbol):
+    """Noiseless ChaCha + Box-Muller + MF recovery matches input at machine precision (zero lag)."""
     key, nonce = session_material
     rng = np.random.default_rng(42)
-    n_sym = 500
+    n_sym = 400
     phases = rng.uniform(0, 2 * np.pi, n_sym)
     mag = rng.uniform(0.5, 1.5, n_sym)
     symbols = mag * np.exp(1j * phases)
-    chips_per_symbol = 64
     variance = 1.0
     chips, _c1, _r1, _rl1 = spread_chips(symbols, key, nonce, chips_per_symbol, variance)
     out, _c2, _r2, _rl2 = despread_symbols(chips, key, nonce, chips_per_symbol, variance)
-    corr = _complex_corr(symbols, out)
-    assert corr > 0.9, f"expected high correlation, got {corr}"
+    coh = _coherence_zero_lag(symbols, out)
+    assert coh >= 1.0 - 1e-12, f"zero-lag coherence should be ~1.0, got {coh}"
+    max_err = float(np.max(np.abs(out - symbols)))
+    assert max_err < 1e-12, f"max|out-sym| should be ~1e-15 scale, got {max_err}"
 
 
 def test_wrong_key_low_correlation(session_material):
