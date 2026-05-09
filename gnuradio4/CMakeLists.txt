@@ -30,6 +30,7 @@ find_package(gnuradio4 REQUIRED CONFIG)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(libsodium REQUIRED IMPORTED_TARGET libsodium)
+pkg_check_modules(ZMQ QUIET IMPORTED_TARGET libzmq)
 
 find_package(gr-linux-crypto4 CONFIG QUIET)
 
@@ -43,6 +44,11 @@ target_include_directories(
 
 target_link_libraries(gnuradio4-gr-k-gdss INTERFACE gnuradio4::gnuradio-core gnuradio4::gnuradio-blocklib-core
                                                     PkgConfig::libsodium)
+
+if(ZMQ_FOUND)
+  target_compile_definitions(gnuradio4-gr-k-gdss INTERFACE GR_K_GDSS4_HAVE_ZMQ=1)
+  target_link_libraries(gnuradio4-gr-k-gdss INTERFACE PkgConfig::ZMQ)
+endif()
 
 if(gr-linux-crypto4_FOUND)
   target_compile_definitions(gnuradio4-gr-k-gdss INTERFACE GR_K_GDSS4_HAVE_LINUX_CRYPTO=1)

@@ -86,6 +86,10 @@ public:
 
     [[nodiscard]] bool overflowOccurred() const noexcept { return d_overflow.load(std::memory_order_acquire); }
 
+    void setPttAllowsTx(bool on) noexcept { d_ptt_allows_tx.store(on, std::memory_order_release); }
+
+    [[nodiscard]] bool pttAllowsTx() const noexcept { return d_ptt_allows_tx.load(std::memory_order_acquire); }
+
     static void boxMullerPair(float u1, float u2, float variance, float& g0, float& g1) noexcept {
         if (u1 < 1e-10f) {
             u1 = 1e-10f;
@@ -109,6 +113,10 @@ public:
                 std::cerr << "gr-k-gdss: spreader blocked: no cryptographic key armed "
                              "(GDSS masking disabled).\n";
             }
+            return Status::INSUFFICIENT_INPUT_ITEMS;
+        }
+
+        if (!d_ptt_allows_tx.load(std::memory_order_acquire)) {
             return Status::INSUFFICIENT_INPUT_ITEMS;
         }
 
@@ -236,6 +244,7 @@ private:
     std::size_t                      d_ks_remainder_len{ 0 };
     std::vector<std::uint8_t>        d_ks_buf{};
     std::atomic<bool>                d_overflow{ false };
+    std::atomic<bool>                d_ptt_allows_tx{ true };
 };
 
 } // namespace gnuradio4::kgdss::detail

@@ -21,6 +21,7 @@ install(
         session_key_derivation.py
         sync_burst_utils.py
         key_injector.py
+        linht_bridge.py
         p372_baseline.py
         p372_receiver_profile.py
         p372_baseline_config.json

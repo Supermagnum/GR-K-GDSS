@@ -39,6 +39,9 @@ inputs:
 -   domain: message
     id: set_key
     optional: true
+-   domain: message
+    id: ptt
+    optional: true
 
 outputs:
 -   domain: stream
@@ -68,6 +71,11 @@ documentation: |-
     set_key message port: connect key_injector.key_out (gr-k-gdss) or GDSS Set Key
     Source.set_key_out (gr-linux-crypto) to set_key. Key is sent automatically when
     the flowgraph starts. Alternatively pass key/nonce at construction (32 and 12 bytes).
+
+    Optional message port `ptt`: when connected, gates output on hardware PTT intent (e.g.
+    LinHT ZMQ). Cryptographic key is still required: no key means no RF, regardless of PTT.
+    Accepts PMT bool, symbols ptt_on/ptt_off, or a dict with key ptt (bool). If the port is
+    not connected, PTT is treated as asserted so existing flowgraphs are unchanged.
 
 file_format: 1
 

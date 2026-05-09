@@ -1,0 +1,56 @@
+options:
+  parameters:
+    author: gr-k-gdss
+    catch_exceptions: 'True'
+    category: '[KGDSS]'
+    cmake_opt: ''
+    comment: 'Open tx_kgdss_linht.grc in GNU Radio Companion to edit this placeholder.'
+    description: Placeholder title; use tx_kgdss_linht.py comments and tx_example_kgdss.grc as the real baseline until the full QT graph is duplicated.
+    gen_cmake: 'On'
+    gen_linking: dynamic
+    generate_options: qt_gui
+    hier_block_src_path: '.:'
+    id: tx_kgdss_linht
+    max_nouts: '0'
+    output_language: python
+    placement: (0,0)
+    qt_qss_theme: ''
+    realtime_scheduling: ''
+    run: 'False'
+    run_command: '{python} -u {filename}'
+    sizing_mode: fixed
+    thread_safe_setters: ''
+    title: KGDSS LinHT TX (placeholder)
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 8]
+    rotation: 0
+    state: enabled
+
+blocks:
+- name: note_linht_tx
+  id: note
+  parameters:
+    alias: ''
+    comment: "Duplicate tx_example_kgdss.grc here; replace Null Sink with zeromq\_pub\_sink to ipc:///tmp/linht_tx (or TCP). Add LinhtPttMsgSource -> spreader ptt. See docs/LINHT_INTEGRATION.md and tx_kgdss_linht.py."
+    note: |-
+      Duplicate tx_example_kgdss.grc into this flowgraph.
+
+      Changes:
+      - Final sink: ZMQ PUB to LinHT (ipc:///tmp/linht_tx or tcp://...).
+      - Optional: LinhtPttMsgSource from gnuradio.kgdss on spreader ptt port.
+      - Match 500 ksps (or your LinHT IQ rate) across SOQPSK and spreader.
+
+      Companion: examples/tx_kgdss_linht.py (comment-only wiring guide).
+  states:
+    coordinate: [8, 120]
+    rotation: 0
+    state: enabled
+
+connections: []
+
+metadata:
+  file_format: 1
+  grc_version: 3.10

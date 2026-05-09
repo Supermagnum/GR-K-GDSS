@@ -33,6 +33,7 @@ struct KgdssSpreaderCc : gr::Block<KgdssSpreaderCc, gr::Resampling<1UZ, 256UZ, f
 
     gr::MsgPortIn                      set_key{};
     gr::MsgPortIn                      set_counter{};
+    gr::MsgPortIn                      ptt{};
 
     gr::Annotated<int, "sequence_length", gr::Doc<"gold / amplitude sequence internal length">>          sequence_length  = 256;
     gr::Annotated<int, "spreading_factor", gr::Doc<"chips per output symbol">>                            spreading_factor = 256;
@@ -40,7 +41,7 @@ struct KgdssSpreaderCc : gr::Block<KgdssSpreaderCc, gr::Resampling<1UZ, 256UZ, f
     gr::Annotated<unsigned int, "seed", gr::Doc<"RNG seed for internal sequence generator; 0 = time">>     seed             = 0U;
     gr::Annotated<bool, "key_armed", gr::Visible, gr::Doc<"read-only: cryptographic key armed">>          key_armed        = false;
 
-    GR_MAKE_REFLECTABLE(KgdssSpreaderCc, in, out, set_key, set_counter, sequence_length, spreading_factor, variance, seed, key_armed);
+    GR_MAKE_REFLECTABLE(KgdssSpreaderCc, in, out, set_key, set_counter, ptt, sequence_length, spreading_factor, variance, seed, key_armed);
 
     detail::SpreaderEngine _engine{};
     std::size_t            _noKeySilentWarn{ 0 };
@@ -101,6 +102,23 @@ struct KgdssSpreaderCc : gr::Block<KgdssSpreaderCc, gr::Resampling<1UZ, 256UZ, f
             && detail::copyBytesFromMap(body, "nonce", nonce.data(), 12UZ);
     }
 
+    void handlePtt(gr::MsgPortIn& port, const gr::Message& message) noexcept {
+        (void)port;
+        if (!message.data.has_value()) {
+            return;
+        }
+        const gr::property_map& body = message.data.value();
+        const std::pmr::string  key  = gr::convert_string_domain(std::string_view("ptt"));
+        const auto              it   = body.find(key);
+        if (it == body.end()) {
+            return;
+        }
+        const auto& v = it->second;
+        if (const auto* b = v.get_if<bool>()) {
+            _engine.setPttAllowsTx(*b);
+        }
+    }
+
     void handleSetKey(gr::MsgPortIn& port, const gr::Message& message) noexcept {
         if (!message.data.has_value()) {
             return;
@@ -144,6 +162,10 @@ struct KgdssSpreaderCc : gr::Block<KgdssSpreaderCc, gr::Resampling<1UZ, 256UZ, f
         } else if (std::addressof(port) == std::addressof(set_counter)) {
             for (const gr::Message& m : messages) {
                 handleSetCounter(port, m);
+            }
+        } else if (std::addressof(port) == std::addressof(ptt)) {
+            for (const gr::Message& m : messages) {
+                handlePtt(port, m);
             }
         }
     }

@@ -1101,6 +1101,10 @@ https://github.com/Supermagnum/gr-linux-crypto/blob/master/tests/TEST_RESULTS.md
 **Nitrokey:**
 https://www.nitrokey.com
 
+### LinHT compatibility
+
+LinHT ([LinHT-hw](https://github.com/M17-Project/LinHT-hw)) routes baseband over ZeroMQ instead of using Audio Sink/Source in the same flowgraph. GR-K-GDSS can follow that split: see **[docs/LINHT_INTEGRATION.md](docs/LINHT_INTEGRATION.md)** for endpoint layout, **python/linht_bridge.py** (`LinhtBridge`, `LinhtPttMsgSource`, `LinhtRfEventSink`), example flowgraphs under **examples/** (`tx_kgdss_linht.grc`, `rx_kgdss_linht.grc`, `loopback_kgdss_linht.grc`), and the GNU Radio 4 **LinhtPttSource** block in **gnuradio4/include/gnuradio-4.0/kgdss/LinhtPttSource.hpp**. A valid session key remains mandatory for RF output; PTT only gates transmission once the key is armed.
+
 ---
 
 ## 11. Build and Install
@@ -1117,7 +1121,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Suites T1, T2, T3, P372 receiver profile, Galdralag/gr-linux-crypto mapping, cross-layer; IQ file generation and analysis. |
 | **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** |
 | **Technical terms index** (glossary of acronyms and terms) | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** |
-| **Example flowgraph** (TX with Codec2, ECIES, SOQPSK, GDSS) | **[examples/](examples/)** — `tx_example_kgdss.grc` and verification; see [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md). |
+| **LinHT ZMQ integration** (UHF handheld RF path, Python bridge, GR4 PTT block) | **[docs/LINHT_INTEGRATION.md](docs/LINHT_INTEGRATION.md)**, **python/linht_bridge.py**, **gnuradio4/.../LinhtPttSource.hpp**, **examples/** `*_linht*` |
 | **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`, shared ChaCha20-IETF helper **`lib/chacha_ietf_keystream.h`**; headers in **include/gnuradio/kgdss/**. |
 | **Python helpers** (key derivation, keyring, sync burst, P.372) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`, `p372_baseline.py`, `p372_baseline_config.json`, `p372_receiver_profile.py`; package entry [`python/__init__.py`](python/__init__.py) re-exports the public `gnuradio.kgdss` API. Details in [docs/USAGE.md](docs/USAGE.md). |
 | **GRC block definitions** | **grc/** — `kgdss_spreader_cc.block.yml`, `kgdss_despreader_cc.block.yml`, `kgdss_key_injector.block.yml`. |
