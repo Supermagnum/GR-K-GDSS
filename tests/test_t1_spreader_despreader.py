@@ -39,6 +39,9 @@ TIMING_TOLERANCE = 2
 KEY_32 = os.urandom(32)
 NONCE_12 = os.urandom(12)
 TOL = 1e-4
+# Back-to-back spreader/despreader (float32 pipeline): near-unity zero-lag coherence.
+TOL_ROUNDTRIP = 5e-6
+COHERENCE_ROUNDTRIP_MIN = 0.99999
 MIN_MASK = 1e-4
 # Threshold for "below min": use 1e-5 so clamped values (1e-4) are not misclassified by float rounding
 MIN_MASK_BELOW_THRESHOLD = 1e-5
@@ -47,6 +50,18 @@ MIN_MASK_BELOW_THRESHOLD = 1e-5
 def _make_spreading_sequence():
     np.random.seed(SEED)
     return np.random.normal(0.0, np.sqrt(VARIANCE), SEQ_LEN).tolist()
+
+
+def _coherence_zero_lag(a, b):
+    """|sum conj(a)*b| / (||a|| ||b||) at zero lag; ~1.0 for matched noiseless chain."""
+    a = np.asarray(a, dtype=np.complex128).ravel()
+    b = np.asarray(b, dtype=np.complex128).ravel()
+    n = min(len(a), len(b))
+    if n == 0:
+        return 0.0
+    num = float(np.abs(np.vdot(a[:n], b[:n])))
+    den = float(np.linalg.norm(a[:n]) * np.linalg.norm(b[:n])) + 1e-12
+    return num / den
 
 
 def _run_flowgraph(source_data, spreader, despreader, head_len=None):
@@ -116,7 +131,13 @@ class TestT1RoundTrip(unittest.TestCase):
 
         out = _run_flowgraph(data, spreader, despreader)
         self.assertEqual(len(out), n_syms, "output length")
-        np.testing.assert_allclose(out, data, atol=TOL, rtol=TOL)
+        np.testing.assert_allclose(out, data, atol=TOL_ROUNDTRIP, rtol=TOL_ROUNDTRIP)
+        coh = _coherence_zero_lag(out, data)
+        self.assertGreaterEqual(
+            coh,
+            COHERENCE_ROUNDTRIP_MIN,
+            msg="zero-lag coherence should be very close to 1.0, got {}".format(coh),
+        )
 
 
 @unittest.skipUnless(BINDINGS_AVAILABLE, "C++ bindings (gnuradio.kgdss) not available")
@@ -152,8 +173,17 @@ class TestT1ComplexSequenceRoundTrip(unittest.TestCase):
         out = _run_flowgraph(data, spreader, despreader)
         self.assertEqual(len(out), n_syms, "output length")
         np.testing.assert_allclose(
-            out, data, atol=TOL, rtol=TOL,
+            out,
+            data,
+            atol=TOL_ROUNDTRIP,
+            rtol=TOL_ROUNDTRIP,
             err_msg="round-trip mismatch with complex-valued spreading sequence",
+        )
+        coh = _coherence_zero_lag(out, data)
+        self.assertGreaterEqual(
+            coh,
+            COHERENCE_ROUNDTRIP_MIN,
+            msg="zero-lag coherence should be very close to 1.0, got {}".format(coh),
         )
 
 
