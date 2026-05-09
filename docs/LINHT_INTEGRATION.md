@@ -89,11 +89,16 @@ Adjust **sample rate** (often **500 ksps**) and **UHF frequency plan** to your r
 
 Align with [docs/USAGE.md](USAGE.md): **Galdralag / gr-linux-crypto** session material, **`key_injector`** or equivalent, **`set_key`** into `kgdss_spreader_cc` / `kgdss_despreader_cc`, optional **PTT** message path from LinHT.
 
+## End-to-end keyed GDSS (matched mask)
+
+Both `kgdss_spreader_cc` and `kgdss_despreader_cc` derive their Gaussian chip masks from the **same ChaCha20-IETF keystream** using the **`gdss_masking`** subkey (32 bytes) and a **12-byte nonce** from `gdss_nonce()` in `python/session_key_derivation.py`. `derive_session_keys()` is the single source of truth for HKDF labels (`gdss-chacha20-masking-v1`, etc.). The LinHT **loopback** example uses that derivation for TX and RX and prints a **lag searched correlation** between tapped TX symbols and despread symbols so CI or manual runs can confirm the modem path (not only ZMQ plumbing).
+
 ## Loopback test
 
 1. Start **`loopback_kgdss_linht.grc`** (or the Python flowgraph) so TX publishes and RX subscribes on paired TCP ports (for example `127.0.0.1:17100` / `17101`) or use a single host with PUB/SUB on the same broker.
 2. Confirm **sync / event** messages on `linht_events` if wired.
 3. Tune **AWGN** or **channel** blocks to stress the despreader at target Es/N0.
+4. After stopping the flowgraph, check the printed **correlation** line: with the correct `gdss_masking` key and nonce on both sides, the max lag-normalized correlation should be clearly above zero despite AWGN; a wrong key would not produce a stable match.
 
 ## References
 

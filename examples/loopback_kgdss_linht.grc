@@ -5,7 +5,7 @@ options:
     category: '[KGDSS]'
     cmake_opt: ''
     comment: 'ZMQ loopback: spreader PUB on tcp://127.0.0.1:17101, SUB before despreader. Requires gnuradio-zeromq. See docs/LINHT_INTEGRATION.md'
-    description: Minimal keyed GDSS ZMQ loopback at 500 ksps (AWGN). Keys are demo hex; replace for real use.
+    description: Keyed GDSS ZMQ loopback at 500 ksps (AWGN). ChaCha key/nonce are HKDF gdss_masking + gdss_nonce("loopback-test-001") from test secret bytes(range(32)); replace for real use. See generated loopback_kgdss_linht.py for correlation tap.
     gen_cmake: 'On'
     gen_linking: dynamic
     generate_options: no_gui
@@ -42,8 +42,8 @@ blocks:
 - name: demo_key_hex
   id: variable
   parameters:
-    comment: 32-byte ChaCha key as hex (demo only)
-    value: '"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"'
+    comment: derive_session_keys(bytes(range(32)))["gdss_masking"] as hex
+    value: '"273687e5511c6254b013c2e1ca4aedc60031cc91d57a1dd848af65875f5aa8c6"'
   states:
     coordinate: [8, 156]
     rotation: 0
@@ -51,8 +51,8 @@ blocks:
 - name: demo_nonce_hex
   id: variable
   parameters:
-    comment: 12-byte nonce hex (demo only)
-    value: '"000102030405060708090a0b"'
+    comment: gdss_nonce("loopback-test-001", 0) as hex
+    value: '"49d0ab480000000000000000"'
   states:
     coordinate: [8, 196]
     rotation: 0
@@ -150,7 +150,7 @@ blocks:
   parameters:
     affinity: ''
     alias: ''
-    amplitude: '0.05'
+    amplitude: '0.02'
     comment: Complex AWGN
     maxoutbuf: '0'
     minoutbuf: '0'

@@ -6,6 +6,7 @@
 #include <gnuradio-4.0/kgdss/detail/DespreaderEngine.hpp>
 #include <gnuradio-4.0/kgdss/detail/SpreaderEngine.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <complex>
@@ -40,6 +41,24 @@ std::array<std::uint8_t, 32> fillKey(std::uint8_t v) {
     std::array<std::uint8_t, 32> k{};
     k.fill(v);
     return k;
+}
+
+[[nodiscard]] float corrComplexMag(const std::vector<std::complex<float>>& a, const std::vector<std::complex<float>>& b) {
+    const std::size_t n = std::min(a.size(), b.size());
+    if (n < 8UZ) {
+        return 0.F;
+    }
+    double sum_ab = 0.0;
+    double sum_a2 = 0.0;
+    double sum_b2 = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        sum_ab += static_cast<double>(a[i].real()) * static_cast<double>(b[i].real())
+            + static_cast<double>(a[i].imag()) * static_cast<double>(b[i].imag());
+        sum_a2 += static_cast<double>(std::norm(a[i]));
+        sum_b2 += static_cast<double>(std::norm(b[i]));
+    }
+    const double den = std::sqrt(sum_a2) * std::sqrt(sum_b2) + 1e-12;
+    return static_cast<float>(std::abs(sum_ab) / den);
 }
 
 } // namespace
@@ -137,6 +156,109 @@ suite<"KgdssDespreaderCc"> DespreaderSuite = [] {
         float bErr = std::abs(bSym[0].real() - sym.real()) + std::abs(bSym[0].imag() - sym.imag());
         expect(lt(gErr, 0.25F));
         expect(gt(bErr, gErr + 1e-2F));
+    };
+
+    // Noiseless back-to-back matched ChaCha + Box-Muller + MF despreading
+    // gives coherence ~1.0 (verified in Python reference: max|out-sym| ~1e-15).
+    // Threshold 0.98 allows for float32 pipeline rounding; values 0.85-0.95
+    // would indicate a keystream alignment or metric problem, not ideal recovery.
+    "matched_key_chacha_correlation_stream"_test = [] {
+        expect(::sodium_init() >= 0);
+        const int      L  = 128;
+        const int      sf = 64;
+        const float    var = 1.F;
+        auto           iq = pnIq(L, var, 77U);
+        std::array<std::uint8_t, 32> key{};
+        for (std::size_t i = 0; i < key.size(); ++i) {
+            key[i] = static_cast<std::uint8_t>(i + 1U);
+        }
+        std::array<std::uint8_t, 12> nonce{};
+        for (std::size_t i = 0; i < nonce.size(); ++i) {
+            nonce[i] = static_cast<std::uint8_t>(0x10U + i);
+        }
+
+        gnuradio4::kgdss::detail::SpreaderEngine sp;
+        sp.generateSequence(L, var, 1414U);
+        sp.setKeyMaterial(key, nonce);
+
+        gnuradio4::kgdss::detail::DespreaderEngine de;
+        de.configureFromSpreadingSequence(std::span(iq), sf, 0.5F, 3);
+        de.setKeyMaterial(key, nonce);
+
+        std::vector<std::complex<float>> sent;
+        std::vector<std::complex<float>> got;
+        std::mt19937                     rng(2020U);
+        std::uniform_real_distribution<float> u(-1.F, 1.F);
+        const int nSym = 48;
+        for (int i = 0; i < nSym; ++i) {
+            std::complex<float> sym(u(rng), u(rng));
+            sent.push_back(sym);
+            std::vector<std::complex<float>> sv{ sym };
+            std::vector<std::complex<float>> chips(static_cast<std::size_t>(sf));
+            std::size_t                      w = 0;
+            expect(eq(stN(sp.process(std::span(sv), std::span(chips), sf, var, L, w)),
+                stN(gr::work::Status::OK)));
+            std::vector<std::complex<float>> out(1);
+            std::vector<float>               lk(1), sn(1);
+            int                              used = 0;
+            w                                         = 0;
+            expect(eq(stN(de.process(std::span(chips), std::span(out), std::span(lk), std::span(sn), used, w)),
+                stN(gr::work::Status::OK)));
+            got.push_back(out[0]);
+        }
+        expect(gt(corrComplexMag(sent, got), 0.98F));
+    };
+
+    "wrong_key_chacha_correlation_near_zero"_test = [] {
+        expect(::sodium_init() >= 0);
+        const int      L  = 64;
+        const int      sf = 64;
+        const float    var = 1.F;
+        auto           iq = pnIq(L, var, 88U);
+        auto           kG = fillKey(0x3AU);
+        auto           kB = fillKey(0xC5U);
+        std::array<std::uint8_t, 12> nG{};
+        nG.fill(0x5EU);
+
+        gnuradio4::kgdss::detail::SpreaderEngine sp;
+        sp.generateSequence(L, var, 9001U);
+        sp.setKeyMaterial(kG, nG);
+
+        std::vector<std::complex<float>> sent;
+        std::vector<std::complex<float>> chipsAcc;
+        std::mt19937                     rng(4242U);
+        std::uniform_real_distribution<float> u(-0.8F, 0.8F);
+        const int nSym = 40;
+        for (int i = 0; i < nSym; ++i) {
+            std::complex<float> sym(u(rng), u(rng));
+            sent.push_back(sym);
+            std::vector<std::complex<float>> sv{ sym };
+            std::vector<std::complex<float>> chips(static_cast<std::size_t>(sf));
+            std::size_t                      w = 0;
+            expect(eq(stN(sp.process(std::span(sv), std::span(chips), sf, var, L, w)), stN(gr::work::Status::OK)));
+            chipsAcc.insert(chipsAcc.end(), chips.begin(), chips.end());
+        }
+
+        gnuradio4::kgdss::detail::DespreaderEngine bad;
+        bad.configureFromSpreadingSequence(std::span(iq), sf, 0.45F, 3);
+        bad.setKeyMaterial(kB, nG);
+
+        std::vector<std::complex<float>> got;
+        for (int i = 0; i < nSym; ++i) {
+            const std::size_t off = static_cast<std::size_t>(i) * static_cast<std::size_t>(sf);
+            std::vector<std::complex<float>> block(static_cast<std::size_t>(sf));
+            for (int j = 0; j < sf; ++j) {
+                block[static_cast<std::size_t>(j)] = chipsAcc[off + static_cast<std::size_t>(j)];
+            }
+            std::vector<std::complex<float>> out(1);
+            std::vector<float>               lk(1), sn(1);
+            int                              used = 0;
+            std::size_t                      w    = 0;
+            expect(eq(stN(bad.process(std::span(block), std::span(out), std::span(lk), std::span(sn), used, w)),
+                stN(gr::work::Status::OK)));
+            got.push_back(out[0]);
+        }
+        expect(lt(corrComplexMag(sent, got), 0.1F));
     };
 
     "channel_equalization_toggle"_test = [] {

@@ -16,7 +16,7 @@ Exported API:
   - galdralag_kdf_available() -> bool
   - store_session_keys(keys) -> dict of name -> keyring ID
   - load_gdss_key(keyring_id) -> 32-byte GDSS masking key
-  - gdss_nonce(session_id, tx_seq) -> 12-byte nonce for ChaCha20 masking
+  - gdss_nonce(session_id, tx_seq=0) -> 12-byte nonce for ChaCha20 masking (session_id may be int or str)
   - gdss_sync_burst_nonce(session_id) -> 12-byte nonce for sync-burst masking (keystream distinct from data)
   - payload_nonce(session_id, tx_seq) -> 96-bit nonce for payload AEAD
   - get_shared_secret_from_gnupg(my_private_pem, peer_public_pem) -> shared secret
@@ -36,11 +36,12 @@ Compatibility with gr-linux-crypto:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import shutil
 import sys
-from typing import Any, Callable, Dict, Optional, Type, cast
+from typing import Any, Callable, Dict, Optional, Type, Union, cast
 
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
@@ -499,7 +500,7 @@ def get_shared_secret_from_gnupg(
     return crypto.brainpool_ecdh(private_key, public_key)
 
 
-def gdss_nonce(session_id: int, tx_seq: int) -> bytes:
+def gdss_nonce(session_id: Union[int, str], tx_seq: int = 0) -> bytes:
     """
     Build the 12-byte nonce for the GDSS ChaCha20 masking keystream.
 
@@ -507,13 +508,21 @@ def gdss_nonce(session_id: int, tx_seq: int) -> bytes:
     (libsodium ChaCha20 IETF: 4-byte session ID + 8-byte TX sequence).
 
     Args:
-        session_id: Session identifier (e.g. 1, 2). Encoded big-endian, 4 bytes.
+        session_id: Numeric session id (big-endian 4 bytes), or an arbitrary string
+            label from which a stable 32-bit id is derived (SHA-256).
         tx_seq: Transmission sequence number. Encoded big-endian, 8 bytes.
 
     Returns:
         12-byte nonce for ChaCha20 IETF (no counter in nonce; counter starts at 0).
     """
-    return session_id.to_bytes(4, "big") + tx_seq.to_bytes(8, "big")
+    if isinstance(session_id, str):
+        digest = hashlib.sha256(f"kgdss-session:{session_id}".encode("utf-8")).digest()
+        sid = int.from_bytes(digest[:4], "big")
+    else:
+        sid = int(session_id) % (1 << 32)
+    if tx_seq < 0:
+        raise ValueError("tx_seq must be non-negative")
+    return sid.to_bytes(4, "big") + int(tx_seq).to_bytes(8, "big")
 
 
 # Reserved tx_seq value so sync-burst mask keystream does not overlap with data.

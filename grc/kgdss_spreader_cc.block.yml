@@ -57,8 +57,8 @@ templates:
             ${chips_per_symbol},
             ${variance},
             ${seed},
-            list(binascii.unhexlify(${chacha_key}.strip('"')) if ${chacha_key} not in ('""', '') else b''),
-            list(binascii.unhexlify(${chacha_nonce}.strip('"')) if ${chacha_nonce} not in ('""', '') else b''))
+            binascii.unhexlify(${chacha_key}.strip('"')) if ${chacha_key} not in ('""', '') else b'',
+            binascii.unhexlify(${chacha_nonce}.strip('"')) if ${chacha_nonce} not in ('""', '') else b'')
 
 documentation: |-
     Keyed GDSS (Gaussian-Distributed Spread-Spectrum) Spreader.
