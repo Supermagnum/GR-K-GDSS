@@ -139,7 +139,12 @@ class LinhtPttMsgSource(gr.basic_block):
     """
 
     def __init__(self, endpoint: str = "ipc:///tmp/linht_ptt"):
-        gr.basic_block.__init__(self, "LinhtPttMsgSource", [], [])
+        gr.basic_block.__init__(
+            self,
+            name="LinhtPttMsgSource",
+            in_sig=None,
+            out_sig=None,
+        )
         self.message_port_register_out(pmt.intern("ptt"))
         if zmq is None:
             print("LinhtPttMsgSource: pyzmq not installed; PTT messages disabled")
@@ -182,7 +187,7 @@ class LinhtRfEventSink(gr.basic_block):
     """Publish short UTF-8 status strings to LinHT ``events`` SUB (flowgraph is publisher)."""
 
     def __init__(self, endpoint: str = "ipc:///tmp/linht_events"):
-        gr.basic_block.__init__(self, "LinhtRfEventSink", [], [])
+        gr.basic_block.__init__(self, name="LinhtRfEventSink", in_sig=None, out_sig=None)
         self.message_port_register_in(pmt.intern("events"))
         self.set_msg_handler(pmt.intern("events"), self._handle)
         if zmq is None:
