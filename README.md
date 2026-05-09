@@ -1121,7 +1121,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`, shared ChaCha20-IETF helper **`lib/chacha_ietf_keystream.h`**; headers in **include/gnuradio/kgdss/**. |
 | **Python helpers** (key derivation, keyring, sync burst, P.372) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`, `p372_baseline.py`, `p372_baseline_config.json`, `p372_receiver_profile.py`; package entry [`python/__init__.py`](python/__init__.py) re-exports the public `gnuradio.kgdss` API. Details in [docs/USAGE.md](docs/USAGE.md). |
 | **GRC block definitions** | **grc/** — `kgdss_spreader_cc.block.yml`, `kgdss_despreader_cc.block.yml`, `kgdss_key_injector.block.yml`. |
-| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_p372_receiver_profile.py`, `test_galdralag_kgdss_compat.py`, `test_gr_linux_crypto_hkdf_compat.py`, `test_cross_layer.py`; optional **C++** Google Test sources under **`tests/cpp/`** (see [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional)). |
+| **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_matched_sequences.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_p372_receiver_profile.py`, `test_galdralag_kgdss_compat.py`, `test_gr_linux_crypto_hkdf_compat.py`, `test_cross_layer.py`; optional **C++** Google Test sources under **`tests/cpp/`** (see [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional)). |
 | **IQ test file generator and analyser** | **tests/generate_iq_test_files.py** (builds 01–13 and metadata), **tests/analyse_iq_files.py** (PASS/FAIL checks), **tests/plot_iq_comparison.py** (plots); see [docs/TESTING.md](docs/TESTING.md). |
 | **Quick test run** | **tests/README.md** — Run commands; keyring/sandbox notes. |
 | **Python bindings** (C++ blocks to Python) | **python/bindings/** — `kgdss_spreader_cc_python.cc`, `kgdss_despreader_cc_python.cc`, `kgdss_python.cc`; expose spreader/despreader and `kgdss_sync_state` to `gnuradio.kgdss`. |
@@ -1160,6 +1160,7 @@ If you want to inspect specific behaviour in code, start with these files and fu
     - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): same keystream primitive per symbol (snapshot/commit pattern); masks match the spreader byte-for-byte for the same key/nonce/counter.
   - **Tests:**
     - [`tests/test_t1_spreader_despreader.py`](tests/test_t1_spreader_despreader.py): `TestT1KeystreamDeterminism`, `TestT1KeySensitivity`, `TestT1WrongKeyDespreader`
+    - [`tests/test_matched_sequences.py`](tests/test_matched_sequences.py): noiseless back-to-back matched spread/despread gives correlation near 1.0 for spreading factors 32, 64, and 256, with errors around ~1e-15, so the ChaCha keystream, Box-Muller step, and matched-filter despreading are aligned end-to-end in that reference (Python reference sharing the C++ ChaCha-IETF byte contract).
     - Optional native suite: **`tests/cpp/`** with **`KGDSS_ENABLE_CRYPTO_TESTS=ON`** (see [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional)).
 
 - **Box-Muller Gaussian masking and statistical properties**
