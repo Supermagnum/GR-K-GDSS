@@ -110,7 +110,7 @@ suite<"KgdssDespreaderCc"> DespreaderSuite = [] {
 
         float err =
             std::abs(outSym[0].real() - sent.real()) + std::abs(outSym[0].imag() - sent.imag());
-        expect(lt(err, 0.2F));
+        expect(lt(err, 1e-4F));
     };
 
     "wrong_key_produces_large_error_vs_sent"_test = [] {
@@ -158,16 +158,16 @@ suite<"KgdssDespreaderCc"> DespreaderSuite = [] {
         expect(gt(bErr, gErr + 1e-2F));
     };
 
-    // Noiseless back-to-back matched ChaCha + Box-Muller + MF despreading
-    // gives coherence ~1.0 (verified in Python reference: max|out-sym| ~1e-15).
-    // Threshold 0.98 allows for float32 pipeline rounding; values 0.85-0.95
-    // would indicate a keystream alignment or metric problem, not ideal recovery.
+    // Noiseless back-to-back matched ChaCha + Box-Muller + MF at zero lag:
+    // corrComplexMag is |Re sum conj(a)*b| / (||a|| ||b||) on aligned vectors ---
+    // should be ~1.0 in float32 (Python float64 reference: coherence ~1, max|out-sym| ~1e-15).
+    // Threshold 0.999 allows float32 accumulation; values near 0.85-0.95 suggest
+    // keystream alignment or metric bugs, not ideal recovery.
     "matched_key_chacha_correlation_stream"_test = [] {
         expect(::sodium_init() >= 0);
-        const int      L  = 128;
-        const int      sf = 64;
-        const float    var = 1.F;
-        auto           iq = pnIq(L, var, 77U);
+        const int   L = 128;
+        const float var = 1.F;
+        auto        iq = pnIq(L, var, 77U);
         std::array<std::uint8_t, 32> key{};
         for (std::size_t i = 0; i < key.size(); ++i) {
             key[i] = static_cast<std::uint8_t>(i + 1U);
@@ -177,36 +177,39 @@ suite<"KgdssDespreaderCc"> DespreaderSuite = [] {
             nonce[i] = static_cast<std::uint8_t>(0x10U + i);
         }
 
-        gnuradio4::kgdss::detail::SpreaderEngine sp;
-        sp.generateSequence(L, var, 1414U);
-        sp.setKeyMaterial(key, nonce);
+        for (int sf : { 32, 64, 256 }) {
+            gnuradio4::kgdss::detail::SpreaderEngine sp;
+            sp.generateSequence(L, var, 1414U);
+            sp.setKeyMaterial(key, nonce);
 
-        gnuradio4::kgdss::detail::DespreaderEngine de;
-        de.configureFromSpreadingSequence(std::span(iq), sf, 0.5F, 3);
-        de.setKeyMaterial(key, nonce);
+            gnuradio4::kgdss::detail::DespreaderEngine de;
+            de.configureFromSpreadingSequence(std::span(iq), sf, 0.5F, 3);
+            de.setKeyMaterial(key, nonce);
 
-        std::vector<std::complex<float>> sent;
-        std::vector<std::complex<float>> got;
-        std::mt19937                     rng(2020U);
-        std::uniform_real_distribution<float> u(-1.F, 1.F);
-        const int nSym = 48;
-        for (int i = 0; i < nSym; ++i) {
-            std::complex<float> sym(u(rng), u(rng));
-            sent.push_back(sym);
-            std::vector<std::complex<float>> sv{ sym };
-            std::vector<std::complex<float>> chips(static_cast<std::size_t>(sf));
-            std::size_t                      w = 0;
-            expect(eq(stN(sp.process(std::span(sv), std::span(chips), sf, var, L, w)),
-                stN(gr::work::Status::OK)));
-            std::vector<std::complex<float>> out(1);
-            std::vector<float>               lk(1), sn(1);
-            int                              used = 0;
-            w                                         = 0;
-            expect(eq(stN(de.process(std::span(chips), std::span(out), std::span(lk), std::span(sn), used, w)),
-                stN(gr::work::Status::OK)));
-            got.push_back(out[0]);
+            std::vector<std::complex<float>> sent;
+            std::vector<std::complex<float>> got;
+            std::mt19937                     rng(2020U);
+            std::uniform_real_distribution<float> u(-1.F, 1.F);
+            const int nSym = 48;
+            for (int i = 0; i < nSym; ++i) {
+                std::complex<float> sym(u(rng), u(rng));
+                sent.push_back(sym);
+                std::vector<std::complex<float>> sv{ sym };
+                std::vector<std::complex<float>> chips(static_cast<std::size_t>(sf));
+                std::size_t                      w = 0;
+                expect(eq(stN(sp.process(std::span(sv), std::span(chips), sf, var, L, w)),
+                    stN(gr::work::Status::OK)));
+                std::vector<std::complex<float>> out(1);
+                std::vector<float>               lk(1), sn(1);
+                int                              used = 0;
+                w                                         = 0;
+                expect(eq(stN(de.process(std::span(chips), std::span(out), std::span(lk), std::span(sn), used, w)),
+                    stN(gr::work::Status::OK)));
+                got.push_back(out[0]);
+            }
+            expect(gt(corrComplexMag(sent, got), 0.999F))
+                << "SF=" << sf << " zero-lag correlation should be near 1.0";
         }
-        expect(gt(corrComplexMag(sent, got), 0.98F));
     };
 
     "wrong_key_chacha_correlation_near_zero"_test = [] {
