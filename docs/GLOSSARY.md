@@ -11,6 +11,7 @@ Definitions of technical terms and acronyms used in the GR-K-GDSS documentation 
 - [Box-Muller transform](#box-muller-transform)
 - [ChaCha20](#chacha20)
 - [Chip / chips per symbol](#chip--chips-per-symbol)
+- [Correlation recovery (symbol recovery)](#correlation-recovery-symbol-recovery)
 - [Covert communications](#covert-communications)
 - [DC spike (SDR hardware)](#dc-spike-sdr-hardware)
 - [Despreader](#despreader)
@@ -61,6 +62,14 @@ In the IQ file analyser, **autocorrelation** is computed on the real (I) compone
 ## Box-Muller transform
 
 A method to convert uniformly distributed random numbers into normally (Gaussian) distributed numbers. GR-K-GDSS uses it to turn the ChaCha20 keystream (uniform bytes) into Gaussian-distributed mask values for the spreader, so the transmitted signal is statistically indistinguishable from Gaussian noise.
+
+Each chip uses two uniforms from eight keystream bytes; the spreader applies `sqrt(variance)` on the radius. Mask I and Q are approximately **Gaussian** (mean 0, std 1 when `variance = 1`). That makes the **spread chip waveform** noise-like in amplitude and supports a **broad, flat spectrum** relative to a narrow unmasked carrier. **Correlation recovery** (below) is the main end-to-end check that Box-Muller masking is aligned on TX and RX. See [KEYSTREAM_CONTRACT.md](KEYSTREAM_CONTRACT.md) Sections 2 and 3.
+
+---
+
+## Correlation recovery (symbol recovery)
+
+**Correlation recovery** measures how well the despreader restores the original **symbol vector** after spreader-to-despreader processing with the **matched** key and nonce. The usual metric is **zero-lag complex coherence** \(\rho = |\mathbf{s}^H \mathbf{o}| / (\|\mathbf{s}\|\|\mathbf{o}\|)\): **1.0** is perfect recovery; **~0.99999** is typical on the float32 GNU Radio blocks (still excellent; small gap from float32 math and `MIN_MASK` clamp). This is **not** output from Box-Muller itself (masks are random Gaussians, not values near 1). High \(\rho\) on a noiseless back-to-back test shows ChaCha20, Box-Muller, clamp rules, and matched-filter despreading are consistent. Measured \(\rho\) and acceptance thresholds: [KEYSTREAM_CONTRACT.md](KEYSTREAM_CONTRACT.md). Distinct from **round-trip Pearson correlation** on offline IQ files (File 04).
 
 ---
 
@@ -188,7 +197,7 @@ Command-line and API interface to the Linux kernel keyring. Used by GR-K-GDSS to
 
 A **round trip** in the test suite is a **consistency check** that runs a **forward** step and a matching **reverse** (or **store** then **load**) and verifies the outcome—typically that original data or key bytes are recovered.
 
-**Keyed GDSS signal path:** Unit tests (e.g. T1 `test_round_trip`, cross-layer full-stack round trip) pass symbols through the **spreader** and then the **despreader** with the same key and nonce. That matches the **logical order of transmit encoding and receive decoding**, but runs **in software** (often one machine, no antenna). It does **not** by itself include RF, propagation, or SDR hardware unless a separate flowgraph or recording adds those. **IQ File 04** analysis uses **round-trip correlation**: despread File 03 with the correct key and compare to the payload reference.
+**Keyed GDSS signal path:** Unit tests (e.g. T1 `test_round_trip`, cross-layer full-stack round trip) pass symbols through the **spreader** and then the **despreader** with the same key and nonce, then check **correlation recovery** (coherence \(\rho \ge 0.99999\) on float32 blocks). That matches the **logical order of transmit encoding and receive decoding**, but runs **in software** (often one machine, no antenna). It does **not** by itself include RF, propagation, or SDR hardware unless a separate flowgraph or recording adds those. **IQ File 04** analysis uses **round-trip Pearson correlation**: despread File 03 with the correct key and compare to the payload reference (related encode-decode check, different metric).
 
 **Keyring:** The keyring **round-trip** test stores derived keys via the kernel keyring and loads them back; that exercises **persistence and retrieval**, not radio.
 

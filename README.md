@@ -13,6 +13,7 @@ The developer used curiosity to piece the suggested improvements in this project
 
 ### Quick links (sections in this README)
 
+- [**Correlation recovery, Box-Muller masking, and noise-like spectrum**](#correlation-recovery-box-muller-masking-and-noise-like-spectrum) — measured \(\rho\), why recovery is ~0.99999 not exactly 1.0, link to full contract
 - [Who built this and why](#who-built-this-and-why)
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
 - [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map)
@@ -39,18 +40,19 @@ The developer used curiosity to piece the suggested improvements in this project
 
 ### Other documentation
 
-12. [Usage](docs/USAGE.md)
-13. [Examples](examples/)
-14. [Testing](docs/TESTING.md)
-15. [Test results](docs/TEST_RESULTS.md)
-16. [Technical terms index](docs/GLOSSARY.md)
-17. [KGDSS preprint](paper/kgdss_paper.tex) ([PDF on GitHub](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf))
-18. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
-19. [Publication and IP Protection](#publication-and-ip-protection)
-20. [Sync Burst Improvements Roadmap](docs/todo.md)
-21. [Extending and debugging without maintainer support](#12-extending-and-debugging-without-maintainer-support)
-22. [GnuPG ECDH key derivation examples](docs/GNUPG_ECDH_KDF_EXAMPLES.md)
-23. [GNU Radio 4.0 (`gnuradio4` branch)](https://github.com/Supermagnum/GR-K-GDSS/tree/gnuradio4) — [port sources under `gnuradio4/`](https://github.com/Supermagnum/GR-K-GDSS/tree/gnuradio4/gnuradio4): header-only C++ blocks, Boost.UT tests, and Python helpers for the GR4 runtime
+12. [**Keystream contract, correlation recovery, Box-Muller**](docs/KEYSTREAM_CONTRACT.md) — ChaCha20-IETF byte alignment, Gaussian masking, **correlation recovery** (\(\rho\)), measured performance tables; see also [section in this README](#correlation-recovery-box-muller-masking-and-noise-like-spectrum)
+13. [Usage](docs/USAGE.md)
+14. [Examples](examples/)
+15. [Testing](docs/TESTING.md)
+16. [Test results](docs/TEST_RESULTS.md)
+17. [Technical terms index](docs/GLOSSARY.md)
+18. [KGDSS preprint](paper/kgdss_paper.tex) ([PDF on GitHub](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf))
+19. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
+20. [Publication and IP Protection](#publication-and-ip-protection)
+21. [Sync Burst Improvements Roadmap](docs/todo.md)
+22. [Extending and debugging without maintainer support](#12-extending-and-debugging-without-maintainer-support)
+23. [GnuPG ECDH key derivation examples](docs/GNUPG_ECDH_KDF_EXAMPLES.md)
+24. [GNU Radio 4.0 (`gnuradio4` branch)](https://github.com/Supermagnum/GR-K-GDSS/tree/gnuradio4) — [port sources under `gnuradio4/`](https://github.com/Supermagnum/GR-K-GDSS/tree/gnuradio4/gnuradio4): header-only C++ blocks, Boost.UT tests, and Python helpers for the GR4 runtime
 
 ---
 
@@ -112,6 +114,51 @@ A moving transmitter denies the adversary the stable baseline they need. If the 
 ### Table 3 and the physics limit
 
 The paper's Table 3 rating of 5/10 for "noise floor" for standard GDSS and 6/10 for keyed GDSS reflects this: it is the hardest column to improve because it is a physics problem, not a cryptography problem. No amount of keying or spreading changes the fact that radio waves carry energy that is measurable if you have a sensitive enough receiver pointed in the right direction.
+
+---
+
+## Correlation recovery, Box-Muller masking, and noise-like spectrum
+
+This section summarizes how the implementation proves that **Box-Muller masking** works and that the spread signal is **noise-like**. Full formulas, byte contract, and regression numbers are in **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)**.
+
+### Box-Muller — what it outputs
+
+For each spread **chip**, eight ChaCha20 keystream bytes become two uniforms in \((0,1)\); **Box-Muller** maps them to **Gaussian I and Q mask** components (mean 0, standard deviation 1 when `variance = 1`). The spreader multiplies each symbol by that complex mask. Box-Muller does **not** output values near 1.0; it outputs random mask amplitudes (often roughly 0.1 to 3 before clamp).
+
+Implementation: [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc) (`box_muller_pair`), [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc) (same angle formula on RX). Masks below **`MIN_MASK = 1e-4`** are clamped on TX and RX.
+
+### Noise-like broad spectrum
+
+Gaussian chip masks make the **spread chip stream** statistically similar to **thermal noise**: flat spectrum relative to a narrow carrier, Gaussian amplitude (kurtosis near 3), low autocorrelation at non-zero lags in IQ analysis. See [Testing](docs/TESTING.md) (T1 Gaussian distribution, IQ files 01/03/09) and [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding) above.
+
+### Correlation recovery — what “~0.99999 instead of 1.0” means
+
+**Correlation recovery** is how well the **despreader restores the original symbols** after a noiseless spreader-to-despreader run with the **same** key and nonce. It is measured by **zero-lag complex coherence** \(\rho\):
+
+\[
+\rho = \frac{|\mathbf{s}^H \mathbf{o}|}{\|\mathbf{s}\|\,\|\mathbf{o}\|}
+\]
+
+| Interpretation | \(\rho\) |
+|----------------|----------|
+| Perfect matched recovery (ideal) | 1.0 |
+| GNU Radio 3 float32 blocks (typical measured) | ~0.99999999999994 |
+| Minimum accepted in T1 tests | **≥ 0.99999** |
+| Wrong key | \(\ll 1\) |
+
+A value such as **0.99999** is **not** a Box-Muller sample; it means symbol recovery is still excellent, with a small gap from **float32** math, **`MIN_MASK` clamp**, and matched-filter summation over many chips per symbol. The Python float64 reference reaches \(\rho \ge 1 - 10^{-12}\) with symbol errors below \(10^{-12}\) ([`tests/test_matched_sequences.py`](tests/test_matched_sequences.py)).
+
+High \(\rho\) on a back-to-back test shows **ChaCha20, Box-Muller, clamp rules, and matched-filter despreading** are aligned on TX and RX. That is the main **performance proof** for the masking chain.
+
+### Where to read measured values
+
+| Document | Contents |
+|----------|----------|
+| **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** | §2 Box-Muller contract; §3 correlation recovery; §5 measured \(\rho\) and acceptance thresholds |
+| **[docs/GLOSSARY.md](docs/GLOSSARY.md)** | [Correlation recovery](docs/GLOSSARY.md#correlation-recovery-symbol-recovery), [Box-Muller](docs/GLOSSARY.md#box-muller-transform) |
+| **[docs/TESTING.md](docs/TESTING.md)** | `TestT1RoundTrip`, `test_matched_key_near_unity_coherence_zero_lag` |
+
+**Code references:** spread/despread blocks in **lib/**; optional stats test `kgdss_test_spreader_stats` when `KGDSS_ENABLE_CRYPTO_TESTS=ON`.
 
 ---
 
@@ -376,7 +423,11 @@ layers operate.
 **What it does:** The modulated signal is spread across a wide bandwidth
 (N=256 spreading factor, approximately 500kHz at typical chip rates) and
 each chip is masked with Gaussian-distributed values derived from the
-session key via ChaCha20 and Box-Muller transform.
+session key via ChaCha20 and Box-Muller transform. **Correlation recovery**
+(\(\rho\) on a noiseless spread/despread round trip) and noise-like spectrum
+behaviour are documented in [Correlation recovery, Box-Muller masking, and
+noise-like spectrum](#correlation-recovery-box-muller-masking-and-noise-like-spectrum)
+and [docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md).
 
 **Security contribution:**
 
@@ -991,10 +1042,18 @@ long-term keys, as described in Section 8.
 
 **Box-Muller statistical properties:**
 ChaCha20 produces uniformly distributed output. Box-Muller converts
-pairs of uniform values into Gaussian-distributed values. Whether the
-resulting output is truly indistinguishable from hardware thermal noise
-under all possible detection methods — including methods not yet
-considered — is an open question.
+pairs of uniform values into Gaussian-distributed mask components (I and Q
+per chip). Those masks make the spread chip stream **noise-like** (broad
+spectrum, Gaussian amplitude statistics). **Correlation recovery** on a
+noiseless spreader-to-despreader round trip measures zero-lag coherence
+\(\rho\) between input symbols and despread output; \(\rho \to 1\) when
+TX and RX masking match (typically \(\rho \ge 0.99999\) on float32 blocks).
+That metric validates Box-Muller alignment end-to-end; it is not a value
+printed by Box-Muller itself. Measured \(\rho\), symbol error, and
+acceptance thresholds: [docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)
+(Sections 2 to 5). Whether the resulting output is truly indistinguishable
+from hardware thermal noise under all possible detection methods —
+including methods not yet considered — is an open question.
 
 **Prior art:**
 It is not known whether cryptographically keyed GDSS masking has been
@@ -1117,7 +1176,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Suites T1, T2, T3, P372 receiver profile, Galdralag/gr-linux-crypto mapping, cross-layer; IQ file generation and analysis. |
 | **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** |
 | **Technical terms index** (glossary of acronyms and terms) | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** |
-| **Keystream contract and verification reference** (ChaCha20-IETF alignment, Box-Muller, MF despread; measured \(\rho\) / correlation tables) | **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** |
+| **Correlation recovery, Box-Muller, noise-like spectrum** (summary in README: [above](#correlation-recovery-box-muller-masking-and-noise-like-spectrum); full contract, measured \(\rho\), §3 correlation recovery) | **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** |
 | **Example flowgraph** (TX with Codec2, ECIES, SOQPSK, GDSS) | **[examples/](examples/)** — `tx_example_kgdss.grc` and verification; see [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md). |
 | **C++ block implementation** (spreader/despreader logic) | **lib/** — `kgdss_spreader_cc_impl.cc`, `kgdss_despreader_cc_impl.cc`, shared ChaCha20-IETF helper **`lib/chacha_ietf_keystream.h`**; headers in **include/gnuradio/kgdss/**. |
 | **Python helpers** (key derivation, keyring, sync burst, P.372) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`, `p372_baseline.py`, `p372_baseline_config.json`, `p372_receiver_profile.py`; package entry [`python/__init__.py`](python/__init__.py) re-exports the public `gnuradio.kgdss` API. Details in [docs/USAGE.md](docs/USAGE.md). |
@@ -1161,7 +1220,7 @@ If you want to inspect specific behaviour in code, start with these files and fu
     - [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc): same keystream primitive per symbol (snapshot/commit pattern); masks match the spreader byte-for-byte for the same key/nonce/counter.
   - **Tests:**
     - [`tests/test_t1_spreader_despreader.py`](tests/test_t1_spreader_despreader.py): `TestT1KeystreamDeterminism`, `TestT1KeySensitivity`, `TestT1WrongKeyDespreader`
-    - [`tests/test_matched_sequences.py`](tests/test_matched_sequences.py): noiseless back-to-back matched spread/despread gives correlation near 1.0 for spreading factors 32, 64, and 256, with errors around ~1e-15, so the ChaCha keystream, Box-Muller step, and matched-filter despreading are aligned end-to-end in that reference (Python reference sharing the C++ ChaCha-IETF byte contract).
+    - [`tests/test_matched_sequences.py`](tests/test_matched_sequences.py): noiseless back-to-back matched spread/despread; **correlation recovery** (zero-lag coherence \(\rho\)) near 1.0 for spreading factors 32, 64, and 256, with symbol errors around ~1e-15 (float64 reference). Validates ChaCha keystream, Box-Muller, and matched-filter despreading. See [docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md#3-correlation-recovery-symbol-recovery).
     - Optional native suite: **`tests/cpp/`** with **`KGDSS_ENABLE_CRYPTO_TESTS=ON`** (see [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional)).
 
 - **Box-Muller Gaussian masking and statistical properties**
@@ -1172,7 +1231,8 @@ If you want to inspect specific behaviour in code, start with these files and fu
   - **Test / simulation code:**
     - [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `_box_muller()`, `_chacha20_gaussian_masks()`
     - [`paper/ber_simulation.py`](paper/ber_simulation.py): `_box_muller_pair()` (Monte Carlo model used for BER figures)
-    - [`docs/TESTING.md`](docs/TESTING.md): `TestT1GaussianDistribution` explains the distribution checks
+    - [`docs/TESTING.md`](docs/TESTING.md): `TestT1GaussianDistribution` (mask distribution); `TestT1RoundTrip` (correlation recovery, \(\rho \ge 0.99999\))
+    - [`docs/KEYSTREAM_CONTRACT.md`](docs/KEYSTREAM_CONTRACT.md): Box-Muller contract, correlation recovery, measured \(\rho\), noise-like spectrum notes
 
 - **Keyed sync-burst masking (Python helper)**
   - **Runtime:** [`python/sync_burst_utils.py`](python/sync_burst_utils.py): **`apply_keyed_gaussian_mask(burst, gdss_key, nonce, ...)`** — use **`gdss_masking`** with **`gdss_sync_burst_nonce(session_id)`** from [`python/session_key_derivation.py`](python/session_key_derivation.py) so the sync keystream does not overlap the data path.

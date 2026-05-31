@@ -1,6 +1,6 @@
 # GDSS masking keystream contract and verification reference
 
-This note is for **third-party transmitters and receivers** that must stay **bit- and numerically compatible** with gr-k-gdss keyed spreader/despreader blocks. It summarizes the **ChaCha20-IETF keystream usage**, **Box-Muller masking**, and **matched-filter despreading**, and records **measured reference correlations** from the project test suite.
+This note is for **third-party transmitters and receivers** that must stay **bit- and numerically compatible** with gr-k-gdss keyed spreader/despreader blocks. It summarizes the **ChaCha20-IETF keystream usage**, **Box-Muller masking**, **matched-filter despreading**, **correlation recovery** (symbol recovery coherence), and **measured reference \(\rho\)** values from the project test suite.
 
 **Authoritative implementation:** [`lib/chacha_ietf_keystream.h`](../lib/chacha_ietf_keystream.h), [`lib/kgdss_spreader_cc_impl.cc`](../lib/kgdss_spreader_cc_impl.cc), [`lib/kgdss_despreader_cc_impl.cc`](../lib/kgdss_despreader_cc_impl.cc). Session material: **`gdss_masking`** (32 bytes) and a **12-byte nonce** from [`python/session_key_derivation.py`](../python/session_key_derivation.py) (e.g. `derive_session_keys`, `gdss_nonce`).
 
@@ -35,9 +35,36 @@ Clamp small mask magnitudes to **`MIN_MASK = 1e-4`** (same rule on both sides) t
 
 Output chip (complex) is **symbol times complex mask** on TX; RX applies the **matched filter** against the **same** mask sequence derived from the same keystream bytes.
 
+**Per-chip mask statistics:** With `variance = 1`, each I and Q mask component is approximately **Gaussian** (mean 0, standard deviation 1). Regression tests (`TestT1GaussianDistribution`, optional `kgdss_test_spreader_stats`) check mean and standard deviation of mask samples. That distribution is what makes the **spread chip stream** look **noise-like** in the time domain and contributes to a **broad, flat spectrum** after spreading (no narrow tonal structure from the mask alone). IQ file analysis in [TESTING.md](TESTING.md) (kurtosis near 3, low autocorrelation at non-zero lags) exercises the same statistical picture on recorded `.cf32` data.
+
 ---
 
-## 3. Verification metrics (definitions)
+## 3. Correlation recovery (symbol recovery)
+
+**Correlation recovery** is the project term for how well the **despreader restores the original symbol vector** after a noiseless spreader-to-despreader chain with the **same** key, nonce, and keystream alignment. It is **not** a number emitted by `box_muller_pair()` (that function outputs **Gaussian mask samples**, typically on the order of 0.1 to 3 in magnitude). Recovery quality is summarized by **zero-lag complex coherence** \(\rho\) (Section 4) and by per-symbol error \(\max_i |o_i - s_i|\).
+
+### What a value near 1.0 means
+
+- **\(\rho = 1\)** (ideal): despread output is a **complex scalar multiple** of the input symbols; the keyed chain is matched end-to-end.
+- **\(\rho \approx 0.99999\)** (typical on the **float32** GNU Radio 3 blocks): still excellent recovery; the gap below 1.0 comes from **float32** arithmetic, **`MIN_MASK` clamp** on tiny Gaussians, **`u1` floored at 1e-10** before `log`, and **matched-filter summation** over many chips per symbol—not from a defective Box-Muller formula.
+- **\(\rho \ll 1\)** with the wrong key: expected; proves masks are key-dependent.
+
+The T1 round-trip tests require \(\rho \ge\) **`0.99999`** (`COHERENCE_ROUNDTRIP_MIN` in [`tests/test_t1_spreader_despreader.py`](../tests/test_t1_spreader_despreader.py)) for the C++ float32 pipeline, plus symbol-wise `allclose` tolerance **`5e-6`**.
+
+### Link to Box-Muller and noise-like spectrum
+
+Correlation recovery validates the **full masking path**, of which Box-Muller is the statistical core:
+
+1. **ChaCha20** delivers uniform bytes; **Box-Muller** turns pairs into **Gaussian I/Q masks** on TX and RX.
+2. If TX and RX disagree on uniforms, angle, variance scaling, or clamp rules, \(\rho\) drops sharply even with the correct key.
+3. High \(\rho\) on a noiseless back-to-back test therefore shows that **Box-Muller masking is implemented consistently** and that **matched-filter despreading** inverts it correctly.
+4. Separately, **Gaussian masks** (and chip-wise multiplication) make the **spread signal** resemble **wideband thermal noise** to passive analysis—see IQ checks (Files 01/03/09) and [GLOSSARY.md](GLOSSARY.md) entries for kurtosis and autocorrelation.
+
+**Do not confuse** correlation recovery (\(\rho\) on **symbols** after spread/despread) with **round-trip Pearson correlation** on offline IQ payloads (File 04 in [TESTING.md](TESTING.md#round-trip-what-it-means)); both are encode-decode checks but use different signals and metrics.
+
+---
+
+## 4. Verification metrics (definitions)
 
 ### Zero-lag complex coherence
 
@@ -61,11 +88,11 @@ normalized by \(\|s\|\|o\|\). With **matched** float32 engines, this stays **abo
 
 ---
 
-## 4. Measured reference values (regression capture)
+## 5. Measured reference values (regression capture)
 
 Values below were obtained in a **Linux x86_64** environment with **Python 3.12**, project **`tests/test_matched_sequences.py`** (libsodium via ctypes, **float64** reference chain), and **GNU Radio 3** Python bindings for the T1-style round trip. They are **not** a cryptographic proof; they are **sanity targets** for independent ports. Small deviations (ULP-level on float64, ~1e-6–1e-7 on float32) may occur on other platforms.
 
-### 4.1 Python float64 reference (`tests/test_matched_sequences.py`)
+### 5.1 Python float64 reference (`tests/test_matched_sequences.py`)
 
 Same inputs as the test: `derive_session_keys(bytes(range(32)))["gdss_masking"]`, `gdss_nonce(1, 0)`, `numpy.random.default_rng(42)`, 400 complex symbols, `variance = 1.0`.
 
@@ -75,22 +102,30 @@ Same inputs as the test: `derive_session_keys(bytes(range(32)))["gdss_masking"]`
 | 64 | 0.99999999999999745 | 1.196e-15 |
 | 256 | 0.99999999999999745 | 2.227e-15 |
 
-### 4.2 GNU Radio 3 bindings (T1-style round trip)
+### 5.2 GNU Radio 3 bindings (T1-style round trip)
 
-`SEQ_LEN=127`, `chips_per_symbol=42`, `VARIANCE=1.0`, `SEED=12345`, same HKDF key/nonce as §4.1, 20 QPSK-style symbols (`numpy` exponential pilot), **`kgdss_spreader_cc` \(\to\) `kgdss_despreader_cc`** (float32 pipeline).
+`SEQ_LEN=127`, `chips_per_symbol=42`, `VARIANCE=1.0`, `SEED=12345`, same HKDF key/nonce as §5.1, 20 QPSK-style symbols (`numpy` exponential pilot), **`kgdss_spreader_cc` \(\to\) `kgdss_despreader_cc`** (float32 pipeline).
 
 | Quantity | Value |
 |----------|------:|
 | Zero-lag coherence \(\rho\) | 0.99999999999994016 |
 | \(\max_i |o_i - s_i|\) | 3.686e-07 |
 
-### 4.3 GNU Radio 4 (branch `gnuradio4`)
+### 5.3 GNU Radio 4 (branch `gnuradio4`)
 
 Boost.UT tests in **`gnuradio4/test/qa_KgdssDespreaderCc.cpp`**: noiseless **`SpreaderEngine` / `DespreaderEngine`** back-to-back for **SF ∈ {32, 64, 256}** assert **`corrComplexMag` > 0.999** (48 symbols per SF, fixed RNG seed in test). Run: build `gnuradio4/` and `ctest -R qa_KgdssDespreaderCc`.
 
+### 5.4 Acceptance thresholds (quick reference)
+
+| Pipeline | Coherence \(\rho\) target | Symbol error (typical) | Test reference |
+|----------|---------------------------|-------------------------|----------------|
+| Python float64 reference | \(\ge 1 - 10^{-12}\) | \(< 10^{-12}\) | `test_matched_key_near_unity_coherence_zero_lag` |
+| GNU Radio 3 float32 blocks | \(\ge 0.99999\) | \(\sim 10^{-7}\) (see §5.2) | `TestT1RoundTrip`, `COHERENCE_ROUNDTRIP_MIN` |
+| GNU Radio 4 engines | `corrComplexMag` \(> 0.999\) | (engine-specific) | `qa_KgdssDespreaderCc.cpp` |
+
 ---
 
-## 5. Related tests and docs
+## 6. Related tests and docs
 
 | Artifact | Role |
 |----------|------|

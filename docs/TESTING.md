@@ -41,7 +41,7 @@ In this project, **round trip** means running a **forward** transform and its ma
 
 **Keyring round trip (T3):** **Store** derived key material in the Linux kernel keyring, **load** it back, and assert the bytes match. That is a round trip in the **key-storage** sense only; it is **not** TX/RX.
 
-**IQ analysis “Round-trip correlation” (File 04):** After generating a keyed transmission (File 03), the pipeline **despreads** with the correct key and checks **Pearson correlation** between the recovered stream and the known payload reference. That is another **encode-then-decode** style check on **offline IQ data**, still without a live RF loop.
+**IQ analysis “Round-trip correlation” (File 04):** After generating a keyed transmission (File 03), the pipeline **despreads** with the correct key and checks **Pearson correlation** between the recovered stream and the known payload reference. That is another **encode-then-decode** style check on **offline IQ data**, still without a live RF loop. Unit tests (T1) use **correlation recovery** (zero-lag coherence \(\rho\) on symbols); definitions and measured \(\rho\) are in [KEYSTREAM_CONTRACT.md](KEYSTREAM_CONTRACT.md#3-correlation-recovery-symbol-recovery).
 
 For a short definition, see [Round trip (testing)](GLOSSARY.md#round-trip-testing) in [GLOSSARY.md](GLOSSARY.md).
 
@@ -160,7 +160,7 @@ These tests exercise the C++ blocks via Python bindings. They ensure the keyed s
 
 | Test | What it does |
 |------|----------------|
-| **TestT1RoundTrip** | Sends known complex symbols through spreader then despreader; checks that the recovered symbols match the input (within tolerance). Validates the full chain with the same key and nonce. |
+| **TestT1RoundTrip** | Sends known complex symbols through spreader then despreader; checks symbol recovery (`allclose`, tol `5e-6`) and **correlation recovery** (zero-lag coherence \(\rho \ge 0.99999`). Validates ChaCha20, Box-Muller masking, and matched-filter despread with the same key and nonce. See [KEYSTREAM_CONTRACT.md](KEYSTREAM_CONTRACT.md#3-correlation-recovery-symbol-recovery). |
 | **TestT1KeystreamDeterminism** | Runs the spreader twice with the same key, nonce, and seed; asserts the spreader output is identical. Ensures the ChaCha20-based keystream is deterministic. |
 | **TestT1KeySensitivity** | Runs the spreader with two different keys; asserts the outputs differ. Ensures a different key produces a different mask. |
 | **TestT1WrongKeyDespreader** | Spreads with key A, despreads with key B; asserts the recovered symbols do not match the input. Ensures the despreader cannot recover data without the correct key. |
