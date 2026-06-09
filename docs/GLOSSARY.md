@@ -219,7 +219,7 @@ The process of deriving multiple subkeys (payload encryption, GDSS masking, sync
 
 ## KL divergence (IQ analysis)
 
-**Kullback-Leibler divergence** measures how much one probability distribution differs from another. In the IQ analyser, KL divergence (I) compares the distribution of the **I (in-phase)** component of File 09 (standard GDSS) with File 03 (keyed GDSS). A low value means the two signals are statistically similar (both look like noise). The test is used to check that standard GDSS and keyed GDSS are hard to tell apart from their I-component histograms alone; PASS indicates the distributions are close enough for the intended comparison.
+**Kullback-Leibler divergence** measures how much one probability distribution differs from another. In the IQ analyser, KL divergence (I) compares the distribution of the **I (in-phase)** component of File 09 (standard GDSS) with File 03 (keyed GDSS). A low value means the two signals are statistically similar (both look like noise). The test passes when KL &lt; 0.2; `analyse_iq_files.py` prints the numeric value after the PASS/FAIL table (e.g. 0.0565 on the reference IQ artefacts).
 
 ---
 

@@ -261,6 +261,8 @@ If the keyring round-trip is skipped with "Permission denied", run `pytest tests
 
 Three scripts in `tests/` generate and validate IQ test files used to check the keyed GDSS blocks statistically. **No IQ files are included in the repository** (generated or recorded); they are too large. Run `generate_iq_test_files.py` locally to create the generated set, and optionally copy a real recording into `tests/iq_files/` as described below. See `.gitignore` for `tests/iq_files/`.
 
+**Recorded metric snapshot (KL divergence, cross-session peaks, round-trip checks, pytest counts):** [README — Key measured numbers](../README.md#key-measured-numbers-quick-reference) and [TEST_RESULTS.md](TEST_RESULTS.md).
+
 ### What IQ files are
 
 **IQ** means in-phase (I) and quadrature (Q): two real signals that together represent a complex baseband (or IF) waveform. Each sample is one complex number: I is the real part, Q the imaginary part. So the waveform is I(t) + j*Q(t). This is the usual format for SDR and GNU Radio: one complex sample per time step.
@@ -307,7 +309,7 @@ All of the above IQ data files (generated 01–07, 09–13 and optional recordin
 ### Scripts
 
 1. **generate_iq_test_files.py** — Builds all test files in `tests/iq_files/`: 01, 01b (realistic noise), 01c (realistic + unkeyed GDSS), 01d (realistic + keyed GDSS), 02–08 as above, plus 09 (standard GDSS transmission), 10a/10b (standard sync bursts), 11a/11b (**keyed scheduled multi-burst** sync waveforms), 12 (standard cross-corr), 13 (keyed cross-corr). The keyed schedule uses Pareto-distributed inter-burst intervals, per-burst PN evolution (`burst_index`), and deterministic log-normal amplitude jitter. On success it prints "VULNERABILITY CONFIRMED" (File 12 peak > 0.5) and "PROTECTION CONFIRMED" (File 13 peak < 0.15), then "Generated all IQ test files in .../tests/iq_files". The 0.15 threshold is for software simulation; in real transmission, channel noise and hardware would push the keyed cross-session peak lower. The improvement ratio is what matters. Requires numpy, scipy, cryptography (and optionally pycryptodome for ChaCha20 IETF).
-2. **analyse_iq_files.py** — Runs statistical checks: same as before on 01–08; on 09 the same eight noise-like tests (with relaxed thresholds for standard GDSS) plus KL divergence vs 03; reads JSON for 12/13 and prints a cross-session correlation summary (Standard GDSS peak, Keyed GDSS peak, improvement ratio). Prints a PASS/FAIL/WARN table and exits with 0 only if no tests fail.
+2. **analyse_iq_files.py** — Runs statistical checks: same as before on 01–08; on 09 the same eight noise-like tests (with relaxed thresholds for standard GDSS) plus KL divergence vs 03; reads JSON for 12/13 and prints numeric summaries for KL divergence (File 09 vs 03, I component) and cross-session correlation (Standard GDSS peak, Keyed GDSS peak, improvement ratio). Prints a PASS/FAIL/WARN table and exits with 0 only if no tests fail.
 3. **plot_iq_comparison.py** — Produces two plots. **iq_comparison.png**: original 3x3 grid (histograms, PSD, autocorrelation for 01, 03, 04, 05, 06). **iq_comparison_vs_standard.png**: 4x3 grid comparing keyed vs standard GDSS (rows 1–2: noise, keyed, standard; row 3: cross-correlation 12 vs 13 and overlay; row 4: despread comparison). Requires matplotlib.
 4. **plot_spectrum_snapshots.py** — Produces spectrum snapshot images (600 kHz bandwidth, Welch PSD, DC bin excluded, Gaussian roll-off): **spectrum_baseline.png** (File 01), **spectrum_standard_gdss.png** (File 09 + File 06), **spectrum_keyed_gdss.png** (File 03), **spectrum_real_noise.png** when File 08 exists (Blackman-Harris), **spectrum_realistic_baseline.png** (File 01b synthetic realistic baseline), **spectrum_realistic_plus_standard_gdss.png** (File 01c), **spectrum_realistic_plus_keyed_gdss.png** (File 01d). Data is resampled from 500 kHz to 600 kHz. A notch at 0 Hz in spectrum displays is caused by the DC blocker in GNU Radio (see [Unexpected PSD finding](#unexpected-psd-finding-row-2-second-plot-standard-gdss-low-frequency-structure)). Requires matplotlib, scipy.
 
@@ -378,6 +380,9 @@ File                                       Test                         Result
 13_keyed_gdss_crosscorr                    Keyed cross-session peak < 0.15 PASS
 --------------------------------------------------------------------------------
 PASSED: 29   FAILED: 0   WARNINGS: 0
+
+=== KL Divergence (File 09 vs 03, I component) ===
+KL divergence:  0.0565  (threshold < 0.2)  PASS
 
 === Cross-Session Sync Burst Correlation ===
 Standard GDSS (sessions A vs B):  1.0000  VULNERABLE

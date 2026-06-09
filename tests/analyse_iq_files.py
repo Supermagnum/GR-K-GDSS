@@ -14,6 +14,7 @@ from scipy import stats
 SAMPLE_RATE = 500_000
 N_SAMPLES = 5_000_000
 SPREADING_N = 256
+KL_DIVERGENCE_THRESHOLD = 0.2
 IQ_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "iq_files")
 
 
@@ -164,6 +165,7 @@ def run_tests():
     # File 09 - same 8 statistical tests as File 03 (relaxed Mean for standard GDSS)
     # Standard GDSS: I = symbol * abs(mask). Tiling payload to n_symbols can bias symbol mean;
     # then E[I] = symbol_mean * E[abs(mask)] ~ 0.01 * 0.8, so allow mean up to 0.01.
+    kl_div = None
     path09 = os.path.join(IQ_DIR, "09_standard_gdss_transmission.cf32")
     if os.path.isfile(path09):
         data = load_cf32(path09)
@@ -210,9 +212,9 @@ def run_tests():
             p09, _ = np.histogram(I09c, bins=bins, density=True)
             p03, _ = np.histogram(I03c, bins=bins, density=True)
             p09, p03 = p09 + 1e-10, p03 + 1e-10
-            kl = stats.entropy(p09, p03)
-            # Standard (abs mask) vs keyed (signed mask) differ in shape; allow KL up to 0.2
-            kl_ok = kl < 0.2
+            kl_div = stats.entropy(p09, p03)
+            # Standard (abs mask) vs keyed (signed mask) differ in shape; allow KL up to threshold
+            kl_ok = kl_div < KL_DIVERGENCE_THRESHOLD
             results.append(("09_vs_03", "KL divergence (I)", "PASS" if kl_ok else "FAIL"))
             if kl_ok: passed += 1
             else: failed += 1
@@ -251,6 +253,14 @@ def run_tests():
         print(f"{name:<42} {test:<28} {result:<8}")
     print("-" * 80)
     print(f"PASSED: {passed}   FAILED: {failed}   WARNINGS: {warnings}")
+    if kl_div is not None:
+        kl_ok = kl_div < KL_DIVERGENCE_THRESHOLD
+        print("\n=== KL Divergence (File 09 vs 03, I component) ===")
+        print(
+            "KL divergence:  {:.4f}  (threshold < {:.1f})  {}".format(
+                kl_div, KL_DIVERGENCE_THRESHOLD, "PASS" if kl_ok else "FAIL"
+            )
+        )
     if peak_std is not None or peak_keyed is not None:
         print("\n=== Cross-Session Sync Burst Correlation ===")
         print("Standard GDSS (sessions A vs B):  {:.4f}  VULNERABLE".format(peak_std if peak_std is not None else float("nan")))

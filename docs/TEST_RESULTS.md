@@ -9,13 +9,15 @@ This document records snapshot results from the gr-k-gdss test suite. For how to
 - **T4 counter-overflow/re-key recovery:** 2 passed (`tests/test_t4_counter_overflow.py`).
 - **T5 Pedestrian-B strict timing capability:** 11 passed, 2 xpassed (`tests/test_t5_pedestrian_b_timing.py`). The previous 13 xfail markers were retired after the despreader gained matched-filter despreading, decision-directed channel equalization, and an MF-power peak-tracking timing loop (opt-in via `set_channel_equalization(True)`).
 - **C++ crypto tests (optional):** 2 passed with **`KGDSS_ENABLE_CRYPTO_TESTS=ON`** (`kgdss_test_chacha_keystream`, `kgdss_test_spreader_stats`) under `ctest -R 'kgdss_test_'`. See [TESTING.md](TESTING.md#c-crypto-tests-optional).
-- **IQ file analysis:** 29 passed, 0 failed, 0 warnings (unchanged methodology). Cross-session: Standard GDSS 1.0000 (VULNERABLE), Keyed GDSS 0.1028 (PROTECTED), 9.7x reduction. Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
+- **IQ file analysis:** 29 passed, 0 failed, 0 warnings (unchanged methodology). KL divergence (I, File 09 vs 03): **0.0565** (threshold &lt; 0.2). Cross-session: Standard GDSS **1.0000** (VULNERABLE), Keyed GDSS **0.1028** (PROTECTED), **9.7×** reduction. Summary table: [README — Key measured numbers](../README.md#key-measured-numbers-quick-reference). Plots: `tests/iq_files/iq_comparison.png`, `tests/iq_files/iq_comparison_vs_standard.png`; spectrum snapshots (600 kHz): `tests/iq_files/spectrum_baseline.png`, `tests/iq_files/spectrum_realistic_baseline.png`, `tests/iq_files/spectrum_standard_gdss.png`, `tests/iq_files/spectrum_keyed_gdss.png`, `tests/iq_files/spectrum_real_noise.png`, `tests/iq_files/spectrum_realistic_plus_standard_gdss.png`, `tests/iq_files/spectrum_realistic_plus_keyed_gdss.png`.
 - **Preprint BER / channel simulations (not pytest):** Statistical Monte Carlo figures for [Section 7](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.tex) live under `paper/figures/` (`fig7_awgn_ber.png` through `fig10_ldpc.png`). Regenerate via [paper/README.md](../paper/README.md) (`ber_simulation.py`, `gen_figures.py`). See [Preprint BER and ITU/STANAG-style channel figures](#preprint-ber-and-itustanag-style-channel-figures) below.
 
 ---
 
 ## Table of Contents
 
+- [Key measured numbers (README quick reference)](../README.md#key-measured-numbers-quick-reference)
+- [Where key functions are implemented (quick code map)](../README.md#where-key-functions-are-implemented-quick-code-map) — [IQ analysis metrics (code + tests)](../README.md#iq-analysis-metrics-and-recorded-numbers-code--tests)
 - [Unit tests (pytest)](#unit-tests-pytest)
 - [Round trip (what it means)](#round-trip-what-it-means)
 - [IQ test file generation](#iq-test-file-generation)
@@ -153,13 +155,16 @@ File                                       Test                         Result
 --------------------------------------------------------------------------------
 PASSED: 29   FAILED: 0   WARNINGS: 0
 
+=== KL Divergence (File 09 vs 03, I component) ===
+KL divergence:  0.0565  (threshold < 0.2)  PASS
+
 === Cross-Session Sync Burst Correlation ===
 Standard GDSS (sessions A vs B):  1.0000  VULNERABLE
 Keyed GDSS    (sessions A vs B):  0.1028  PROTECTED
 Improvement:  9.7x reduction in cross-session correlation
 ```
 
-**Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03; correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.1028 PROTECTED, 9.7x improvement. The keyed residual (e.g. ~0.10) is a simulation artifact; in a real channel it would be lower and is not considered exploitable (see [TESTING.md](TESTING.md)).
+**Summary:** 29 passed, 0 failed, 0 warnings. Keyed GDSS (03) matches the noise baseline (01) on all metrics; standard GDSS (09) passes all noise-like tests and KL divergence vs 03 (0.0565, threshold 0.2); correct-key despread (04) and key isolation (05) pass; Keyed cross-session peak < 0.15 PASS. Cross-session correlation: Standard 1.0 VULNERABLE, Keyed 0.1028 PROTECTED, 9.7x improvement. The keyed residual (e.g. ~0.10) is a simulation artifact; in a real channel it would be lower and is not considered exploitable (see [TESTING.md](TESTING.md)).
 
 #### Explanation of analysis tests
 
@@ -170,7 +175,7 @@ Improvement:  9.7x reduction in cross-session correlation
 | **Kurtosis (I)** / **Kurtosis (Q)** | Peakedness of the I or Q distribution vs Gaussian (expected ~3). PASS: value in range ~2.7–3.3 so the signal looks Gaussian. See [Kurtosis (IQ analysis)](GLOSSARY.md#kurtosis-iq-analysis). |
 | **Skewness (I)** / **Skewness (Q)** | Asymmetry of the I or Q distribution (0 = symmetric). PASS: |skewness| < 0.1. See [Skewness (IQ analysis)](GLOSSARY.md#skewness-iq-analysis). |
 | **Autocorrelation** | Normalized correlation of the I component with itself at lags 1–100. PASS: no significant correlation (signal looks uncorrelated like noise). See [Autocorrelation (IQ analysis)](GLOSSARY.md#autocorrelation-iq-analysis). |
-| **KL divergence (I)** | Compares the I-component distribution of File 09 (standard GDSS) with File 03 (keyed GDSS). PASS: distributions are close (both noise-like). See [KL divergence (IQ analysis)](GLOSSARY.md#kl-divergence-iq-analysis). |
+| **KL divergence (I)** | Compares the I-component distribution of File 09 (standard GDSS) with File 03 (keyed GDSS). PASS: KL &lt; 0.2 (distributions close; both noise-like). Example: 0.0565. See [KL divergence (IQ analysis)](GLOSSARY.md#kl-divergence-iq-analysis). |
 | **Round-trip correlation** (File 04) | Despreads the keyed transmission (File 03) with the **correct** key and nonce, then measures Pearson correlation against the known payload reference. PASS: correlation above threshold (e.g. > 0.95)—an **encode-then-decode** check on generated IQ data, **not** a live RF TX/RX loop. See [Round trip (what it means)](TESTING.md#round-trip-what-it-means) and [Round trip (testing)](GLOSSARY.md#round-trip-testing). |
 
 ### IQ comparison plots

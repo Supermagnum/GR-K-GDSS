@@ -13,6 +13,8 @@ The developer used curiosity to piece the suggested improvements in this project
 
 ### Quick links (sections in this README)
 
+- [**Key measured numbers (quick reference)**](#key-measured-numbers-quick-reference) — KL divergence, cross-session correlation, round-trip \(\rho\), pytest/IQ pass counts; **Code / test** column links to generator, analyser, and pytest files
+- [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map) — includes [IQ analysis metrics (code + tests)](#iq-analysis-metrics-and-recorded-numbers-code--tests)
 - [**Correlation recovery, Box-Muller masking, and noise-like spectrum**](#correlation-recovery-box-muller-masking-and-noise-like-spectrum) — measured \(\rho\), why recovery is ~0.99999 not exactly 1.0, link to full contract
 - [Who built this and why](#who-built-this-and-why)
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
@@ -44,7 +46,7 @@ The developer used curiosity to piece the suggested improvements in this project
 13. [Usage](docs/USAGE.md)
 14. [Examples](examples/)
 15. [Testing](docs/TESTING.md)
-16. [Test results](docs/TEST_RESULTS.md)
+16. [Test results](docs/TEST_RESULTS.md) — full logs; **key numbers summarized in README: [Key measured numbers](#key-measured-numbers-quick-reference)**
 17. [Technical terms index](docs/GLOSSARY.md)
 18. [KGDSS preprint](paper/kgdss_paper.tex) ([PDF on GitHub](https://github.com/Supermagnum/GR-K-GDSS/blob/main/paper/kgdss_paper.pdf))
 19. [Available APIs (gr-linux-crypto)](#available-apis-gr-linux-crypto)
@@ -152,13 +154,69 @@ High \(\rho\) on a back-to-back test shows **ChaCha20, Box-Muller, clamp rules, 
 
 ### Where to read measured values
 
+Full IQ and pytest snapshot: **[Key measured numbers (quick reference)](#key-measured-numbers-quick-reference)** in this README and **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)**.
+
 | Document | Contents |
 |----------|----------|
+| **[Key measured numbers](#key-measured-numbers-quick-reference)** (this README) | KL divergence, cross-session correlation, round-trip checks, pytest counts |
 | **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** | §2 Box-Muller contract; §3 correlation recovery; §5 measured \(\rho\) and acceptance thresholds |
-| **[docs/GLOSSARY.md](docs/GLOSSARY.md)** | [Correlation recovery](docs/GLOSSARY.md#correlation-recovery-symbol-recovery), [Box-Muller](docs/GLOSSARY.md#box-muller-transform) |
+| **[docs/GLOSSARY.md](docs/GLOSSARY.md)** | [Correlation recovery](docs/GLOSSARY.md#correlation-recovery-symbol-recovery), [Box-Muller](docs/GLOSSARY.md#box-muller-transform), [KL divergence](docs/GLOSSARY.md#kl-divergence-iq-analysis) |
 | **[docs/TESTING.md](docs/TESTING.md)** | `TestT1RoundTrip`, `test_matched_key_near_unity_coherence_zero_lag` |
 
 **Code references:** spread/despread blocks in **lib/**; optional stats test `kgdss_test_spreader_stats` when `KGDSS_ENABLE_CRYPTO_TESTS=ON`.
+
+See also **[Key measured numbers (quick reference)](#key-measured-numbers-quick-reference)** below for IQ analysis metrics (KL divergence, cross-session correlation, round-trip checks) in one table.
+
+---
+
+## Key measured numbers (quick reference)
+
+Recorded snapshot values from the test suite (**18 April 2026**). Regenerate IQ artefacts with `python3 tests/generate_iq_test_files.py` and re-run `python3 tests/analyse_iq_files.py` after changing the spreader, mask, or generator; update **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** when refreshing the snapshot.
+
+### Symbol recovery (spread then despread, same key/nonce)
+
+| Metric | Recorded value | Pass threshold | Code / test |
+|--------|----------------|----------------|-------------|
+| Zero-lag coherence \(\rho\) (GNU Radio float32 blocks) | ~0.99999999999994 typical | **≥ 0.99999** (T1) | [`tests/test_t1_spreader_despreader.py`](tests/test_t1_spreader_despreader.py): `COHERENCE_ROUNDTRIP_MIN`, `_coherence_zero_lag()`, `TestT1RoundTrip.test_round_trip`; [`lib/kgdss_spreader_cc_impl.cc`](lib/kgdss_spreader_cc_impl.cc) / [`lib/kgdss_despreader_cc_impl.cc`](lib/kgdss_despreader_cc_impl.cc) |
+| Python float64 reference | \(\rho \ge 1 - 10^{-12}\) | symbol error &lt; \(10^{-12}\) | [`tests/test_matched_sequences.py`](tests/test_matched_sequences.py): `_coherence_zero_lag()`, `test_matched_key_near_unity_coherence_zero_lag` |
+| Wrong key | \(\rho \ll 1\) | — | [`tests/test_t1_spreader_despreader.py`](tests/test_t1_spreader_despreader.py): `TestT1WrongKeyDespreader`, `TestT1KeySensitivity` |
+
+### IQ file analysis (`tests/analyse_iq_files.py`)
+
+| Metric | Recorded value | Pass threshold | Code / test |
+|--------|----------------|----------------|-------------|
+| **KL divergence (I)** — File 09 vs 03 | **0.0565** | **&lt; 0.2** | [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py): `KL_DIVERGENCE_THRESHOLD`, `stats.entropy()` on I histograms (~lines 203–218); inputs from [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py) Files **03** and **09** |
+| Cross-session sync burst — Standard GDSS | **1.0000** | (no pass; baseline) | [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): File **12** cross-corr of **10a** vs **10b** (`peak12`, JSON `peak_correlation`); read by [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py) from `12_standard_gdss_crosscorr_A_vs_B.json` |
+| Cross-session sync burst — Keyed GDSS | **0.1028** | **&lt; 0.15** | [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): File **13** cross-corr of **11a** vs **11b** (`peak13`, assert `peak13 < 0.15`); read by [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py) from `13_keyed_gdss_crosscorr_A_vs_B.json` |
+| Cross-session improvement ratio | **9.7×** | — | [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py): `peak_std / peak_keyed` in printed summary |
+| Round-trip correlation (File 04, correct key) | **1.0** | **&gt; 0.95** | [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `corr4` → `04_keyed_gdss_despread_correct_key.json`; checked in [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py) (`pearson_correlation_vs_payload > 0.95`) |
+| Key isolation (File 05, wrong key) | **≈ 0** (\|r\| &lt; 0.004) | **\|r\| &lt; 0.05** | [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `corr5` → `05_keyed_gdss_despread_wrong_key.json`; checked in [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py) |
+| IQ statistical checks (01/03/09 + JSON) | **29 passed** | 0 failed | [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py): `run_tests()` — mean, variance symmetry, kurtosis, skewness, autocorrelation loops on Files **01**, **03**, **09** |
+
+The keyed cross-session residual (~0.10 in the snapshot) is a **simulation artefact**; in a real channel it is expected to be lower and is not treated as exploitable ([TESTING.md](docs/TESTING.md)).
+
+**Run commands:** `python3 tests/generate_iq_test_files.py` then `python3 tests/analyse_iq_files.py` (prints KL and cross-session numbers after the PASS/FAIL table).
+
+### Unit tests and optional C++ checks
+
+| Suite | Recorded result | Code / test |
+|-------|-----------------|-------------|
+| **pytest** (`pytest tests/ -v`) | **106 passed**, 1 skipped, 2 xpassed (109 collected) | **`tests/test_*.py`** — inventory in [TESTING.md](docs/TESTING.md); full log in [TEST_RESULTS.md](docs/TEST_RESULTS.md) |
+| ITU channel models (`test_t2_channel_models.py`) | 42 passed | [`tests/test_t2_channel_models.py`](tests/test_t2_channel_models.py) |
+| T4 counter overflow | 2 passed | [`tests/test_t4_counter_overflow.py`](tests/test_t4_counter_overflow.py) |
+| T5 Pedestrian-B timing | 11 passed, 2 xpassed | [`tests/test_t5_pedestrian_b_timing.py`](tests/test_t5_pedestrian_b_timing.py) |
+| C++ crypto (`KGDSS_ENABLE_CRYPTO_TESTS=ON`) | 2 passed | [`tests/cpp/test_chacha_keystream.cpp`](tests/cpp/test_chacha_keystream.cpp), [`tests/cpp/test_spreader_work_stats.cpp`](tests/cpp/test_spreader_work_stats.cpp) |
+
+### Where to read more
+
+| Document | Contents |
+|----------|----------|
+| **[Key measured numbers — Code / test column](#key-measured-numbers-quick-reference)** (this README) | Each metric linked to generator, analyser, or pytest file |
+| **[IQ analysis metrics (code map)](#iq-analysis-metrics-and-recorded-numbers-code--tests)** (this README) | Full walkthrough of `generate_iq_test_files.py`, `analyse_iq_files.py`, and related tests |
+| **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** | Full pytest log shape, verbatim IQ analyser output, plot paths, BER figure regeneration |
+| **[docs/TESTING.md](docs/TESTING.md)** | How to run each suite; IQ file generation and analysis |
+| **[docs/GLOSSARY.md](docs/GLOSSARY.md)** | Definitions (KL divergence, round trip, autocorrelation, …) |
+| **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** | Box-Muller byte contract; measured \(\rho\) tables |
 
 ---
 
@@ -576,7 +634,7 @@ All ratings are on a scale of 0–10. They assume correct implementation,
 appropriate operational discipline, and moving operators with minimum
 traffic. They do not represent a formal security evaluation.
 
-**Delta** in the tables below is the difference (Keyed GDSS minus Standard GDSS). A positive delta means keyed GDSS scores higher on that aspect; zero means no change. The comparison is supported by the [IQ file analysis](docs/TESTING.md#iq-test-file-generation-and-analysis): cross-session sync burst correlation shows roughly 9x lower correlation for keyed GDSS than for standard GDSS, and keyed GDSS output passes the same noise-like statistical tests as synthetic Gaussian noise. The small residual cross-session correlation (~0.11) seen in keyed GDSS in the test suite is a simulation artifact; in a real channel it would be lower and is not considered exploitable.
+**Delta** in the tables below is the difference (Keyed GDSS minus Standard GDSS). A positive delta means keyed GDSS scores higher on that aspect; zero means no change. The comparison is supported by the [IQ file analysis](docs/TESTING.md#iq-test-file-generation-and-analysis) and the recorded metrics in **[Key measured numbers](#key-measured-numbers-quick-reference)**: cross-session sync burst correlation **1.0000** (standard) vs **0.1028** (keyed), **9.7×** reduction; **KL divergence (I) 0.0565** (threshold &lt; 0.2); keyed GDSS output passes the same noise-like statistical tests as synthetic Gaussian noise. The small residual cross-session correlation (~0.10) seen in keyed GDSS in the test suite is a simulation artifact; in a real channel it would be lower and is not considered exploitable.
 
 ### Detection Resistance
 
@@ -1174,7 +1232,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 |---------------|-------------|
 | **Block API and Python helpers** (spreader, despreader, key injector; session key derivation, sync burst functions) | **[docs/USAGE.md](docs/USAGE.md)** — Block I/O and parameters, helper function reference, gr-linux-crypto/SOQPSK wiring, multi-burst sync schedule and P.372 receiver PSD notes. |
 | **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Suites T1, T2, T3, P372 receiver profile, Galdralag/gr-linux-crypto mapping, cross-layer; IQ file generation and analysis. |
-| **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** |
+| **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — full logs; values + code pointers: [Key measured numbers](#key-measured-numbers-quick-reference), [IQ analysis metrics (code map)](#iq-analysis-metrics-and-recorded-numbers-code--tests) |
 | **Technical terms index** (glossary of acronyms and terms) | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** |
 | **Correlation recovery, Box-Muller, noise-like spectrum** (summary in README: [above](#correlation-recovery-box-muller-masking-and-noise-like-spectrum); full contract, measured \(\rho\), §3 correlation recovery) | **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** |
 | **Example flowgraph** (TX with Codec2, ECIES, SOQPSK, GDSS) | **[examples/](examples/)** — `tx_example_kgdss.grc` and verification; see [examples/VERIFICATION_REPORT.md](examples/VERIFICATION_REPORT.md). |
@@ -1189,7 +1247,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 
 ### Where key functions are implemented (quick code map)
 
-If you want to inspect specific behaviour in code, start with these files and functions:
+If you want to inspect specific behaviour in code, start with these files and functions. **Recorded metric values** (KL divergence, cross-session peaks, pytest counts) are summarized in **[Key measured numbers](#key-measured-numbers-quick-reference)**; the **IQ analysis metrics** entry below maps each metric to generator, analyser, and test code.
 
 - **HKDF key derivation, keyring, nonces, and Galdralag mapping**
   - **Runtime code (gr-k-gdss session path):**
@@ -1233,6 +1291,15 @@ If you want to inspect specific behaviour in code, start with these files and fu
     - [`paper/ber_simulation.py`](paper/ber_simulation.py): `_box_muller_pair()` (Monte Carlo model used for BER figures)
     - [`docs/TESTING.md`](docs/TESTING.md): `TestT1GaussianDistribution` (mask distribution); `TestT1RoundTrip` (correlation recovery, \(\rho \ge 0.99999\))
     - [`docs/KEYSTREAM_CONTRACT.md`](docs/KEYSTREAM_CONTRACT.md): Box-Muller contract, correlation recovery, measured \(\rho\), noise-like spectrum notes
+
+#### IQ analysis metrics and recorded numbers (code + tests)
+
+Snapshot values: [Key measured numbers (quick reference)](#key-measured-numbers-quick-reference); verbatim output in [docs/TEST_RESULTS.md](docs/TEST_RESULTS.md).
+
+- **Generate IQ artefacts and write metric JSON:** [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py) builds Files **01–13**; **`corr4`** / **`corr5`** (round-trip and wrong-key, ~571–592) → `04_*.json`, `05_*.json`; **`peak12`** / **`peak13`** (cross-session sync, ~846–889) → `12_*.json`, `13_*.json`; File **09** standard vs File **03** keyed transmission (~539–725).
+- **Run PASS/FAIL checks and print KL / cross-session numbers:** [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py) — `run_tests()`; noise-like stats on **01**, **03**, **09**; **`KL_DIVERGENCE_THRESHOLD`** and `stats.entropy()` for **09 vs 03**; reads **`peak_correlation`** from JSON **12**/**13**; prints summary after the table.
+- **Visual confirmation:** [`tests/plot_iq_comparison.py`](tests/plot_iq_comparison.py) — cross-session overlay (row 3) uses Files **12**/**13**.
+- **Live block round-trip (separate from IQ File 04):** [`tests/test_t1_spreader_despreader.py`](tests/test_t1_spreader_despreader.py) (`TestT1RoundTrip`, `COHERENCE_ROUNDTRIP_MIN = 0.99999`); [`tests/test_matched_sequences.py`](tests/test_matched_sequences.py) (float64 \(\rho\)); [`tests/test_cross_layer.py`](tests/test_cross_layer.py) (full-stack round trip).
 
 - **Keyed sync-burst masking (Python helper)**
   - **Runtime:** [`python/sync_burst_utils.py`](python/sync_burst_utils.py): **`apply_keyed_gaussian_mask(burst, gdss_key, nonce, ...)`** — use **`gdss_masking`** with **`gdss_sync_burst_nonce(session_id)`** from [`python/session_key_derivation.py`](python/session_key_derivation.py) so the sync keystream does not overlap the data path.
@@ -1400,8 +1467,8 @@ export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 pytest tests/ -v
 ```
 
-- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results. A recent full-environment run (GNU Radio, gr-linux-crypto with **galdralag_session_kdf**, `keyctl` for keyring tests) reported **48 passed, 1 skipped**; without Galdralag KDF, four mapping tests skip; without `keyctl`, the keyring round-trip skips. With **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**, `ctest` also runs **`kgdss_test_chacha_keystream`** and **`kgdss_test_spreader_stats`** (see [C++ crypto tests](docs/TESTING.md#c-crypto-tests-optional)).
-- **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — Recorded pytest and IQ file analysis snapshot (update when you refresh results; IQ checks remain **29** unless the IQ suite changes).
+- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results. A recent full-environment run (GNU Radio, gr-linux-crypto with **galdralag_session_kdf**, `keyctl` for keyring tests) reported **48 passed, 1 skipped**; without Galdralag KDF, four mapping tests skip; without `keyctl`, the keyring round-trip skips. With **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**, `ctest` also runs **`kgdss_test_chacha_keystream`** and **`kgdss_test_spreader_stats`** (see [C++ crypto tests](docs/TESTING.md#c-crypto-tests-optional)). **Recorded snapshot (April 2026):** see [Key measured numbers](#key-measured-numbers-quick-reference) (**106** pytest passed; IQ **29** checks; KL **0.0565**; cross-session **1.0000** / **0.1028**).
+- **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — Verbatim pytest and IQ analyser output (update when you refresh results). One-page summary: [Key measured numbers](#key-measured-numbers-quick-reference).
 - **tests/README.md** — Quick run instructions and per-suite notes; keyring round-trip is skipped if the Linux kernel keyring or `keyctl` is not available.
 
 ## 12. Extending and debugging without maintainer support
