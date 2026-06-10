@@ -18,8 +18,6 @@ The developer used curiosity to piece the suggested improvements in this project
 - [**Correlation recovery, Box-Muller masking, and noise-like spectrum**](#correlation-recovery-box-muller-masking-and-noise-like-spectrum) — measured \(\rho\), why recovery is ~0.99999 not exactly 1.0, link to full contract
 - [Who built this and why](#who-built-this-and-why)
 - [Power level, noise floor, and direction finding](#power-level-noise-floor-and-direction-finding)
-- [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map)
-- [Extending and debugging without maintainer support](#12-extending-and-debugging-without-maintainer-support)
 - [Hardware Security Module — Current Limitations and Future Direction](#hardware-security-module--current-limitations-and-future-direction)
 - [Active zeroisation, power-loss resume, and threat model](#active-zeroisation-power-loss-resume-and-threat-model)
 - [Hardware Security Token Platform](#hardware-security-token-platform)
@@ -154,18 +152,9 @@ High \(\rho\) on a back-to-back test shows **ChaCha20, Box-Muller, clamp rules, 
 
 ### Where to read measured values
 
-Full IQ and pytest snapshot: **[Key measured numbers (quick reference)](#key-measured-numbers-quick-reference)** in this README and **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)**.
-
-| Document | Contents |
-|----------|----------|
-| **[Key measured numbers](#key-measured-numbers-quick-reference)** (this README) | KL divergence, cross-session correlation, round-trip checks, pytest counts |
-| **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** | §2 Box-Muller contract; §3 correlation recovery; §5 measured \(\rho\) and acceptance thresholds |
-| **[docs/GLOSSARY.md](docs/GLOSSARY.md)** | [Correlation recovery](docs/GLOSSARY.md#correlation-recovery-symbol-recovery), [Box-Muller](docs/GLOSSARY.md#box-muller-transform), [KL divergence](docs/GLOSSARY.md#kl-divergence-iq-analysis) |
-| **[docs/TESTING.md](docs/TESTING.md)** | `TestT1RoundTrip`, `test_matched_key_near_unity_coherence_zero_lag` |
+Full IQ and pytest snapshot: **[Key measured numbers (quick reference)](#key-measured-numbers-quick-reference)** in this README and **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)**. Further links (KEYSTREAM_CONTRACT, GLOSSARY, TESTING, IQ code map): [Where to read more](#where-to-read-more).
 
 **Code references:** spread/despread blocks in **lib/**; optional stats test `kgdss_test_spreader_stats` when `KGDSS_ENABLE_CRYPTO_TESTS=ON`.
-
-See also **[Key measured numbers (quick reference)](#key-measured-numbers-quick-reference)** below for IQ analysis metrics (KL divergence, cross-session correlation, round-trip checks) in one table.
 
 ---
 
@@ -214,9 +203,9 @@ The keyed cross-session residual (~0.10 in the snapshot) is a **simulation artef
 | **[Key measured numbers — Code / test column](#key-measured-numbers-quick-reference)** (this README) | Each metric linked to generator, analyser, or pytest file |
 | **[IQ analysis metrics (code map)](#iq-analysis-metrics-and-recorded-numbers-code--tests)** (this README) | Full walkthrough of `generate_iq_test_files.py`, `analyse_iq_files.py`, and related tests |
 | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** | Full pytest log shape, verbatim IQ analyser output, plot paths, BER figure regeneration |
-| **[docs/TESTING.md](docs/TESTING.md)** | How to run each suite; IQ file generation and analysis |
-| **[docs/GLOSSARY.md](docs/GLOSSARY.md)** | Definitions (KL divergence, round trip, autocorrelation, …) |
-| **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** | Box-Muller byte contract; measured \(\rho\) tables |
+| **[docs/TESTING.md](docs/TESTING.md)** | How to run each suite; IQ file generation and analysis; `TestT1RoundTrip`, `test_matched_key_near_unity_coherence_zero_lag` |
+| **[docs/GLOSSARY.md](docs/GLOSSARY.md)** | [Correlation recovery](docs/GLOSSARY.md#correlation-recovery-symbol-recovery), [Box-Muller](docs/GLOSSARY.md#box-muller-transform), [KL divergence](docs/GLOSSARY.md#kl-divergence-iq-analysis), and related terms |
+| **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** | §2 Box-Muller contract; §3 correlation recovery; §5 measured \(\rho\) tables |
 
 ---
 
