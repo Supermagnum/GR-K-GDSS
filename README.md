@@ -441,6 +441,11 @@ implement the following (see also the code map later in this README):
   `apply_keyed_gaussian_mask` and `gdss_sync_burst_nonce(session_id)` so the
   sync burst does not stand out statistically from the masked waveform.
 
+**Planned enhancements** (real-time noise-floor measurement, local SQLite
+history, GPS-assisted dual-site exchange, and related open questions) are
+tracked in **[docs/todo.md](docs/todo.md)** — Priority 1 items there match
+the multi-burst helpers above; Priorities 2–4 describe remaining work.
+
 ---
 
 ## 6. All Layers of Security
@@ -1077,6 +1082,10 @@ The following questions have not been answered by expert review and
 represent areas where the theoretical reasoning may be incomplete or
 incorrect:
 
+Sync-burst **implementation roadmap** (completed multi-burst cadence;
+planned Priorities 2–4; scheduler and mimicry open questions):
+**[docs/todo.md](docs/todo.md)**.
+
 **Forward secrecy:**
 This design uses static long-term GnuPG keys and does not implement
 cryptographic forward secrecy. An adversary who records all radio
@@ -1220,6 +1229,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | What you need | Where it is |
 |---------------|-------------|
 | **Block API and Python helpers** (spreader, despreader, key injector; session key derivation, sync burst functions) | **[docs/USAGE.md](docs/USAGE.md)** — Block I/O and parameters, helper function reference, gr-linux-crypto/SOQPSK wiring, multi-burst sync schedule and P.372 receiver PSD notes. |
+| **Sync burst improvements roadmap** (Priority 1 done; Priorities 2–4 and open questions) | **[docs/todo.md](docs/todo.md)** — real-time noise-floor measurement, SQLite history, GPS dual-site exchange, scheduler design questions. |
 | **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Suites T1, T2, T3, P372 receiver profile, Galdralag/gr-linux-crypto mapping, cross-layer; IQ file generation and analysis. |
 | **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — full logs; values + code pointers: [Key measured numbers](#key-measured-numbers-quick-reference), [IQ analysis metrics (code map)](#iq-analysis-metrics-and-recorded-numbers-code--tests) |
 | **Technical terms index** (glossary of acronyms and terms) | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** |
