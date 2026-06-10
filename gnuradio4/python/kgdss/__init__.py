@@ -76,13 +76,6 @@ except ImportError:
     kgdss_despreader_cc = None
     kgdss_sync_state = None
 
-try:
-    from .linht_bridge import LinhtBridge, LinhtPttMsgSource, LinhtRfEventSink
-except ImportError:
-    LinhtBridge = None
-    LinhtPttMsgSource = None
-    LinhtRfEventSink = None
-
 __all__ = [
     "key_injector",
     "derive_session_keys",
@@ -110,8 +103,5 @@ __all__ = [
     "kgdss_spreader_cc",
     "kgdss_despreader_cc",
     "kgdss_sync_state",
-    "LinhtBridge",
-    "LinhtPttMsgSource",
-    "LinhtRfEventSink",
 ]
 

@@ -39,6 +39,7 @@ private:
     std::vector<uint8_t> d_nonce; // 12 bytes ChaCha20 nonce
     uint64_t d_counter;           // keystream position counter
     bool d_key_set;               // true once key/nonce set (constructor or set_key message)
+    std::atomic<bool> d_ptt_allows_tx{ true }; // LinHT / ZMQ PTT: false suppresses RF chips (optional ptt port)
     std::mutex d_key_mutex; // protects key material, d_counter, remainder, d_key_set
     std::array<uint8_t, 64> d_ks_remainder;
     size_t d_ks_remainder_len;
@@ -48,6 +49,7 @@ private:
     void generate_sequence();
     void handle_key_msg(pmt::pmt_t msg);
     void handle_counter_msg(pmt::pmt_t msg);
+    void handle_ptt_msg(pmt::pmt_t msg);
     void box_muller_pair(float u1, float u2, float& g0, float& g1);
 
 public:

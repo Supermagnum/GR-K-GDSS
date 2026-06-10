@@ -149,6 +149,8 @@ kgdss_spreader_cc_impl::kgdss_spreader_cc_impl(int sequence_length,
     message_port_register_in(pmt::mp("set_counter"));
     set_msg_handler(pmt::mp("set_counter"),
                     [this](pmt::pmt_t msg) { this->handle_counter_msg(msg); });
+    message_port_register_in(pmt::mp("ptt"));
+    set_msg_handler(pmt::mp("ptt"), [this](pmt::pmt_t msg) { this->handle_ptt_msg(msg); });
 }
 
 kgdss_spreader_cc_impl::~kgdss_spreader_cc_impl() {}
@@ -175,6 +177,33 @@ void kgdss_spreader_cc_impl::handle_key_msg(pmt::pmt_t msg)
     {
         std::lock_guard<std::mutex> state_lock(d_mutex);
         d_chip_index = 0;
+    }
+}
+
+void kgdss_spreader_cc_impl::handle_ptt_msg(pmt::pmt_t msg)
+{
+    /* LinHT / HAL gating: transmission is only allowed when a session key is armed (existing
+       check in work()) and this flag is true. Default is true so flowgraphs that do not wire
+       the optional `ptt` port behave as before. */
+    if (pmt::is_bool(msg)) {
+        d_ptt_allows_tx.store(pmt::to_bool(msg));
+        return;
+    }
+    if (pmt::is_symbol(msg)) {
+        const std::string s = pmt::symbol_to_string(msg);
+        if (s == "ptt_on") {
+            d_ptt_allows_tx.store(true);
+        } else if (s == "ptt_off") {
+            d_ptt_allows_tx.store(false);
+        }
+        return;
+    }
+    if (!pmt::is_dict(msg)) {
+        return;
+    }
+    const pmt::pmt_t v = pmt::dict_ref(msg, pmt::mp("ptt"), pmt::PMT_NIL);
+    if (pmt::is_bool(v)) {
+        d_ptt_allows_tx.store(pmt::to_bool(v));
     }
 }
 
@@ -319,6 +348,7 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
     }
 
     if (!key_ok) return 0;
+    if (!d_ptt_allows_tx.load()) return 0;
 
     const int ninput_items = noutput_items / d_chips_per_symbol;
     const int nchips_to_produce = ninput_items * d_chips_per_symbol;

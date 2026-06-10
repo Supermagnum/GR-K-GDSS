@@ -65,26 +65,26 @@ outputs:
 templates:
     imports: |
         from gnuradio import kgdss
-        import numpy as np
         import binascii
     make: |-
-        np.random.seed(${seed} if ${seed} > 0 else None)
-        spreading_sequence = np.random.normal(0.0, np.sqrt(${variance}), ${sequence_length}).tolist()
+        spreading_sequence = [1.0] * int(${sequence_length})
 
         kgdss.kgdss_despreader_cc(
             spreading_sequence,
             ${chips_per_symbol},
             ${correlation_threshold},
             ${timing_error_tolerance},
-            list(binascii.unhexlify(${chacha_key}.strip('"')) if ${chacha_key} not in ('""', '') else b''),
-            list(binascii.unhexlify(${chacha_nonce}.strip('"')) if ${chacha_nonce} not in ('""', '') else b''))
+            binascii.unhexlify(${chacha_key}.strip('"')) if ${chacha_key} not in ('""', '') else b'',
+            binascii.unhexlify(${chacha_nonce}.strip('"')) if ${chacha_nonce} not in ('""', '') else b'')
 
 documentation: |-
     Keyed GDSS (Gaussian-Distributed Spread-Spectrum) Despreader.
 
-    This block despreads a GDSS signal using correlation with the Gaussian spreading
-    sequence while removing the keyed Gaussian masking generated from the same
-    ChaCha20 keystream and nonce as the transmitter.
+    Chip-wise Gaussian masking is removed using the ChaCha20-IETF keystream (same
+    key and nonce as the spreader). The ``spreading_sequence`` vector in this block
+    is a non-empty placeholder for legacy correlation / acquisition metrics; it
+    is not the source of the data-bearing mask (use ChaCha ``set_key`` / constructor
+    bytes for that).
 
     The ChaCha20 key and nonce must be provided from the session key derivation
     functions to avoid nonce reuse.
