@@ -5,6 +5,9 @@ A highly experimental Cryptographically keyed GDSS proposal.
 
 The developer used curiosity to piece the suggested improvements in this project together. AI assisted with documentation and coding.
 
+## For potential reviewers with the relevant expertise ##
+If the code makes sense, and a favourable review is in order please fork the project, add a link to your review in the readme, place the review in docs and sign that file with your gnupg key.
+
 ## Table of Contents
 
 ### Start here (plain language)
