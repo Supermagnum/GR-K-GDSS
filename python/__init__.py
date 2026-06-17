@@ -37,6 +37,19 @@ except ImportError:
     key_injector = None
 
 try:
+    from .sync_burst_rx import (
+        SyncBurstRxController,
+        flywheel_target_to_pmt,
+        pmt_to_detection_ms,
+        sync_burst_flywheel_rx,
+    )
+except ImportError:
+    SyncBurstRxController = None
+    flywheel_target_to_pmt = None
+    pmt_to_detection_ms = None
+    sync_burst_flywheel_rx = None
+
+try:
     from .sync_burst_utils import (
         derive_session_n_bursts,
         derive_sync_schedule,
@@ -93,6 +106,10 @@ except ImportError:
 
 __all__ = [
     "key_injector",
+    "SyncBurstRxController",
+    "sync_burst_flywheel_rx",
+    "flywheel_target_to_pmt",
+    "pmt_to_detection_ms",
     "derive_session_keys",
     "derive_session_keys_from_galdralag",
     "map_galdralag_keys_to_kgdss",
