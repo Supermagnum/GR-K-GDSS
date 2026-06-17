@@ -14,6 +14,8 @@ The developer used curiosity to piece the suggested improvements in this project
 ### Quick links (sections in this README)
 
 - [**Key measured numbers (quick reference)**](#key-measured-numbers-quick-reference) — KL divergence, cross-session correlation, round-trip \(\rho\), pytest/IQ pass counts; **Code / test** column links to generator, analyser, and pytest files
+- [**Test results**](docs/TEST_RESULTS.md) — full pytest and IQ analyser logs; key numbers summarized in [Key measured numbers](#key-measured-numbers-quick-reference)
+- [Behaviour when no cryptographic key is present](#behaviour-when-no-cryptographic-key-is-present) — keyed blocks stall until `set_key`; no on-air key-loss signalling
 - [Where key functions are implemented (quick code map)](#where-key-functions-are-implemented-quick-code-map) — includes [IQ analysis metrics (code + tests)](#iq-analysis-metrics-and-recorded-numbers-code--tests)
 - [**Correlation recovery, Box-Muller masking, and noise-like spectrum**](#correlation-recovery-box-muller-masking-and-noise-like-spectrum) — measured \(\rho\), why recovery is ~0.99999 not exactly 1.0, link to full contract
 - [Who built this and why](#who-built-this-and-why)
@@ -30,7 +32,7 @@ The developer used curiosity to piece the suggested improvements in this project
 2. [What is GDSS?](#2-what-is-gdss)
 3. [Standard GDSS — How It Works](#3-standard-gdss--how-it-works)
 4. [The Weakness in Standard GDSS](#4-the-weakness-in-standard-gdss)
-5. [Cryptographically Keyed GDSS — The Proposed Modification](#5-cryptographically-keyed-gdss--the-proposed-modification)
+5. [Cryptographically Keyed GDSS — The Proposed Modification](#5-cryptographically-keyed-gdss--the-proposed-modification) — includes [Behaviour when no cryptographic key is present](#behaviour-when-no-cryptographic-key-is-present)
 6. [All Layers of Security](#6-all-layers-of-security)
 7. [Comparison — Standard GDSS vs Keyed GDSS](#7-comparison--standard-gdss-vs-keyed-gdss)
 8. [The Nitrokey, PIN Protection, and Emergency Disposal](#8-the-nitrokey-pin-protection-and-emergency-disposal)
@@ -201,9 +203,10 @@ The keyed cross-session residual (~0.10 in the snapshot) is a **simulation artef
 | Document | Contents |
 |----------|----------|
 | **[Key measured numbers — Code / test column](#key-measured-numbers-quick-reference)** (this README) | Each metric linked to generator, analyser, or pytest file |
-| **[IQ analysis metrics (code map)](#iq-analysis-metrics-and-recorded-numbers-code--tests)** (this README) | Full walkthrough of `generate_iq_test_files.py`, `analyse_iq_files.py`, and related tests |
+| **[IQ analysis metrics (code map)](#iq-analysis-metrics-and-recorded-numbers-code--tests)** (this README) | Full walkthrough of `generate_iq_test_files.py`, `analyse_iq_files.py`, `plot_iq_comparison.py`, `plot_spectrum_snapshots.py`, and related tests |
 | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** | Full pytest log shape, verbatim IQ analyser output, plot paths, BER figure regeneration |
-| **[docs/TESTING.md](docs/TESTING.md)** | How to run each suite; IQ file generation and analysis; `TestT1RoundTrip`, `test_matched_key_near_unity_coherence_zero_lag` |
+| **[Behaviour when no cryptographic key is present](#behaviour-when-no-cryptographic-key-is-present)** (this README); **[docs/USAGE.md](docs/USAGE.md#behaviour-when-no-cryptographic-key-is-present)** | Keyed spreader/despreader withhold output until `set_key`; `key_injector` and session derivation requirements |
+| **[docs/TESTING.md](docs/TESTING.md)** | How to run each suite; IQ file generation and analysis; spectrum snapshot [known limitation](docs/TESTING.md#known-limitation-spectrum-snapshot-bandwidth); `TestT1RoundTrip`, `test_matched_key_near_unity_coherence_zero_lag` |
 | **[docs/GLOSSARY.md](docs/GLOSSARY.md)** | [Correlation recovery](docs/GLOSSARY.md#correlation-recovery-symbol-recovery), [Box-Muller](docs/GLOSSARY.md#box-muller-transform), [KL divergence](docs/GLOSSARY.md#kl-divergence-iq-analysis), and related terms |
 | **[docs/KEYSTREAM_CONTRACT.md](docs/KEYSTREAM_CONTRACT.md)** | §2 Box-Muller contract; §3 correlation recovery; §5 measured \(\rho\) tables |
 
@@ -401,6 +404,35 @@ despreading, rather than despreading through the masking. This changes
 the original design's elegant receiver-ignorance property — the receiver
 now needs the key — but in exchange, the masking becomes
 cryptographically opaque.
+
+### Behaviour when no cryptographic key is present
+
+Keyed operation assumes an ECDH shared secret (or a keyring entry derived
+from one) that feeds `derive_session_keys()` and arms the GNU Radio blocks.
+If that material is missing, the stack **does not** fall back to standard
+(unkeyed) GDSS on the live C++ path, and it **does not** signal key loss
+on-air.
+
+| Layer | No key / not armed | Notes |
+|-------|-------------------|--------|
+| **`key_injector`** | No `set_key` message is sent on `start()` | Without `shared_secret`, `keyring_id`, or a `shared_secret` message (≥ 32 bytes), `_msg` stays empty and spreader/despreader are never armed. Undersized `shared_secret` messages are ignored. |
+| **`kgdss_spreader_cc`** | `work()` returns **0** | No chips are produced; the TX chain stalls until a valid 32-byte key and 12-byte nonce arrive on `set_key`. |
+| **`kgdss_despreader_cc`** | `work()` returns **0** | No symbols, no lock progression, no meaningful SNR on status outputs until `set_key` arms the block. |
+| **Session subkeys** | Nothing to derive | `payload_enc`, `gdss_masking`, `sync_pn`, and `sync_timing` require the shared secret; there is no production default key. |
+| **Sync burst helpers** | Length checked, not “presence” | `derive_sync_schedule`, `SyncBurstRxController`, etc. require 32-byte key buffers. All-zero garbage bytes still produce a deterministic schedule (insecure, not “no crypto”). |
+| **Flywheel** | Time still advances | `sync_burst_flywheel_rx` tracks epochs from the schedule; without matching `sync_pn` / `sync_timing` on TX and RX, correlation never succeeds. No protocol-visible sync-loss event is emitted. |
+
+**Summary:** missing or mismatched keys produce **inert DSP** (blocks wait
+for `set_key`) rather than transmitting or receiving with a null or guessed
+key. Peers without the same session material cannot despread data or
+reproduce sync PN/schedules. Offline IQ fixtures labelled “standard GDSS”
+use separate generator paths; they are not the same as running the keyed
+C++ blocks with empty ChaCha key material.
+
+See [`python/key_injector.py`](python/key_injector.py), [`docs/USAGE.md`](docs/USAGE.md)
+(*Keyed GDSS blocks*), and the `set_key` message ports on
+[`kgdss_spreader_cc`](include/gnuradio/kgdss/kgdss_spreader_cc.h) /
+[`kgdss_despreader_cc`](include/gnuradio/kgdss/kgdss_despreader_cc.h).
 
 ### The Sync Bursts
 
@@ -1228,7 +1260,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 
 | What you need | Where it is |
 |---------------|-------------|
-| **Block API and Python helpers** (spreader, despreader, key injector; session key derivation, sync burst functions) | **[docs/USAGE.md](docs/USAGE.md)** — Block I/O and parameters, helper function reference, gr-linux-crypto/SOQPSK wiring, multi-burst sync schedule and P.372 receiver PSD notes. |
+| **Block API and Python helpers** (spreader, despreader, key injector; session key derivation, sync burst functions) | **[docs/USAGE.md](docs/USAGE.md)** — Block I/O and parameters, helper function reference, gr-linux-crypto/SOQPSK wiring, multi-burst sync schedule and P.372 receiver PSD notes. See also [Behaviour when no key is present](#behaviour-when-no-cryptographic-key-is-present). |
 | **Sync burst improvements roadmap** (Priority 1 done; Priorities 2–4 and open questions) | **[docs/todo.md](docs/todo.md)** — real-time noise-floor measurement, SQLite history, GPS dual-site exchange, scheduler design questions. |
 | **Unit tests** (what each test file does, how to run) | **[docs/TESTING.md](docs/TESTING.md)** — Suites T1, T2, T3, P372 receiver profile, Galdralag/gr-linux-crypto mapping, cross-layer; IQ file generation and analysis. |
 | **Test results** (pytest and IQ analysis output) | **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — full logs; values + code pointers: [Key measured numbers](#key-measured-numbers-quick-reference), [IQ analysis metrics (code map)](#iq-analysis-metrics-and-recorded-numbers-code--tests) |
@@ -1239,7 +1271,7 @@ WARNING!   ITS HIGLY EXPERIMENTAL.  USE AT YOUR OWN RISK !
 | **Python helpers** (key derivation, keyring, sync burst, P.372) | **python/** — `session_key_derivation.py`, `key_injector.py`, `sync_burst_utils.py`, `p372_baseline.py`, `p372_baseline_config.json`, `p372_receiver_profile.py`; package entry [`python/__init__.py`](python/__init__.py) re-exports the public `gnuradio.kgdss` API. Details in [docs/USAGE.md](docs/USAGE.md). |
 | **GRC block definitions** | **grc/** — `kgdss_spreader_cc.block.yml`, `kgdss_despreader_cc.block.yml`, `kgdss_key_injector.block.yml`. |
 | **Unit test scripts** | **tests/** — `test_t1_spreader_despreader.py`, `test_matched_sequences.py`, `test_t2_sync_burst.py`, `test_t3_key_derivation.py`, `test_p372_receiver_profile.py`, `test_galdralag_kgdss_compat.py`, `test_gr_linux_crypto_hkdf_compat.py`, `test_cross_layer.py`; optional **C++** Google Test sources under **`tests/cpp/`** (see [docs/TESTING.md](docs/TESTING.md#c-crypto-tests-optional)). |
-| **IQ test file generator and analyser** | **tests/generate_iq_test_files.py** (builds 01–13 and metadata), **tests/analyse_iq_files.py** (PASS/FAIL checks), **tests/plot_iq_comparison.py** (plots); see [docs/TESTING.md](docs/TESTING.md). |
+| **IQ test file generator and analyser** | **tests/generate_iq_test_files.py** (builds 01–13 and metadata), **tests/analyse_iq_files.py** (PASS/FAIL checks), **tests/plot_iq_comparison.py** (histogram/PSD grids), **tests/plot_spectrum_snapshots.py** (Welch spectrum PNGs; [known bandwidth limitation](docs/TESTING.md#known-limitation-spectrum-snapshot-bandwidth)); see [docs/TESTING.md](docs/TESTING.md). |
 | **Quick test run** | **tests/README.md** — Run commands; keyring/sandbox notes. |
 | **Python bindings** (C++ blocks to Python) | **python/bindings/** — `kgdss_spreader_cc_python.cc`, `kgdss_despreader_cc_python.cc`, `kgdss_python.cc`; expose spreader/despreader and `kgdss_sync_state` to `gnuradio.kgdss`. |
 | **Build system** | **CMakeLists.txt** (top level), **lib/CMakeLists.txt**, **python/CMakeLists.txt**, **python/bindings/CMakeLists.txt**, **grc/CMakeLists.txt**, **include/gnuradio/kgdss/CMakeLists.txt** — build and install the C++ library, Python package, and GRC blocks. |
@@ -1298,6 +1330,7 @@ Snapshot values: [Key measured numbers (quick reference)](#key-measured-numbers-
 - **Generate IQ artefacts and write metric JSON:** [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py) builds Files **01–13**; **`corr4`** / **`corr5`** (round-trip and wrong-key, ~571–592) → `04_*.json`, `05_*.json`; **`peak12`** / **`peak13`** (cross-session sync, ~846–889) → `12_*.json`, `13_*.json`; File **09** standard vs File **03** keyed transmission (~539–725).
 - **Run PASS/FAIL checks and print KL / cross-session numbers:** [`tests/analyse_iq_files.py`](tests/analyse_iq_files.py) — `run_tests()`; noise-like stats on **01**, **03**, **09**; **`KL_DIVERGENCE_THRESHOLD`** and `stats.entropy()` for **09 vs 03**; reads **`peak_correlation`** from JSON **12**/**13**; prints summary after the table.
 - **Visual confirmation:** [`tests/plot_iq_comparison.py`](tests/plot_iq_comparison.py) — cross-session overlay (row 3) uses Files **12**/**13**.
+- **Spectrum snapshot PNGs (paper Section 5):** [`tests/plot_spectrum_snapshots.py`](tests/plot_spectrum_snapshots.py) — Welch PSD images in **`tests/iq_files/spectrum_*.png`** from Files **01**, **01b**, **03**, **09**/**06**, **01c**, **01d**, and optional **08**; staged by [`paper/gen_figures.py`](paper/gen_figures.py) into **`paper/figures/fig_spectrum_*.png`**. **Known limitation:** fixtures are **500 kHz** baseband (+/- 250 kHz); the script resamples for display but does **not** extend receiver noise into a **700 kHz** window (+/- 350 kHz) with continuous noise in the sidebands (-350 to -250 kHz and +250 to +350 kHz). See [docs/TESTING.md — Known limitation: spectrum snapshot bandwidth](docs/TESTING.md#known-limitation-spectrum-snapshot-bandwidth) and [docs/TEST_RESULTS.md](docs/TEST_RESULTS.md).
 - **Live block round-trip (separate from IQ File 04):** [`tests/test_t1_spreader_despreader.py`](tests/test_t1_spreader_despreader.py) (`TestT1RoundTrip`, `COHERENCE_ROUNDTRIP_MIN = 0.99999`); [`tests/test_matched_sequences.py`](tests/test_matched_sequences.py) (float64 \(\rho\)); [`tests/test_cross_layer.py`](tests/test_cross_layer.py) (full-stack round trip).
 
 - **Keyed sync-burst masking (Python helper)**

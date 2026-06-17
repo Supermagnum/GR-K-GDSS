@@ -19,6 +19,7 @@ This document describes how to use the keyed GDSS blocks (spreader, despreader, 
   - [Sync burst timing and multi-burst schedule](#sync-burst-timing-and-multi-burst-schedule)
 - [Connecting gr-linux-crypto and SOQPSK (TX/RX chains)](#connecting-gr-linux-crypto-and-soqpsk-txrx-chains)
   - [Getting keys into the GDSS blocks (automated, no manual entry)](#getting-keys-into-the-gdss-blocks-automated-no-manual-entry)
+  - [Behaviour when no cryptographic key is present](#behaviour-when-no-cryptographic-key-is-present)
   - [gr-linux-crypto compatibility](#gr-linux-crypto-compatibility)
   - [Compatibility with gr-linux-crypto](#compatibility-with-gr-linux-crypto)
   - [ECIES key store: missing JSON or empty callsigns/groups](#ecies-key-store-missing-json-or-empty-callsignsgroups)
@@ -309,6 +310,25 @@ injector = kgdss.key_injector(shared_secret=shared_secret, session_id=1, tx_seq=
 # Connect injector.key_out to spreader.set_key and despreader.set_key (message ports)
 # Key is sent automatically on flowgraph start.
 ```
+
+### Behaviour when no cryptographic key is present
+
+Keyed live operation does **not** fall back to standard (unkeyed) GDSS in the C++
+spreader/despreader. If session key material is missing or blocks are not armed,
+the data path stays **inert** and nothing key-related is signalled on-air.
+
+| Component | Without a valid armed key |
+|-----------|-------------------------|
+| **`key_injector`** | If neither `keyring_id`, construction-time `shared_secret` (≥ 32 bytes), nor a qualifying `shared_secret` message is provided, no `set_key` message is published on `start()`. Undersized `shared_secret` messages are ignored. |
+| **`kgdss_spreader_cc` / `kgdss_despreader_cc`** | `work()` returns **0** until a 32-byte key and 12-byte nonce arrive on `set_key` (at construction or via message). No chips/symbols are produced; lock and SNR outputs do not advance meaningfully. |
+| **`derive_session_keys`** | Requires an ECDH shared secret; there is no production default session key. |
+| **Sync burst helpers** (`derive_sync_schedule`, `sync_burst_flywheel_rx`, etc.) | Require 32-byte `sync_timing` / `sync_pn` material (normally from `derive_session_keys`). Wrong or missing keys on TX vs RX mean no correlation; the flywheel may still advance time silently. |
+
+Offline IQ files labelled “standard GDSS” in [TESTING.md](TESTING.md) use separate
+generator paths and are not the same as running keyed C++ blocks with empty
+ChaCha parameters.
+
+Full prose: [README — Behaviour when no cryptographic key is present](../README.md#behaviour-when-no-cryptographic-key-is-present).
 
 **Alternative: gr-linux-crypto GDSS Set Key Source**
 

@@ -42,6 +42,8 @@ If `ber_mc_results.npz` is missing, `gen_figures.py` falls back to parametric pl
 
 **Spectrum and IQ comparison figures (Section 5--6):** after generating IQ fixtures, run `python3 tests/plot_spectrum_snapshots.py` and `python3 tests/plot_iq_comparison.py` so `tests/iq_files/` contains `spectrum_*.png` and `iq_comparison_vs_standard.png`. Then `gen_figures.py` copies or crops them into `paper/figures/` (`fig_spectrum_*.png`, `fig_iq_psd_row_vs_standard.png`). If those sources are absent, placeholder PNGs are written so the PDF still builds.
 
+**Known limitation:** Spectrum figures in the PDF use the same pipeline as `tests/plot_spectrum_snapshots.py`: IQ is **500 kHz** baseband and the plots show essentially that **500 kHz band** only. They do not yet depict a **700 kHz** wide receiver view with the transmission centred and noise continuing in the sidebands (-350 to -250 kHz and +250 to +350 kHz). See [docs/TESTING.md — Known limitation: spectrum snapshot bandwidth](../docs/TESTING.md#known-limitation-spectrum-snapshot-bandwidth).
+
 The first page includes a mandatory AI disclaimer banner.
 
 Section ``Intellectual Property and Licensing'' (before references) states GPL-3.0-or-later, Open Invention Network registration, the raw `LICENSE` URL, and links to GR-K-GDSS, gr-linux-crypto, and gr-qradiolink.

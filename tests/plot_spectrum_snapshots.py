@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """
 Generate spectrum snapshot images (600 kHz bandwidth) from gr-k-gdss IQ test files.
+
+Known limitation: IQ fixtures are 500 kHz complex baseband (+/- 250 kHz keyed GDSS
+signal). This script resamples for display but does not extend receiver noise into a
+wider span, so plots show essentially the 500 kHz band only. A more representative
+view would use a 700 kHz window (+/- 350 kHz) with the 500 kHz transmission centred
+and continuous noise in the sidebands (about -350 to -250 kHz and +250 to +350 kHz).
+That needs plot-pipeline changes (wideband noise floor plus band-limited GDSS), not
+resampling alone. See docs/TESTING.md (spectrum snapshot plots).
+
 Output: spectrum_baseline.png, spectrum_realistic_baseline.png (01b), spectrum_standard_gdss.png,
 spectrum_keyed_gdss.png, spectrum_real_noise.png (if File 08 present), spectrum_realistic_plus_standard_gdss.png (01c),
 spectrum_realistic_plus_keyed_gdss.png (01d). All use Gaussian roll-off where applicable.
