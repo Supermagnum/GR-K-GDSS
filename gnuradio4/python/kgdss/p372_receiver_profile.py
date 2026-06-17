@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Receiver-side P.372 profile helpers.
+Receiver-side P.372 integration hooks (synthetic PSD prior).
 
-These helpers tie the static ITU-R P.372-17 baseline model into receiver processing by
-providing per-frequency-bin expected PSD values for FFT bins and utilities for
-calibration against measured PSD.
+P372_COMPLIANCE is ``"none"`` (see ``p372_baseline.P372_COMPLIANCE``). This is
+**not** ITU-R P.372-17 §3.1.1 (instantaneous T_B) or §3.1.2 (statistical T_B /
+CCDF). It provides per-frequency-bin **heuristic** expected PSD values for FFT
+bins and median-offset calibration against measured receiver PSD.
+
+Normative target: ITU-R P.372-17. Implementation: lightweight hooks only; see
+``docs/todo.md`` §2.1 for the planned ``p372_atmospheric.py`` boundary.
 """
 
 from __future__ import annotations
@@ -16,10 +20,10 @@ from typing import Iterable
 import numpy as np
 
 try:
-    from .p372_baseline import load_p372_params
+    from .p372_baseline import P372_COMPLIANCE, load_p372_params
 except ImportError:
     # Support source-tree direct imports in tests/development.
-    from p372_baseline import load_p372_params  # type: ignore
+    from p372_baseline import P372_COMPLIANCE, load_p372_params  # type: ignore
 
 
 @dataclass(frozen=True)
@@ -49,15 +53,15 @@ def p372_expected_psd_profile_dbm_per_hz(
     nominal_floor_dbm_per_hz: float = -174.0,
 ) -> np.ndarray:
     """
-    Build an expected P.372-like PSD profile for frequency bins.
+    Build a heuristic PSD prior for frequency bins (integration hook only).
 
-    This is a lightweight calibrated profile:
-    - baseline absolute level from `nominal_floor_dbm_per_hz`
+    Not ITU §3.1.1/§3.1.2 brightness-temperature prediction. Shape only:
+    - baseline absolute level from ``nominal_floor_dbm_per_hz``
     - low-frequency rise (1/f-like) around center frequency
     - edge roll-off to match practical receiver passband shaping
 
-    Parameters are keyed off the static P.372 baseline config so TX and RX can
-    share an auditable parameter source.
+    Parameters are keyed off the static baseline config (``P372_COMPLIANCE``
+    is ``"none"``) so TX and RX share an auditable parameter source.
     """
     bins = _as_float_array(freq_bins_hz)
     _ = load_p372_params()  # ensure baseline config is present and deterministic
@@ -118,4 +122,3 @@ def calibrate_p372_profile_to_measured_psd(
         calibration_offset_db=offset,
         median_residual_db=median_residual,
     )
-
