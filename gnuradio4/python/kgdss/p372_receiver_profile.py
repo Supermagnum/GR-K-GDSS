@@ -3,7 +3,7 @@
 """
 Receiver-side P.372 profile helpers.
 
-These helpers tie the static P.372 baseline model into receiver processing by
+These helpers tie the static ITU-R P.372-17 baseline model into receiver processing by
 providing per-frequency-bin expected PSD values for FFT bins and utilities for
 calibration against measured PSD.
 """
