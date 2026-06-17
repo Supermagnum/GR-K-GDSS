@@ -8,17 +8,22 @@ import numpy as np
 
 try:
     from gnuradio.kgdss import (
-        load_p372_params,
-        p372_expected_psd_profile_dbm_per_hz,
-        calibrate_p372_profile_to_measured_psd,
+        load_p372_params as _load_p372_params_pkg,
+        p372_expected_psd_profile_dbm_per_hz as _p372_expected_pkg,
+        calibrate_p372_profile_to_measured_psd as _calibrate_pkg,
     )
-except ImportError:
+    _probe = _load_p372_params_pkg()
+    if not hasattr(_probe, "n_bursts_min"):
+        raise AttributeError("stale P372Params")
+    load_p372_params = _load_p372_params_pkg
+    p372_expected_psd_profile_dbm_per_hz = _p372_expected_pkg
+    calibrate_p372_profile_to_measured_psd = _calibrate_pkg
+except Exception:
     load_p372_params = None
     p372_expected_psd_profile_dbm_per_hz = None
     calibrate_p372_profile_to_measured_psd = None
 
 if load_p372_params is None:
-    # Source-tree fallback for development environments with older installed package.
     import sys
     from pathlib import Path
     repo_root = Path(__file__).resolve().parents[1]
