@@ -37,11 +37,11 @@ Minimum operating SNR: −12dB, maybe -14dB.
 
 A running estimate of the noise floor power spectral density across the monitored RF window is computed as the median magnitude across a rolling time window. The median is used rather than the mean because it is robust against the impulse events themselves skewing the estimate upward. The result is a calibrated noise floor level in dBm per bin updated continuously during operation.
 
-This real-time measurement supersedes P.372-15 as the primary parameter source once sufficient samples have accumulated. P.372-15 remains the cold-start fallback used during the first few seconds of a session before the local estimate is reliable. After that the live measurement takes over, providing ground truth for the current location, frequency, time of day, and ionospheric conditions rather than a global model average.
+This real-time measurement supersedes P.372-17 as the primary parameter source once sufficient samples have accumulated. P.372-17 remains the cold-start fallback used during the first few seconds of a session before the local estimate is reliable. After that the live measurement takes over, providing ground truth for the current location, frequency, time of day, and ionospheric conditions rather than a global model average.
 
 The real-time floor measurement also provides the local upper tail of the natural amplitude distribution, which is the practical power budget ceiling for burst transmission. Because the natural noise floor is never perfectly flat and natural impulse events routinely produce peaks well above the median, the transmitter has usable headroom above the median floor that is still statistically plausible. The live measurement quantifies exactly how much headroom is available at any given moment, allowing the system to use it confidently without exceeding the plausible natural amplitude range for current conditions.
 
-The inter-arrival times and amplitudes of detected impulse events in the live measurement window also allow progressive refinement of the Pareto and log-normal distribution parameters used for schedule generation and amplitude jitter, replacing the P.372-15 averaged values with locally observed values as data accumulates.
+The inter-arrival times and amplitudes of detected impulse events in the live measurement window also allow progressive refinement of the Pareto and log-normal distribution parameters used for schedule generation and amplitude jitter, replacing the P.372-17 averaged values with locally observed values as data accumulates.
 
 ---
 
@@ -51,7 +51,7 @@ The inter-arrival times and amplitudes of detected impulse events in the live me
 
 Timestamped noise floor measurements from the real-time estimator are written to a local SQLite database. Each row records the timestamp in UTC, centre frequency, monitoring bandwidth, median noise floor in dBm, upper tail amplitude estimate, and observed impulse event rate. A single row is approximately 50 bytes. Thousands of measurements fit in a few hundred kilobytes. The database grows slowly and imposes no meaningful storage cost.
 
-The historical database serves several purposes. It provides a warm-start baseline at session initialisation that is better than P.372-15 for the specific deployment location, replacing the cold-start fallback with locally observed statistics from previous sessions on the same band. Over weeks of operation the local database becomes the primary parameter source for that deployment, reflecting the actual noise environment rather than a global model average.
+The historical database serves several purposes. It provides a warm-start baseline at session initialisation that is better than P.372-17 for the specific deployment location, replacing the cold-start fallback with locally observed statistics from previous sessions on the same band. Over weeks of operation the local database becomes the primary parameter source for that deployment, reflecting the actual noise environment rather than a global model average.
 
 The database also captures diurnal and seasonal variation at the deployment location. This allows the system to anticipate noise floor behaviour by time of day without waiting for live measurements to accumulate, which is particularly useful at session start.
 
@@ -69,7 +69,7 @@ These databases are exchanged out-of-band using the same off-air channel already
 
 The transmitter can then set burst power to be within the statistically natural amplitude range at both the transmitter location and the receiver location simultaneously, rather than only at the local end. This is a meaningful improvement over single-ended measurement in cases where the two sites have significantly different noise environments — for example a transmitter at an urban site and a receiver at a quiet rural site. Without the exchange the transmitter would set power based on its own noisy local floor and potentially transmit above the natural ceiling at the quiet receiver end. With the exchange it knows the receiver's local statistics and can calibrate accordingly.
 
-The GPS position data also enables future use of P.372-15 in a targeted mode — computing the noise model for the specific receiver location rather than averaging across the full matrix — further refining the parameter set for the actual deployment geometry.
+The GPS position data also enables future use of P.372-17 in a targeted mode — computing the noise model for the specific receiver location rather than averaging across the full matrix — further refining the parameter set for the actual deployment geometry.
 
 The interface boundary for this enhancement is well-defined: the SQLite schema from Priority 3, a simple merge procedure for combining two databases, and the existing out-of-band exchange channel. None of the core burst design is affected.
 
@@ -105,6 +105,6 @@ This is feasible for occasional exchange windows, but not free. A practical desi
 - What is the oscillator drift rate of the target receiver hardware under operational temperature conditions? This sets the hard upper bound on the inter-burst interval and should be measured under realistic conditions rather than taken from the datasheet alone.
 - Should the burst count per session be fixed or itself derived from key material? A key-derived burst count adds one more unpredictable parameter for an observer but complicates session lifecycle management.
 - Should missed bursts trigger any protocol-level event, or should the flywheel operate silently? Silent operation is more covert; flagging missed bursts enables diagnostic monitoring.
-- What is the upper HF frequency limit above which the P.372-15 atmospheric noise model produces a natural event rate so low that any additional burst event is statistically anomalous? This defines the maximum operating frequency for the atmospheric mimicry approach and should be computed from the P.372-15 quiet-site conservative constraint.
-- Should the averaging matrix be extended to include man-made noise contributions from P.372-15 Section 3 for urban deployment scenarios, or should the design remain conservative by using atmospheric noise alone as the universal mimicry target?
-- At what point in the real-time measurement accumulation window is the local estimate considered reliable enough to replace the P.372-15 cold-start fallback? A minimum sample count or minimum elapsed time threshold needs to be defined.
+- What is the upper HF frequency limit above which the P.372-17 atmospheric noise model produces a natural event rate so low that any additional burst event is statistically anomalous? This defines the maximum operating frequency for the atmospheric mimicry approach and should be computed from the P.372-17 quiet-site conservative constraint.
+- Should the averaging matrix be extended to include man-made noise contributions from P.372-17 Section 3 for urban deployment scenarios, or should the design remain conservative by using atmospheric noise alone as the universal mimicry target?
+- At what point in the real-time measurement accumulation window is the local estimate considered reliable enough to replace the P.372-17 cold-start fallback? A minimum sample count or minimum elapsed time threshold needs to be defined.

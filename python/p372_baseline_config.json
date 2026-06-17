@@ -1,4 +1,6 @@
 {
+  "itu_recommendation": "ITU-R P.372-17",
+  "itu_approved": "2024-08",
   "rise_fraction": 0.15,
   "pareto_alpha_nominal": 2.0,
   "pareto_alpha_min": 1.5,

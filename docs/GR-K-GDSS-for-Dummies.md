@@ -65,7 +65,7 @@ In **standard GDSS**, masking is **statistically** noise-like. In **keyed GDSS**
 
 - A **GNU Radio** out-of-tree module (**gr-k-gdss**): **keyed spreader**, **keyed despreader**, and support for **keys** and **sync**.
 - **Python helpers** for subkey derivation, nonces, and sync-burst behaviour aligned with the design.
-- **Receiver-side helpers** to compare measured FFT/PSD bins against a **P.372-15 atmospheric-noise baseline profile**, so model priors can be tied to real local receiver measurements by frequency.
+- **Receiver-side helpers** to compare measured FFT/PSD bins against a **P.372-17 atmospheric-noise baseline profile**, so model priors can be tied to real local receiver measurements by frequency.
 - **Tests and simulations** that check statistics and show behaviour in **simplified** channel models. Those are **software experiments**, not a warranty for every real channel.
 
 ---
@@ -101,7 +101,7 @@ The main [README](../README.md) describes the author's background and who the wo
 
 - **GR-K-GDSS** adds **cryptographic keying** to **noise-like spread-spectrum** radio ideas.
 - Synchronisation is designed around **multiple keyed bursts over time**, not only one startup burst.
-- The receiver can combine **live PSD measurements** with a **P.372-15 baseline** to tune noise-floor assumptions per frequency bin.
+- The receiver can combine **live PSD measurements** with a **P.372-17 baseline** to tune noise-floor assumptions per frequency bin.
 - The aim is stronger resistance to many **statistical** detectors, not immunity to **physics** (energy, bearing, timing).
 - The **code** is real and inspectable; **security claims** still need **independent expert review** before high-stakes use.
 
