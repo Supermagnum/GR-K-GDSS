@@ -19,9 +19,36 @@ The following items from the original Priority 1 scope have been implemented:
 - **Per-burst PN evolution** via `burst_index` (with backward-compatible default).
 - **Per-burst amplitude scaling** derivation.
 - Updated sync burst envelope default (`rise_fraction=0.15`).
-- Static **P.372 baseline parameter source** in Python.
-- Receiver-side **P.372 profile calibration helpers** (frequency-bin PSD alignment).
+- Static **P.372 integration hooks** (`p372_baseline.py`, `p372_receiver_profile.py`; `P372_COMPLIANCE = "none"`).
 - Test coverage for the above in `test_t2_sync_burst.py` and `test_p372_receiver_profile.py`.
+
+---
+
+## 2.1 Future — ITU-R P.372-17 §3.1.1 and §3.1.2 (atmospheric model)
+
+**Importance: medium (research / calibration). Not blocking current sync-burst work.**
+
+The present `p372_*` modules are **integration hooks only** — burst-scheduling parameters
+and a synthetic PSD prior with median calibration. They do **not** implement ITU-R P.372-17
+§3.1.1 (instantaneous sky brightness temperature) or §3.1.2 (statistical brightness
+temperature / CCDF).
+
+Implement in a **separate module** (e.g. `p372_atmospheric.py`) with a clean API boundary
+so hooks and physics never mix. Both `main` and `gnuradio4` should receive the same module.
+
+**Explicit dependencies for a compliant implementation:**
+
+| Dependency | Role |
+|------------|------|
+| `Tmr_approx.txt` (P.372 annex data) | Coefficient interpolation for man-made / atmospheric terms |
+| ITU-R P.453 or equivalent | Slant-path atmospheric attenuation \(A_T\) |
+| Surface weather inputs | Pressure, temperature, water-vapour density |
+| Elevation / geometry | Site latitude, antenna elevation, slant path |
+| CCDF API | §3.1.2 statistical \(T_B(f, p)\) output for percentile-based thresholds |
+
+**Deliverables:** instantaneous \(T_B(f)\) per §3.1.1; statistical \(T_B(f,p)\) / CCDF per
+§3.1.2; optional bridge from atmospheric model output into existing receiver calibration
+helpers (replacing the heuristic PSD prior when available).
 
 This document now tracks the remaining priorities.
 

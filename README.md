@@ -1329,13 +1329,14 @@ Snapshot values: [Key measured numbers (quick reference)](#key-measured-numbers-
     - [`tests/test_t2_sync_burst.py`](tests/test_t2_sync_burst.py): `TestT2GaussianEnvelope`; schedule/PN tests cover multi-burst cadence
     - [`tests/generate_iq_test_files.py`](tests/generate_iq_test_files.py): `_gaussian_envelope`, `_derive_sync_amplitude_scaling` (self-contained copies aligned with `sync_burst_utils`)
 
-- **P.372 baseline and receiver PSD profile integration**
+- **P.372 integration hooks (not ITU §3.1.x compliance)**
   - **Runtime code (receiver-side model helpers):**
-    - [`python/p372_baseline.py`](python/p372_baseline.py): `load_p372_params()` + `P372Params` from static config
+    - [`python/p372_baseline.py`](python/p372_baseline.py): `load_p372_params()`, `P372_COMPLIANCE = "none"`, burst-scheduling params from static config
     - [`python/p372_baseline_config.json`](python/p372_baseline_config.json): precomputed nominal/min parameter source
-    - [`python/p372_receiver_profile.py`](python/p372_receiver_profile.py): `p372_expected_psd_profile_dbm_per_hz(...)`, `calibrate_p372_profile_to_measured_psd(...)`, `P372ReceiverProfile`
+    - [`python/p372_receiver_profile.py`](python/p372_receiver_profile.py): heuristic PSD prior + `calibrate_p372_profile_to_measured_psd(...)` (synthetic shape, not atmospheric \(T_B\))
   - **Documentation / tests:**
-    - [`docs/USAGE.md`](docs/USAGE.md): "Tie P.372-17 into receiver source (PSD by frequency bin)"
+    - [`docs/USAGE.md`](docs/USAGE.md): "P.372-17 integration hooks (receiver PSD prior)"
+    - [`docs/todo.md`](docs/todo.md): §2.1 roadmap for real §3.1.1/§3.1.2 (`p372_atmospheric.py`)
     - [`tests/test_p372_receiver_profile.py`](tests/test_p372_receiver_profile.py): loader determinism, expected-profile shape, and calibration tests
 
 - **Public C++ block API headers (interface contracts)**
