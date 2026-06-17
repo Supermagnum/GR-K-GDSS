@@ -43,6 +43,10 @@ class P372Params:
     lognorm_sigma: float
     n_bursts_min: int
     n_bursts_max: int
+    flywheel_search_window_initial_s: float
+    flywheel_window_widen_factor: float
+    flywheel_window_max_s: float
+    flywheel_max_consecutive_misses: int
 
 
 def _config_path() -> Path:
@@ -71,5 +75,9 @@ def load_p372_params() -> P372Params:
         lognorm_sigma=float(raw["lognorm_sigma"]),
         n_bursts_min=int(raw["n_bursts_min"]),
         n_bursts_max=int(raw["n_bursts_max"]),
+        flywheel_search_window_initial_s=float(raw["flywheel_search_window_initial_s"]),
+        flywheel_window_widen_factor=float(raw["flywheel_window_widen_factor"]),
+        flywheel_window_max_s=float(raw["flywheel_window_max_s"]),
+        flywheel_max_consecutive_misses=int(raw["flywheel_max_consecutive_misses"]),
     )
 
