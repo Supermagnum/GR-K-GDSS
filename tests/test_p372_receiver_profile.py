@@ -13,7 +13,7 @@ try:
         calibrate_p372_profile_to_measured_psd as _calibrate_pkg,
     )
     _probe = _load_p372_params_pkg()
-    if not hasattr(_probe, "n_bursts_min"):
+    if not hasattr(_probe, "n_bursts_min") or not hasattr(_probe, "flywheel_max_consecutive_misses"):
         raise AttributeError("stale P372Params")
     load_p372_params = _load_p372_params_pkg
     p372_expected_psd_profile_dbm_per_hz = _p372_expected_pkg

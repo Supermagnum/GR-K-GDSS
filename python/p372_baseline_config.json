@@ -10,5 +10,9 @@
   "lognorm_mu": 0.0,
   "lognorm_sigma": 0.35,
   "n_bursts_min": 8,
-  "n_bursts_max": 32
+  "n_bursts_max": 32,
+  "flywheel_search_window_initial_s": 0.05,
+  "flywheel_window_widen_factor": 1.5,
+  "flywheel_window_max_s": 2.0,
+  "flywheel_max_consecutive_misses": 5
 }

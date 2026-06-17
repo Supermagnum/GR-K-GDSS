@@ -54,6 +54,19 @@ except ImportError:
     apply_keyed_gaussian_mask = None
 
 try:
+    from .sync_flywheel import (
+        FlywheelConfig,
+        FlywheelTarget,
+        SyncBurstFlywheel,
+        load_flywheel_config,
+    )
+except ImportError:
+    FlywheelConfig = None
+    FlywheelTarget = None
+    SyncBurstFlywheel = None
+    load_flywheel_config = None
+
+try:
     from .p372_baseline import load_p372_params, P372Params
     from .p372_receiver_profile import (
         P372ReceiverProfile,
@@ -98,6 +111,10 @@ __all__ = [
     "derive_sync_amplitude_scaling",
     "gaussian_envelope",
     "apply_keyed_gaussian_mask",
+    "FlywheelConfig",
+    "FlywheelTarget",
+    "SyncBurstFlywheel",
+    "load_flywheel_config",
     "load_p372_params",
     "P372Params",
     "P372ReceiverProfile",
