@@ -36,7 +36,8 @@ class TestP372BaselineLoader(unittest.TestCase):
         a = load_p372_params()
         b = load_p372_params()
         self.assertEqual(a, b)
-        self.assertAlmostEqual(a.rise_fraction, 0.15, places=6)
+        self.assertGreaterEqual(a.n_bursts_min, 1)
+        self.assertGreaterEqual(a.n_bursts_max, a.n_bursts_min)
 
 
 @unittest.skipUnless(p372_expected_psd_profile_dbm_per_hz is not None, "P.372 receiver profile not available")

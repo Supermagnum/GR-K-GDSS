@@ -41,6 +41,8 @@ class P372Params:
     min_interval_s_min: float
     lognorm_mu: float
     lognorm_sigma: float
+    n_bursts_min: int
+    n_bursts_max: int
 
 
 def _config_path() -> Path:
@@ -67,5 +69,7 @@ def load_p372_params() -> P372Params:
         min_interval_s_min=float(raw["min_interval_s_min"]),
         lognorm_mu=float(raw["lognorm_mu"]),
         lognorm_sigma=float(raw["lognorm_sigma"]),
+        n_bursts_min=int(raw["n_bursts_min"]),
+        n_bursts_max=int(raw["n_bursts_max"]),
     )
 

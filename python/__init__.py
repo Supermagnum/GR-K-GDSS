@@ -38,6 +38,7 @@ except ImportError:
 
 try:
     from .sync_burst_utils import (
+        derive_session_n_bursts,
         derive_sync_schedule,
         derive_sync_pn_sequence,
         derive_sync_amplitude_scaling,
@@ -45,6 +46,7 @@ try:
         apply_keyed_gaussian_mask,
     )
 except ImportError:
+    derive_session_n_bursts = None
     derive_sync_schedule = None
     derive_sync_pn_sequence = None
     derive_sync_amplitude_scaling = None
@@ -90,6 +92,7 @@ __all__ = [
     "payload_nonce",
     "keyring_available",
     "keyring_import_error",
+    "derive_session_n_bursts",
     "derive_sync_schedule",
     "derive_sync_pn_sequence",
     "derive_sync_amplitude_scaling",
