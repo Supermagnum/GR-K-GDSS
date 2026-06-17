@@ -13,6 +13,7 @@ Sync bursts can be masked with the same keyed Gaussian masking as the data
 the GDSS waveform to a passive observer.
 
 Exported API:
+  - derive_session_n_bursts(master_key, session_id, ...) -> int
   - derive_sync_schedule(master_key, session_id, ...) -> list[int]
   - derive_sync_pn_sequence(master_key, session_id, chips, burst_index=0) -> np.ndarray
   - derive_sync_amplitude_scaling(master_key, session_id, n_bursts, ...) -> list[float]
@@ -24,9 +25,14 @@ from __future__ import annotations
 
 import math
 import struct
-from typing import Iterable
+from typing import Iterable, Optional
 
 import numpy as np
+
+try:
+    from .p372_baseline import load_p372_params
+except ImportError:
+    from p372_baseline import load_p372_params  # type: ignore
 
 try:
     from Crypto.Cipher import ChaCha20 as _ChaCha20
@@ -138,12 +144,65 @@ def apply_keyed_gaussian_mask(
     return out
 
 
+def derive_session_n_bursts(
+    master_key: bytes,
+    session_id: int,
+    *,
+    n_bursts_min: Optional[int] = None,
+    n_bursts_max: Optional[int] = None,
+) -> int:
+    """
+    Derive the session burst count from key material within deployment bounds.
+
+    Uses the same HMAC-SHA256 domain-separation pattern as other sync helpers
+    (label ``sync-n-bursts-v1``). The draw maps uniformly to
+    ``[n_bursts_min, n_bursts_max]`` inclusive. Bounds default to values in
+    ``p372_baseline_config.json``.
+
+    Returns:
+        ``effective_n_bursts`` in ``[n_bursts_min, n_bursts_max]``.
+    """
+    import hashlib
+    import hmac
+
+    params = load_p372_params()
+    lo = int(params.n_bursts_min if n_bursts_min is None else n_bursts_min)
+    hi = int(params.n_bursts_max if n_bursts_max is None else n_bursts_max)
+    if lo > hi:
+        raise ValueError("n_bursts_min must be <= n_bursts_max")
+    if hi <= 0:
+        return 0
+
+    digest = hmac.new(
+        master_key,
+        b"sync-n-bursts-v1" + session_id.to_bytes(8, "big"),
+        hashlib.sha256,
+    ).digest()
+    u = _to_uniform(digest[:4])
+    span = hi - lo + 1
+    n_target = lo + int(u * span)
+    if n_target > hi:
+        n_target = hi
+    return min(n_target, hi)
+
+
+def _resolve_n_bursts(
+    master_key: bytes,
+    session_id: int,
+    n_bursts: Optional[int],
+) -> int:
+    """Use explicit ``n_bursts`` when provided; otherwise key-derived count."""
+    if n_bursts is not None:
+        return int(n_bursts)
+    return derive_session_n_bursts(master_key, session_id)
+
+
 def derive_sync_schedule(
     master_key: bytes,
     session_id: int,
     *,
     session_duration_s: float = 900.0,
-    n_bursts: int = 20,
+    n_bursts: Optional[int] = None,
     mean_interval_s: float = 60.0,
     pareto_alpha: float = 2.0,
     min_interval_s: float = 5.0,
@@ -164,7 +223,10 @@ def derive_sync_schedule(
         session_id: Session identifier; different sessions get different offsets.
         session_duration_s: Maximum session duration to schedule over.
         n_bursts: Number of sync bursts to schedule (best-effort; may be fewer if
-            parameters would exceed session_duration_s).
+            parameters would exceed session_duration_s). When ``None`` (default),
+            burst count is derived from key material and clamped to deployment
+            bounds in ``p372_baseline_config.json`` (``n_bursts_min`` /
+            ``n_bursts_max``). Pass an explicit integer to keep a fixed count.
         mean_interval_s: Target mean interval between bursts (seconds). Used to
             parameterize the Pareto scale.
         pareto_alpha: Pareto shape parameter alpha (> 1.0). Larger alpha reduces
@@ -178,7 +240,8 @@ def derive_sync_schedule(
     import hashlib
     import hmac
 
-    if n_bursts <= 0:
+    effective_n_bursts = _resolve_n_bursts(master_key, session_id, n_bursts)
+    if effective_n_bursts <= 0:
         return []
     if session_duration_s <= 0:
         return []
@@ -204,7 +267,7 @@ def derive_sync_schedule(
 
     epochs: list[int] = []
     t_ms = 0
-    for i in range(int(n_bursts)):
+    for i in range(int(effective_n_bursts)):
         # Derive per-burst uniform u in (0,1) from ChaCha20 keystream.
         # Nonce uses burst index to avoid overlap and keep it deterministic.
         per = hmac.new(base, b"/i/" + i.to_bytes(8, "big"), hashlib.sha256).digest()
@@ -269,7 +332,7 @@ def derive_sync_pn_sequence(
 def derive_sync_amplitude_scaling(
     master_key: bytes,
     session_id: int,
-    n_bursts: int,
+    n_bursts: Optional[int] = None,
     *,
     lognorm_mu: float = 0.0,
     lognorm_sigma: float = 0.35,
@@ -280,11 +343,16 @@ def derive_sync_amplitude_scaling(
     The scaling is log-normally distributed: scale = exp(mu + sigma * Z), where
     Z ~ Normal(0, 1) derived deterministically from key material. TX and RX compute
     the same scale factors for the same inputs.
+
+    When ``n_bursts`` is ``None`` (default), the burst count is derived via
+    ``derive_session_n_bursts`` so it matches ``derive_sync_schedule`` for the
+    same key and session id. Pass an explicit integer for a fixed count.
     """
     import hashlib
     import hmac
 
-    if n_bursts <= 0:
+    effective_n_bursts = _resolve_n_bursts(master_key, session_id, n_bursts)
+    if effective_n_bursts <= 0:
         return []
     if lognorm_sigma < 0:
         raise ValueError("lognorm_sigma must be >= 0")
@@ -296,7 +364,7 @@ def derive_sync_amplitude_scaling(
     ).digest()
 
     scales: list[float] = []
-    for i in range(int(n_bursts)):
+    for i in range(int(effective_n_bursts)):
         per = hmac.new(base, b"/i/" + i.to_bytes(8, "big"), hashlib.sha256).digest()
         nonce = i.to_bytes(8, "little") + b"\x00" * 4
         cipher = ChaCha20.new(key=per, nonce=nonce)

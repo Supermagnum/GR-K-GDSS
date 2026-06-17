@@ -16,6 +16,14 @@ try:
         apply_keyed_gaussian_mask as _apply_keyed_gaussian_mask,
         gdss_sync_burst_nonce as _gdss_sync_burst_nonce,
     )
+    try:
+        from gnuradio.kgdss import derive_session_n_bursts as _derive_session_n_bursts_pkg
+    except ImportError:
+        _derive_session_n_bursts_pkg = None
+    try:
+        from gnuradio.kgdss import derive_sync_amplitude_scaling as _derive_sync_amplitude_scaling_pkg
+    except ImportError:
+        _derive_sync_amplitude_scaling_pkg = None
 
     # In development environments, the installed module may lag behind the source tree.
     # If the installed API does not support the multi-burst schedule and per-burst PN
@@ -26,12 +34,15 @@ try:
 
     _have_new_pn = "burst_index" in inspect.signature(_derive_sync_pn_sequence).parameters
     _have_new_schedule = "session_duration_s" in inspect.signature(_derive_sync_schedule).parameters
+    _have_key_n_bursts = _derive_session_n_bursts_pkg is not None
 
-    if not (_have_new_pn and _have_new_schedule):
+    if not (_have_new_pn and _have_new_schedule and _have_key_n_bursts):
         repo_root = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(repo_root / "python"))
         from sync_burst_utils import (  # type: ignore
+            derive_session_n_bursts as _derive_session_n_bursts,
             derive_sync_schedule as _derive_sync_schedule,
+            derive_sync_amplitude_scaling as _derive_sync_amplitude_scaling,
             derive_sync_pn_sequence as _derive_sync_pn_sequence,
             gaussian_envelope as _gaussian_envelope,
             apply_keyed_gaussian_mask as _apply_keyed_gaussian_mask,
@@ -40,18 +51,25 @@ try:
             from session_key_derivation import gdss_sync_burst_nonce as _gdss_sync_burst_nonce  # type: ignore
         except Exception:
             _gdss_sync_burst_nonce = None
+    else:
+        _derive_session_n_bursts = _derive_session_n_bursts_pkg
+        _derive_sync_amplitude_scaling = _derive_sync_amplitude_scaling_pkg
 
     derive_sync_schedule = _derive_sync_schedule
     derive_sync_pn_sequence = _derive_sync_pn_sequence
     gaussian_envelope = _gaussian_envelope
     apply_keyed_gaussian_mask = _apply_keyed_gaussian_mask
     gdss_sync_burst_nonce = _gdss_sync_burst_nonce
+    derive_session_n_bursts = _derive_session_n_bursts
+    derive_sync_amplitude_scaling = _derive_sync_amplitude_scaling
 
     T2_AVAILABLE = derive_sync_schedule is not None and derive_sync_pn_sequence is not None and gaussian_envelope is not None
+    T2_N_BURSTS_AVAILABLE = T2_AVAILABLE and derive_session_n_bursts is not None and derive_sync_amplitude_scaling is not None
     T2_MASK_AVAILABLE = T2_AVAILABLE and apply_keyed_gaussian_mask is not None and gdss_sync_burst_nonce is not None
 except ImportError:
     T2_AVAILABLE = False
     T2_MASK_AVAILABLE = False
+    T2_N_BURSTS_AVAILABLE = False
 
 
 @unittest.skipUnless(T2_AVAILABLE, "gnuradio.kgdss sync_burst_utils not available")
@@ -230,3 +248,51 @@ class TestT2SyncBurstNonce(unittest.TestCase):
         n1 = gdss_sync_burst_nonce(1)
         n2 = gdss_sync_burst_nonce(2)
         self.assertNotEqual(n1, n2)
+
+
+@unittest.skipUnless(T2_N_BURSTS_AVAILABLE, "derive_session_n_bursts not available")
+class TestT2KeyDerivedNBursts(unittest.TestCase):
+    """Key-derived burst count stays in deployment bounds and matches schedule/scaling."""
+
+    def test_n_bursts_deterministic(self):
+        key = os.urandom(32)
+        session_id = 99
+        a = derive_session_n_bursts(key, session_id)
+        b = derive_session_n_bursts(key, session_id)
+        self.assertEqual(a, b)
+
+    def test_n_bursts_within_config_bounds(self):
+        from p372_baseline import load_p372_params  # type: ignore
+
+        params = load_p372_params()
+        rng = np.random.default_rng(0xB00B5)
+        for _ in range(32):
+            key = bytes(rng.integers(0, 256, size=32, dtype=np.uint8).tolist())
+            session_id = int(rng.integers(0, 1_000_000))
+            n = derive_session_n_bursts(key, session_id)
+            self.assertGreaterEqual(n, params.n_bursts_min)
+            self.assertLessEqual(n, params.n_bursts_max)
+
+    def test_schedule_and_scaling_share_effective_n_bursts(self):
+        key = os.urandom(32)
+        session_id = 17
+        n = derive_session_n_bursts(key, session_id)
+        scales = derive_sync_amplitude_scaling(key, session_id)
+        self.assertEqual(len(scales), n)
+        # Default path: omit n_bursts so both helpers derive the same count.
+        scales_default = derive_sync_amplitude_scaling(key, session_id, None)
+        self.assertEqual(scales_default, scales)
+
+    def test_explicit_n_bursts_override(self):
+        key = os.urandom(32)
+        session_id = 3
+        scales = derive_sync_amplitude_scaling(key, session_id, 10)
+        self.assertEqual(len(scales), 10)
+        epochs = derive_sync_schedule(
+            key,
+            session_id,
+            session_duration_s=600.0,
+            n_bursts=10,
+            mean_interval_s=20.0,
+        )
+        self.assertGreaterEqual(len(epochs), 1)

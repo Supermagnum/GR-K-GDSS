@@ -8,5 +8,7 @@
   "mean_interval_s_min": 90.0,
   "min_interval_s_min": 5.0,
   "lognorm_mu": 0.0,
-  "lognorm_sigma": 0.35
+  "lognorm_sigma": 0.35,
+  "n_bursts_min": 8,
+  "n_bursts_max": 32
 }
