@@ -3,7 +3,7 @@
 """
 P.372 baseline parameter source (static, precomputed).
 
-This module intentionally does not attempt to implement the full ITU-R P.372-15
+This module intentionally does not attempt to implement the full ITU-R P.372-17
 model. Instead, it provides a single authoritative loader for a precomputed
 parameter set (nominal averages and conservative minimum-case constraints) used
 by sync-burst scheduling and noise-mimicry helpers.

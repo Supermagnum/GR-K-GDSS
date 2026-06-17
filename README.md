@@ -1339,7 +1339,7 @@ Snapshot values: [Key measured numbers (quick reference)](#key-measured-numbers-
     - [`python/p372_baseline_config.json`](python/p372_baseline_config.json): precomputed nominal/min parameter source
     - [`python/p372_receiver_profile.py`](python/p372_receiver_profile.py): `p372_expected_psd_profile_dbm_per_hz(...)`, `calibrate_p372_profile_to_measured_psd(...)`, `P372ReceiverProfile`
   - **Documentation / tests:**
-    - [`docs/USAGE.md`](docs/USAGE.md): "Tie P.372-15 into receiver source (PSD by frequency bin)"
+    - [`docs/USAGE.md`](docs/USAGE.md): "Tie P.372-17 into receiver source (PSD by frequency bin)"
     - [`tests/test_p372_receiver_profile.py`](tests/test_p372_receiver_profile.py): loader determinism, expected-profile shape, and calibration tests
 
 - **Public C++ block API headers (interface contracts)**

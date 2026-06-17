@@ -448,9 +448,9 @@ In GRC the chain looks like:
 
 The SOQPSK demodulator expects complex baseband symbols at the same symbol rate and alignment as produced by the SOQPSK modulator. The despreader must use the **same** `sequence_length`, `chips_per_symbol`, `variance`, `seed`, `chacha_key`, and `chacha_nonce` as the transmitter.
 
-### Tie P.372-15 into receiver source (PSD by frequency bin)
+### Tie P.372-17 into receiver source (PSD by frequency bin)
 
-You can tie the P.372-15 atmospheric noise baseline directly into the receiver source path by taking FFT-bin PSD estimates from your RX chain and calibrating them against a P.372 reference profile.
+You can tie the P.372-17 atmospheric noise baseline directly into the receiver source path by taking FFT-bin PSD estimates from your RX chain and calibrating them against a P.372 reference profile.
 
 Helpers exported by `gnuradio.kgdss`:
 
@@ -484,7 +484,7 @@ profile = kgdss.calibrate_p372_profile_to_measured_psd(
 print("P372 calibration offset (dB):", profile.calibration_offset_db)
 ```
 
-This keeps P.372-15 as a model prior while adapting to the actual local receiver noise floor by frequency bin.
+This keeps P.372-17 as a model prior while adapting to the actual local receiver noise floor by frequency bin.
 
 **Development import troubleshooting**
 
