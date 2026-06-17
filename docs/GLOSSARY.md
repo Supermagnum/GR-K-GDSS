@@ -141,7 +141,7 @@ The receive-side block that reverses spreading: it correlates the incoming chip-
 
 ## Key injector
 
-A GR-K-GDSS block (`kgdss_key_injector`) that supplies the GDSS key and nonce to the spreader and despreader. It can load the key from the Linux kernel keyring (by key ID), from an ECDH shared secret given at construction, or from a message port. It outputs a `set_key` message so that key material is not hardcoded in the flowgraph.
+A GR-K-GDSS block (`kgdss_key_injector`) that supplies the GDSS key and nonce to the spreader and despreader. It can load the key from the Linux kernel keyring (by key ID), from an ECDH shared secret given at construction, or from a message port. It outputs a `set_key` message so that key material is not hardcoded in the flowgraph. If no key material is configured, it does not publish `set_key` on start; see [Behaviour when no cryptographic key is present](../README.md#behaviour-when-no-cryptographic-key-is-present).
 
 ---
 
@@ -237,7 +237,7 @@ The **mean** of the in-phase (I) and quadrature (Q) components of the complex ba
 
 ## set_key (message port)
 
-A message input port on the keyed GDSS spreader and despreader. When the block receives a PMT dict with `"key"` (32-byte u8vector) and `"nonce"` (12-byte u8vector), it updates its internal ChaCha20 context and uses that for masking. The key injector (or gr-linux-crypto GDSS Set Key Source) typically connects to this port so keys are injected at runtime rather than at block construction.
+A message input port on the keyed GDSS spreader and despreader. When the block receives a PMT dict with `"key"` (32-byte u8vector) and `"nonce"` (12-byte u8vector), it updates its internal ChaCha20 context and uses that for masking. The key injector (or gr-linux-crypto GDSS Set Key Source) typically connects to this port so keys are injected at runtime rather than at block construction. Until a valid key is set, both blocks withhold stream output (`work()` returns 0).
 
 ---
 

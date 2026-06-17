@@ -60,6 +60,11 @@ python -m unittest discover -s tests -v
 
 Current expected pytest tally: **106 passed, 1 skipped, 2 xpassed** (109 collected) when the module is installed and gr-linux-crypto is available. The skip is the keyring round-trip when `keyctl` is unavailable; the two `xpassed` entries are inside the T5 suite.
 
+**IQ file plots (optional, after `generate_iq_test_files.py`):**
+
+- [`plot_iq_comparison.py`](plot_iq_comparison.py) — histogram, PSD, and autocorrelation grids; keyed vs standard comparison PNGs.
+- [`plot_spectrum_snapshots.py`](plot_spectrum_snapshots.py) — Welch spectrum snapshots (`tests/iq_files/spectrum_*.png`) for the preprint figures. **Known limitation:** IQ is **500 kHz** baseband; plots show essentially that band only and do not yet extend receiver noise into a **700 kHz** display window with margins at -350 to -250 kHz and +250 to +350 kHz. See **[docs/TESTING.md](../docs/TESTING.md#known-limitation-spectrum-snapshot-bandwidth)**.
+
 **Optional C++ crypto tests (Google Test):** Sources live under **`tests/cpp/`**. Configure the project with **`-DKGDSS_ENABLE_CRYPTO_TESTS=ON`**, build, then run **`ctest -R 'kgdss_test_'`** from the build directory. Requires **libsodium**; first configure may download GoogleTest and nlohmann_json. See **[docs/TESTING.md](../docs/TESTING.md#c-crypto-tests-optional)**.
 
 **Keyring test skipped:** If the keyring round-trip test is skipped, the skip message now shows the import error (e.g. `No module named 'gr_linux_crypto'`). Ensure gr-linux-crypto is installed for the same Python you use for pytest, and that its install path is on `PYTHONPATH` before you run tests. For example, if gr-linux-crypto is in `/usr/local/lib/python3.12/dist-packages`, that path must be in `PYTHONPATH` (as in the examples above).

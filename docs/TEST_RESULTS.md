@@ -211,6 +211,8 @@ Run `python3 tests/plot_spectrum_snapshots.py` to generate 600 kHz bandwidth spe
 | **spectrum_realistic_plus_standard_gdss.png** | Realistic noise (01b) + unkeyed GDSS (09), Gaussian roll-off. Data: 01c. |
 | **spectrum_realistic_plus_keyed_gdss.png** | Realistic noise (01b) + keyed GDSS (03), Gaussian roll-off. Data: 01d. |
 
+**Known limitation:** These spectrum plots are generated from **500 kHz** IQ fixtures and `plot_spectrum_snapshots.py` resamples for display; they **do not** extend noise into a wider passband. The figures therefore show essentially the **500 kHz signal** (+/- 250 kHz), not how that signal sits in a **700 kHz** receiver window (+/- 350 kHz) with white noise in the margins (-350 to -250 kHz and +250 to +350 kHz). See [TESTING.md — Known limitation: spectrum snapshot bandwidth](TESTING.md#known-limitation-spectrum-snapshot-bandwidth) and the module docstring in `tests/plot_spectrum_snapshots.py`.
+
 #### Real recorded noise (File 08): interpretation
 
 The updated real recorded noise spectrum is very informative. The Y-axis scale is extremely compressed (e.g. about -119.0 to -120.0 dB), only about a 1 dB range. That tells us:

@@ -59,6 +59,17 @@ In **standard GDSS**, masking is **statistically** noise-like. In **keyed GDSS**
 
 **Keyed** means **cryptographic unpredictability**, not "turn the volume up."
 
+### What if there is no session key?
+
+On a **live keyed flowgraph**, the spreader and despreader **wait** for a valid
+key and nonce (`set_key`). They do **not** transmit or receive useful data with
+empty or guessed keys. The **key injector** only sends `set_key` after ECDH
+material (keyring or shared secret) is available. There is **no on-air message**
+that says "key missing." Sync-burst timing helpers need the same session
+subkeys on both sides; without them, bursts will not correlate.
+
+More detail: [README — Behaviour when no cryptographic key is present](../README.md#behaviour-when-no-cryptographic-key-is-present) and [USAGE.md](USAGE.md#behaviour-when-no-cryptographic-key-is-present).
+
 ---
 
 ## What this project **is**
@@ -106,3 +117,5 @@ The main [README](../README.md) describes the author's background and who the wo
 - The **code** is real and inspectable; **security claims** still need **independent expert review** before high-stakes use.
 
 For detail, continue with the [main README](../README.md) and [USAGE.md](USAGE.md).
+Recorded pytest and IQ analysis output: [TEST_RESULTS.md](TEST_RESULTS.md).
+How to run tests: [TESTING.md](TESTING.md).
