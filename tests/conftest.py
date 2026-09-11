@@ -93,15 +93,6 @@ def _prefer_in_tree_python_sources() -> None:
         mod = _load_src_module(mod_name, filename)
         if mod is not None:
             loaded[mod_name] = mod
-            # Bind onto the package object so "from gnuradio.kgdss import X"
-            # does not re-import a stale submodule from site-packages __path__.
-            short = mod_name.rsplit(".", 1)[-1]
-            try:
-                import gnuradio.kgdss as _pkg
-
-                setattr(_pkg, short, mod)
-            except ImportError:
-                pass
 
     # Re-exec package __init__ against the freshly loaded submodules.
     init_path = _SRC_PYTHON / "__init__.py"
@@ -125,7 +116,14 @@ def _prefer_in_tree_python_sources() -> None:
     pkg.__file__ = str(init_path)
     for mod_name, mod in loaded.items():
         sys.modules[mod_name] = mod
-        setattr(pkg, mod_name.rsplit(".", 1)[-1], mod)
+        short = mod_name.rsplit(".", 1)[-1]
+        # Drop stale submodule attributes left from the site-packages import so
+        # "from gnuradio.kgdss import sync_burst_utils" does not return the old module.
+        if hasattr(pkg, short):
+            try:
+                delattr(pkg, short)
+            except AttributeError:
+                pass
     spec.loader.exec_module(pkg)
     if ext is not None:
         sys.modules["gnuradio.kgdss.kgdss_python"] = ext
@@ -133,8 +131,9 @@ def _prefer_in_tree_python_sources() -> None:
             pkg.kgdss_spreader_cc = getattr(ext, "kgdss_spreader_cc", None)
             pkg.kgdss_despreader_cc = getattr(ext, "kgdss_despreader_cc", None)
             pkg.kgdss_sync_state = getattr(ext, "kgdss_sync_state", None)
+    # Keep sys.modules authoritative for submodule objects. Do not setattr module
+    # objects onto the package after __init__ (it exports same-named callables).
     for mod_name, mod in loaded.items():
-        setattr(pkg, mod_name.rsplit(".", 1)[-1], mod)
         sys.modules[mod_name] = mod
 
 
