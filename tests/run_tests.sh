@@ -17,4 +17,5 @@ for d in /usr/local/lib/python3.12/dist-packages \
 done
 
 cd "$ROOT_DIR"
-exec python -m pytest tests/ -v "$@"
+# Top-level GR3 package suite plus dedicated gnuradio4/python/kgdss coverage.
+exec python -m pytest tests/ gnuradio4/python/kgdss/tests/ -v "$@"

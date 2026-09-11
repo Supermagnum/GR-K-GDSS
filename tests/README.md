@@ -10,8 +10,10 @@ make -j4
 sudo make install
 cd ..
 export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:/usr/lib/python3.12/dist-packages:$PYTHONPATH"
-pytest tests/ -v
+pytest tests/ gnuradio4/python/kgdss/tests/ -v
 ```
+
+On the `gnuradio4` branch, always include `gnuradio4/python/kgdss/tests/` (or use `./tests/run_tests.sh`, which already does). See [docs/TESTING.md — GNU Radio 4 Python helpers](../docs/TESTING.md#gnu-radio-4-python-helpers-gnuradio4pythonkgdss).
 
 Or use the helper script (same PYTHONPATH logic):
 
@@ -37,7 +39,7 @@ make -j4
 make install
 cd ..
 export PYTHONPATH="build/install/lib/python3.12/dist-packages:$PYTHONPATH"
-pytest tests/ -v
+pytest tests/ gnuradio4/python/kgdss/tests/ -v
 ```
 
 (Use `site-packages` instead of `dist-packages` if your system uses that.)
@@ -58,7 +60,11 @@ python -m unittest discover -s tests -v
 - **gr-linux-crypto HKDF** (test_gr_linux_crypto_hkdf_compat.py): Byte-equality between `derive_session_keys(...)['gdss_masking']` and `CryptoHelpers.derive_key_hkdf` for the GDSS default profile. Skipped if `CryptoHelpers` is unavailable.
 - **Cross-layer** (test_cross_layer.py): Full stack round-trip using derived keys and keyed blocks.
 
-Current expected pytest tally: **106 passed, 1 skipped, 2 xpassed** (109 collected) when the module is installed and gr-linux-crypto is available. The skip is the keyring round-trip when `keyctl` is unavailable; the two `xpassed` entries are inside the T5 suite.
+Current expected pytest tally on the **`gnuradio4`** branch (bindings available,
+`pytest tests/ gnuradio4/python/kgdss/tests/`): **142 passed, 1 skipped, 2 xpassed**.
+The skip is the keyring round-trip when `keyctl` is unavailable; the two `xpassed`
+entries are inside the T5 suite. The nine extra passes vs a top-level-only run come
+from `gnuradio4/python/kgdss/tests/`.
 
 **IQ file plots (optional, after `generate_iq_test_files.py`):**
 

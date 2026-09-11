@@ -15,3 +15,17 @@ gr_k_gdss4_add_ut(qa_LinhtPttSource)
 if(ZMQ_FOUND)
   target_link_libraries(qa_LinhtPttSource PRIVATE PkgConfig::ZMQ)
 endif()
+
+# Dedicated pytest coverage for gnuradio4/python/kgdss (KeyInjector, sync-burst
+# nonces, ChaCha backend). Also collected by top-level `pytest tests/ …`.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+find_program(GR_K_GDSS4_PYTEST NAMES pytest pytest-3)
+if(Python3_Interpreter_FOUND AND GR_K_GDSS4_PYTEST)
+  add_test(
+    NAME qa_python_kgdss
+    COMMAND ${Python3_EXECUTABLE} -m pytest
+            "${CMAKE_CURRENT_SOURCE_DIR}/../python/kgdss/tests"
+            -v
+            --tb=short
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+endif()

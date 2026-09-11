@@ -196,7 +196,7 @@ The keyed cross-session residual (~0.10 in the snapshot) is a **simulation artef
 
 | Suite | Recorded result | Code / test |
 |-------|-----------------|-------------|
-| **pytest** (`pytest tests/ -v`) | **106 passed**, 1 skipped, 2 xpassed (109 collected) | **`tests/test_*.py`** — inventory in [TESTING.md](docs/TESTING.md); full log in [TEST_RESULTS.md](docs/TEST_RESULTS.md) |
+| **pytest** (`pytest tests/ gnuradio4/python/kgdss/tests/ -v` on this branch) | **142 passed**, 1 skipped, 2 xpassed | **`tests/test_*.py`** plus **`gnuradio4/python/kgdss/tests/`** — inventory in [TESTING.md](docs/TESTING.md); full log in [TEST_RESULTS.md](docs/TEST_RESULTS.md) |
 | ITU channel models (`test_t2_channel_models.py`) | 42 passed | [`tests/test_t2_channel_models.py`](tests/test_t2_channel_models.py) |
 | T4 counter overflow | 2 passed | [`tests/test_t4_counter_overflow.py`](tests/test_t4_counter_overflow.py) |
 | T5 Pedestrian-B timing | 11 passed, 2 xpassed | [`tests/test_t5_pedestrian_b_timing.py`](tests/test_t5_pedestrian_b_timing.py) |
@@ -1501,10 +1501,12 @@ Unit tests are in the `tests/` directory. Run them after installing the module (
 
 ```bash
 export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
-pytest tests/ -v
+pytest tests/ gnuradio4/python/kgdss/tests/ -v
 ```
 
-- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results. A recent full-environment run (GNU Radio, gr-linux-crypto with **galdralag_session_kdf**, `keyctl` for keyring tests) reported **48 passed, 1 skipped**; without Galdralag KDF, four mapping tests skip; without `keyctl`, the keyring round-trip skips. With **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**, `ctest` also runs **`kgdss_test_chacha_keystream`** and **`kgdss_test_spreader_stats`** (see [C++ crypto tests](docs/TESTING.md#c-crypto-tests-optional)). **Recorded snapshot (April 2026):** see [Key measured numbers](#key-measured-numbers-quick-reference) (**106** pytest passed; IQ **29** checks; KL **0.0565**; cross-session **1.0000** / **0.1028**).
+On branches without `gnuradio4/`, `pytest tests/ -v` is enough. See [docs/TESTING.md](docs/TESTING.md#gnu-radio-4-python-helpers-gnuradio4pythonkgdss).
+
+- **[docs/TESTING.md](docs/TESTING.md)** — Full test inventory, how to run tests, and expected results. On the **`gnuradio4`** branch with bindings, the combined suite currently reports **142 passed, 1 skipped, 2 xpassed**; GR4 CTest under `gnuradio4/` reports **5/5** (four Boost.UT `qa_*.cpp` plus `qa_python_kgdss`). With **`KGDSS_ENABLE_CRYPTO_TESTS=ON`** on the GR3-style build, `ctest` also runs **`kgdss_test_chacha_keystream`** and **`kgdss_test_spreader_stats`** (see [C++ crypto tests](docs/TESTING.md#c-crypto-tests-optional)). IQ metrics snapshot: [Key measured numbers](#key-measured-numbers-quick-reference) (KL **0.0565**; cross-session **1.0000** / **0.1028**).
 - **[docs/TEST_RESULTS.md](docs/TEST_RESULTS.md)** — Verbatim pytest and IQ analyser output (update when you refresh results). One-page summary: [Key measured numbers](#key-measured-numbers-quick-reference).
 - **tests/README.md** — Quick run instructions and per-suite notes; keyring round-trip is skipped if the Linux kernel keyring or `keyctl` is not available.
 
@@ -1522,7 +1524,7 @@ Start from [Where key functions are implemented (quick code map)](#where-key-fun
 2. **Export** names that should appear as **`gnuradio.kgdss`** in **`python/__init__.py`**: import inside the existing `try` blocks (or add a new block), and append to **`__all__`**. Follow the same pattern as neighbouring symbols so optional dependencies still allow partial imports.
 3. **Document** user-facing behaviour in **[docs/USAGE.md](docs/USAGE.md)**. If you add or change tests, update **[docs/TESTING.md](docs/TESTING.md)** briefly.
 4. **Add tests** under **`tests/`** with `pytest` (naming: `test_*.py`, functions `test_*`). Prefer small, deterministic checks; reuse fixtures from **`tests/conftest.py`** if present.
-5. **Run** `pytest tests/ -v` after **`make install`** (or a local prefix plus **`PYTHONPATH`**) so Python loads the build you intend—see **[tests/README.md](tests/README.md)**.
+5. **Run** `pytest tests/ gnuradio4/python/kgdss/tests/ -v` after **`make install`** (or a local prefix plus **`PYTHONPATH`**) so Python loads the build you intend—see **[tests/README.md](tests/README.md)**. On the `gnuradio4` branch, keep the second path so GR4 package regressions are caught.
 
 ### Changing or adding C++ blocks (spreader / despreader)
 

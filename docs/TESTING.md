@@ -5,6 +5,7 @@ This document describes the unit tests for gr-k-gdss, how to run them, what each
 ## Table of Contents
 
 - [Running the tests](#running-the-tests)
+- [GNU Radio 4 Python helpers (`gnuradio4/python/kgdss`)](#gnu-radio-4-python-helpers-gnuradio4pythonkgdss)
 - [C++ crypto tests (optional)](#c-crypto-tests-optional)
 - [Documented test run](#documented-test-run)
 - [Round trip (what it means)](#round-trip-what-it-means)
@@ -61,8 +62,10 @@ Prerequisites:
 From the repository root, with the same Python that can import `gnuradio.kgdss`:
 
 ```bash
-pytest tests/ -v
+pytest tests/ gnuradio4/python/kgdss/tests/ -v
 ```
+
+On branches without the `gnuradio4/` tree, `pytest tests/ -v` alone is enough. On the **`gnuradio4`** branch, always include `gnuradio4/python/kgdss/tests/` so the second Python package is exercised (see [GNU Radio 4 Python helpers](#gnu-radio-4-python-helpers-gnuradio4pythonkgdss) below). `./tests/run_tests.sh` already passes both paths.
 
 ### Requiring compiled C++ bindings (CI)
 
@@ -71,10 +74,38 @@ Several suites (`test_t1_*`, `test_t2_channel_models.py`, `test_t4_*`, `test_t5_
 Set **`KGDSS_REQUIRE_BINDINGS=1`** so the session fails immediately if bindings are unavailable:
 
 ```bash
-KGDSS_REQUIRE_BINDINGS=1 pytest tests/ -v
+KGDSS_REQUIRE_BINDINGS=1 pytest tests/ gnuradio4/python/kgdss/tests/ -v
 ```
 
 Use this in CI after `cmake && make && make install` (or an equivalent install prefix on `PYTHONPATH`).
+
+### GNU Radio 4 Python helpers (`gnuradio4/python/kgdss`)
+
+On the **`gnuradio4`** branch, `gnuradio4/python/kgdss/` is a second Python package used by the native GR4 blocks. It is **not** the same import path as top-level `gnuradio.kgdss` / `python/`. Most files currently match the top-level copies byte-for-byte, but **`key_injector.py` diverges** (standalone `KeyInjector` class + GR4-oriented `KeyInjectorBlock`). Top-level pytest alone therefore cannot catch regressions in that tree.
+
+Dedicated coverage lives under **`gnuradio4/python/kgdss/tests/`**:
+
+| File | What it pins |
+|------|----------------|
+| `test_gr4_key_injector_nonce.py` | GR4 `KeyInjector` persisted nonce allocate / `tx_seq=0` refusal |
+| `test_gr4_sync_burst_nonce.py` | `gdss_sync_burst_nonce(..., burst_index=…)` / mask / PN divergence |
+| `test_gr4_chacha_backend_parity.py` | ChaCha20 IETF layout via **this** `sync_burst_utils.py` copy |
+
+Each test asserts `mod.__file__` contains `gnuradio4/.../kgdss/` so a wrong import path fails loudly.
+
+Run with the top-level suite (preferred):
+
+```bash
+pytest tests/ gnuradio4/python/kgdss/tests/ -v
+```
+
+Or only the GR4 Python package:
+
+```bash
+pytest gnuradio4/python/kgdss/tests/ -v
+```
+
+Native GR4 C++ Boost.UT binaries remain under `gnuradio4/test/qa_*.cpp` (`ctest` after configuring `gnuradio4/`). When that CMake project is configured with pytest available, it also registers **`qa_python_kgdss`** for the same Python directory.
 
 If you use a venv that does not see system-installed packages, set PYTHONPATH so it includes the install prefix (e.g. `/usr/local/lib/python3.12/dist-packages`), or use:
 
@@ -263,7 +294,17 @@ Skipped when `gr_linux_crypto.CryptoHelpers` cannot be imported (install gr-linu
 
 With the module installed, **gr-linux-crypto** (including **galdralag_session_kdf** when you want Galdralag tests), dependencies available, and tests run in a normal terminal (so keyctl read is allowed):
 
-- Current expected pytest tally is **106 passed, 1 skipped, 2 xpassed** (109 collected). The skip is `TestT3KeyringRoundTrip::test_keyring_round_trip` when `keyctl` is unavailable; the two `xpassed` entries are inside `tests/test_t5_pedestrian_b_timing.py` and reflect retired capability-boundary markers that the new despreader (matched-filter despreading + adaptive timing peak tracker + opt-in BPSK channel equalization) now passes. Fewer passes or more skips occur if Galdralag KDF is missing (four mapping tests skip) or the module is not installed. Run `pytest tests/ -q` for the exact tally on your machine.
+- Current expected pytest tally on the **`gnuradio4`** branch (with bindings and
+  `gnuradio4/python/kgdss/tests/` included) is **142 passed, 1 skipped, 2 xpassed**.
+  That is the top-level suite plus **9** dedicated GR4-package tests. The skip is
+  `TestT3KeyringRoundTrip::test_keyring_round_trip` when `keyctl` is unavailable;
+  the two `xpassed` entries are inside `tests/test_t5_pedestrian_b_timing.py`.
+  Fewer passes or more skips occur if Galdralag KDF is missing (four mapping tests
+  skip) or the module is not installed. Run
+  `pytest tests/ gnuradio4/python/kgdss/tests/ -q` for the exact tally on your machine.
+  Native GR4 C++ + Python CTest under `gnuradio4/build_ut` currently reports **5/5**
+  (`qa_ChachaKeystreamHelper`, `qa_KgdssSpreaderCc`, `qa_KgdssDespreaderCc`,
+  `qa_LinhtPttSource`, `qa_python_kgdss`).
 
 The optional native crypto suite (build with **`KGDSS_ENABLE_CRYPTO_TESTS=ON`**) reports **2/2 passed** under `ctest -R 'kgdss_test_'`: `kgdss_test_chacha_keystream` (Wycheproof-derived ChaCha20-IETF vectors) and `kgdss_test_spreader_stats` (Box-Muller mask K-S / clamp checks).
 
