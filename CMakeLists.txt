@@ -15,17 +15,14 @@ set(VERSION_PATCH 0)
 include(GNUInstallDirs)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SODIUM libsodium)
+# ChaCha20-IETF keystream uses libsodium exclusively (crypto_stream_chacha20_ietf_xor_ic).
+# There is no OpenSSL EVP backend; fail at configure time rather than link a stub.
+pkg_check_modules(SODIUM REQUIRED libsodium)
 
 option(KGDSS_ENABLE_CRYPTO_TESTS "Build native ChaCha20/spreader GTest suite (libsodium + GTest)" OFF)
 
-if(SODIUM_FOUND)
-    message(STATUS "Using libsodium for ChaCha20")
-    add_compile_definitions(HAVE_LIBSODIUM=1)
-else()
-    find_package(OpenSSL REQUIRED)
-    message(STATUS "libsodium not found, using OpenSSL EVP")
-endif()
+message(STATUS "Using libsodium for ChaCha20")
+add_compile_definitions(HAVE_LIBSODIUM=1)
 
 include(FindPkgConfig)
 pkg_check_modules(GR_RUNTIME REQUIRED gnuradio-runtime)

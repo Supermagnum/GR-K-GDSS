@@ -66,7 +66,10 @@ For **gr-linux-crypto** development without installing it system-wide, set envir
 | **`load_gdss_key(keyring_id)`** | Load the 32-byte GDSS masking key from the keyring by key ID (integer). Use the ID returned by `store_session_keys` for `"gdss_masking"`. Raises if the key is not 32 bytes or keyring is unavailable. |
 | **`get_shared_secret_from_gnupg(my_private_pem, peer_public_pem)`** | Perform ECDH with BrainpoolP256r1 keys (PEM bytes). Returns raw shared secret; pass to `derive_session_keys()`. Requires gr-linux-crypto CryptoHelpers. |
 | **`gdss_nonce(session_id, tx_seq)`** | Build the 12-byte nonce for the GDSS ChaCha20 masking keystream. Arguments: `session_id` (int), `tx_seq` (int). Returns 12 bytes (4-byte session_id big-endian + 8-byte tx_seq big-endian). Must match on TX and RX. |
-| **`gdss_sync_burst_nonce(session_id)`** | Return the 12-byte nonce for sync-burst keyed masking. Use with `gdss_masking` when calling `apply_keyed_gaussian_mask` so the sync burst keystream is distinct from the data keystream. |
+| **`allocate_gdss_nonce_counters(key_material, state_path=None, preferred_session_id=1)`** | Persistently allocate the next unused `(session_id, tx_seq)` for a masking-key fingerprint. Writes a high-water mark to a local JSON state file before returning so process restarts cannot silently reuse a nonce. |
+| **`reserve_gdss_nonce_counters(key_material, session_id, tx_seq, state_path=None)`** | Record an explicitly chosen `(session_id, tx_seq)` and raise if it would reuse or go backwards for that key. |
+| **`default_nonce_state_path()`** | Path used by the counter helpers (`$XDG_STATE_HOME/gr-k-gdss/nonce_counters.json` or `~/.local/state/gr-k-gdss/nonce_counters.json`). |
+| **`gdss_sync_burst_nonce(session_id, burst_index=0)`** | Return the 12-byte nonce for sync-burst keyed masking. Pass **`burst_index`** for multi-burst schedules so each burst gets a distinct keystream. Use with `gdss_masking` when calling `apply_keyed_gaussian_mask`. |
 | **`payload_nonce(session_id, tx_seq)`** | Build the 96-bit nonce for payload ChaCha20-Poly1305 AEAD (e.g. gr-linux-crypto payload encryption). Format: prefix + session_id + tx_seq. Use with `payload_enc` from `derive_session_keys`. |
 | **`keyring_available()`** | Return True if the keyring helper (keyctl or gr-linux-crypto KeyringHelper) is available. |
 | **`keyring_import_error()`** | Return the exception message if keyring import failed, or None. Useful to report why keyring is unavailable. |
@@ -79,8 +82,8 @@ For **gr-linux-crypto** development without installing it system-wide, set envir
 | **`derive_sync_pn_sequence(master_key, session_id, chips=10000, burst_index=0)`** | Derive a pseudo-noise sequence for one sync burst. Pass **`burst_index`** matching the burst’s index in the schedule so each burst gets a **distinct** PN (`sync_pn` / `gdss_sync_key` subkey). Default `burst_index=0` preserves single-burst behaviour. |
 | **`derive_sync_amplitude_scaling(master_key, session_id, n_bursts, ...)`** | Deterministic **per-burst** log-normal amplitude scale factors (same length as the number of scheduled bursts you render). |
 | **`gaussian_envelope(samples, rise_fraction=0.15)`** | Gaussian-shaped amplitude envelope (default **`rise_fraction=0.15`**). |
-| **`apply_keyed_gaussian_mask(burst, gdss_key, nonce, variance=1.0)`** | Keyed Gaussian masking for sync bursts (ChaCha20 + Box-Muller). Use `gdss_sync_burst_nonce(session_id)` for `nonce`. |
-| **`gdss_sync_burst_nonce(session_id)`** | 12-byte nonce for sync-burst masking (distinct from the data-path `gdss_nonce`). |
+| **`apply_keyed_gaussian_mask(burst, gdss_key, nonce, variance=1.0)`** | Keyed Gaussian masking for sync bursts (ChaCha20 + Box-Muller). Use `gdss_sync_burst_nonce(session_id, burst_index)` for `nonce`. |
+| **`gdss_sync_burst_nonce(session_id, burst_index=0)`** | 12-byte nonce for sync-burst masking (distinct from the data-path `gdss_nonce`; per-burst when `burst_index` is set). |
 
 ---
 
@@ -115,7 +118,7 @@ The real and imaginary parts of each chip are multiplied by keyed Gaussian mask 
 - `variance` (float): Variance of the Gaussian spreading sequence; typically `1.0`. Same on TX/RX.
 - `seed` (int): RNG seed for the base spreading sequence. Must be identical on TX/RX if you let each side generate its own sequence.
 - `chacha_key` (32-byte key, hex string in GRC): Session GDSS masking key (e.g. `gdss_masking` from `derive_session_keys`), encoded as 64 hex characters.
-- `chacha_nonce` (12-byte nonce, hex string in GRC): Session GDSS nonce (e.g. `gdss_nonce`), encoded as 24 hex characters. **Never reuse the same (key, nonce) pair across sessions.**
+- `chacha_nonce` (12-byte nonce, hex string in GRC): Session GDSS nonce (e.g. `gdss_nonce`), encoded as 24 hex characters. **Never reuse the same (key, nonce) pair across sessions.** Prefer `allocate_gdss_nonce_counters` / `key_injector` without an explicit `tx_seq` so counters persist across process restarts.
 
 **Usage:**
 
@@ -220,15 +223,17 @@ Provides the GDSS key and nonce to the spreader and despreader via the `set_key`
 
 - `keyring_id` (int): Keyring key ID for the gdss_masking key (from `store_session_keys`). Set to 0 to use `shared_secret_hex` instead.
 - `shared_secret_hex` (string): 64 hexadecimal characters (32 bytes) when `keyring_id` is 0. Ignored when `keyring_id` > 0.
-- `session_id` (int): Session identifier; must match on TX and RX.
-- `tx_seq` (int): Transmission sequence number; must match on TX and RX.
+- `session_id` (int, optional): Preferred session identifier when allocating or when `tx_seq` is set explicitly; must match on TX and RX when supplied explicitly.
+- `tx_seq` (int, optional): Transmission sequence number. **Omit** to allocate the next unused pair via `allocate_gdss_nonce_counters` (persisted per masking-key fingerprint). Explicit `tx_seq=0` requires `allow_static_nonce=True`.
+- `allow_static_nonce` (bool, Python API): Acknowledge intentional use of a fixed/static nonce (including `tx_seq=0`). Default `False`.
+- `nonce_state_path` (string, Python API): Optional path for the persisted counter JSON (defaults to `$XDG_STATE_HOME/gr-k-gdss/nonce_counters.json` or `~/.local/state/gr-k-gdss/nonce_counters.json`).
 
 **Python API (`kgdss.key_injector`, not all fields are in GRC yet):** You may pass **`key_derivation`**, **`epk_initiator`**, and **`epk_responder`** as keyword arguments:
 
 - **`key_derivation`:** `"gr_k_gdss"` (default) uses **`derive_session_keys`**; **`"galdralag"`** uses **`derive_session_keys_from_galdralag`** with the same KDF as **gr-linux-crypto** [`gdss_set_key_source_block`](https://github.com/Supermagnum/gr-linux-crypto/blob/master/python/gdss_set_key_source.py) when `key_derivation="galdralag"`.
 - **`epk_initiator` / `epk_responder`:** Uncompressed SEC1 ephemeral public keys (bytes); **required** when `key_derivation="galdralag"` and `shared_secret` is passed at construction. **Not** supported on the `shared_secret` message port (that path stays **gr_k_gdss** only). **`keyring_id`** loads raw `gdss_masking` bytes and ignores `key_derivation`.
 
-**Usage:** Add the block, set either `keyring_id` or `shared_secret_hex` (with `keyring_id` = 0), set `session_id` and `tx_seq` to match the other side. Connect `key_out` to `set_key` on both the spreader and the despreader. No trigger connection is needed; the key is sent when the flowgraph starts.
+**Usage:** Add the block, set either `keyring_id` or `shared_secret_hex` (with `keyring_id` = 0). Prefer omitting `tx_seq` so the injector allocates a fresh nonce counter, then communicate the resulting `(session_id, tx_seq)` to the peer (or run the same allocate helper on RX with a shared state file). Connect `key_out` to `set_key` on both the spreader and the despreader. No trigger connection is needed; the key is sent when the flowgraph starts.
 
 Together, `kgdss_spreader_cc`, `kgdss_despreader_cc`, and `kgdss_key_injector` implement a keyed, Gaussian-distributed spread-spectrum layer: the key injector feeds key/nonce to both ends, and the spreader/despreader handle the symbol stream as long as both ends share the same ChaCha20 key/nonce and spreading parameters.
 
@@ -255,10 +260,10 @@ Recommended flow for each scheduled burst *i*:
 1. `epochs = derive_sync_schedule(sync_timing_key, session_id, ...)`
 2. `scales = derive_sync_amplitude_scaling(...)` if used (length matches number of bursts you render).
 3. `pn = derive_sync_pn_sequence(sync_pn_key, session_id, chips, burst_index=i)`
-4. Build complex chips, apply **`gaussian_envelope`** (default **`rise_fraction=0.15`**), then **`apply_keyed_gaussian_mask(..., gdss_masking_key, gdss_sync_burst_nonce(session_id))`**.
+4. Build complex chips, apply **`gaussian_envelope`** (default **`rise_fraction=0.15`**), then **`apply_keyed_gaussian_mask(..., gdss_masking_key, gdss_sync_burst_nonce(session_id, burst_index=i))`**.
 5. Scale to target RMS (and multiply by `scales[i]` if used), add into the sample buffer at sample index `(epochs[i] / 1000.0) * sample_rate`.
 
-Use `gdss_sync_burst_nonce(session_id)` (not the data nonce) so the sync-burst ChaCha20 keystream is separate from the data keystream. The receiver inverts the mask with the same key and nonce, then correlates with the PN for that **`burst_index`**.
+Use `gdss_sync_burst_nonce(session_id, burst_index=i)` (not the data nonce) so the sync-burst ChaCha20 keystream is separate from the data keystream and from other sync bursts in the same session. The receiver inverts the mask with the same key and nonce, then correlates with the PN for that **`burst_index`**.
 
 ---
 
@@ -290,18 +295,26 @@ Key injector (Python) examples:
 ```python
 from gnuradio import kgdss
 
-# Option A: key from keyring (zero manual key entry; run store_session_keys once with keyctl)
-injector = kgdss.key_injector(keyring_id=12345, session_id=1, tx_seq=0)
+# Option A: key from keyring; omit tx_seq so a persisted counter is allocated
+injector = kgdss.key_injector(keyring_id=12345, session_id=1)
+# Communicate injector._session_id / injector._tx_seq to the peer, or share nonce_state_path.
 
 # Option B: shared secret at construction (e.g. from ECDH or get_shared_secret_from_gnupg)
 shared_secret = ...  # bytes, at least 32
-injector = kgdss.key_injector(shared_secret=shared_secret, session_id=1, tx_seq=0)
+injector = kgdss.key_injector(shared_secret=shared_secret, session_id=1)
+
+# Option C: explicit fixed counters only with an intentional risk acknowledgement
+# injector = kgdss.key_injector(
+#     shared_secret=shared_secret,
+#     session_id=1,
+#     tx_seq=0,
+#     allow_static_nonce=True,  # required for tx_seq=0
+# )
 
 # Galdralag / Baochip-style session (matches gr-linux-crypto GDSS Set Key Source galdralag mode):
 # injector = kgdss.key_injector(
 #     shared_secret=ecdh_output,
 #     session_id=1,
-#     tx_seq=0,
 #     key_derivation="galdralag",
 #     epk_initiator=epk_i_bytes,
 #     epk_responder=epk_r_bytes,

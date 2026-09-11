@@ -17,6 +17,9 @@ Exported API:
   - store_session_keys(keys) -> dict of name -> keyring ID
   - load_gdss_key(keyring_id) -> 32-byte GDSS masking key
   - gdss_nonce(session_id, tx_seq) -> 12-byte nonce for ChaCha20 masking
+  - allocate_gdss_nonce_counters(key_material, ...) -> (session_id, tx_seq) with persistence
+  - reserve_gdss_nonce_counters(key_material, session_id, tx_seq, ...) -> record / refuse reuse
+  - default_nonce_state_path() -> path used by the counter helpers
   - gdss_sync_burst_nonce(session_id) -> 12-byte nonce for sync-burst masking (keystream distinct from data)
   - payload_nonce(session_id, tx_seq) -> 96-bit nonce for payload AEAD
   - get_shared_secret_from_gnupg(my_private_pem, peer_public_pem) -> shared secret
@@ -36,11 +39,15 @@ Compatibility with gr-linux-crypto:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import subprocess
 import shutil
 import sys
-from typing import Any, Callable, Dict, Optional, Type, cast
+import tempfile
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Tuple, Type, cast
 
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
@@ -513,28 +520,192 @@ def gdss_nonce(session_id: int, tx_seq: int) -> bytes:
     Returns:
         12-byte nonce for ChaCha20 IETF (no counter in nonce; counter starts at 0).
     """
+    if session_id < 0 or session_id > 0xFFFFFFFF:
+        raise ValueError("session_id must fit in an unsigned 32-bit integer")
+    if tx_seq < 0 or tx_seq > 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("tx_seq must fit in an unsigned 64-bit integer")
     return session_id.to_bytes(4, "big") + tx_seq.to_bytes(8, "big")
 
 
 # Reserved tx_seq value so sync-burst mask keystream does not overlap with data.
 SYNC_BURST_TX_SEQ = (1 << 64) - 1
+# Highest tx_seq that may be issued for data (leave SYNC_BURST_TX_SEQ reserved).
+_MAX_DATA_TX_SEQ = SYNC_BURST_TX_SEQ - 1
 
 
-def gdss_sync_burst_nonce(session_id: int) -> bytes:
+def default_nonce_state_path() -> str:
+    """
+    Return the default JSON path for persisted GDSS (session_id, tx_seq) counters.
+
+    Uses ``$XDG_STATE_HOME/gr-k-gdss/nonce_counters.json`` when XDG_STATE_HOME is
+    set, otherwise ``~/.local/state/gr-k-gdss/nonce_counters.json``.
+    """
+    xdg = os.environ.get("XDG_STATE_HOME")
+    if xdg:
+        base = Path(xdg) / "gr-k-gdss"
+    else:
+        base = Path.home() / ".local" / "state" / "gr-k-gdss"
+    return str(base / "nonce_counters.json")
+
+
+def _gdss_key_fingerprint(key_material: bytes) -> str:
+    if len(key_material) < 1:
+        raise ValueError("key_material must be non-empty")
+    return hashlib.sha256(key_material).hexdigest()
+
+
+def _load_nonce_state(path: Path) -> Dict[str, Any]:
+    if not path.is_file():
+        return {"version": 1, "keys": {}}
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            "failed to read GDSS nonce state file {!r}: {}".format(str(path), exc)
+        ) from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("GDSS nonce state file {!r} is not a JSON object".format(str(path)))
+    keys = data.get("keys")
+    if keys is None:
+        data["keys"] = {}
+    elif not isinstance(keys, dict):
+        raise RuntimeError("GDSS nonce state file {!r} has invalid 'keys'".format(str(path)))
+    data.setdefault("version", 1)
+    return data
+
+
+def _atomic_write_nonce_state(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=".nonce_counters.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def allocate_gdss_nonce_counters(
+    key_material: bytes,
+    *,
+    state_path: Optional[str] = None,
+    preferred_session_id: int = 1,
+) -> Tuple[int, int]:
+    """
+    Persistently allocate the next unused ``(session_id, tx_seq)`` for a key.
+
+    Counters are keyed by SHA-256 of ``key_material`` (normally the 32-byte
+    ``gdss_masking`` key). Each call advances ``tx_seq`` (or ``session_id`` when
+    ``tx_seq`` would collide with the reserved sync-burst value) and writes the
+    new high-water mark before returning, so process restarts cannot silently
+    reuse a prior nonce for the same key.
+
+    Args:
+        key_material: Bytes that identify the masking key (e.g. ``gdss_masking``).
+        state_path: Optional JSON path; defaults to :func:`default_nonce_state_path`.
+        preferred_session_id: Session id used when no prior state exists for this key.
+
+    Returns:
+        ``(session_id, tx_seq)`` suitable for :func:`gdss_nonce`. Communicate the
+        same pair to the peer receiver out-of-band.
+    """
+    if preferred_session_id < 0 or preferred_session_id > 0xFFFFFFFF:
+        raise ValueError("preferred_session_id must fit in an unsigned 32-bit integer")
+    path = Path(state_path) if state_path else Path(default_nonce_state_path())
+    fp = _gdss_key_fingerprint(key_material)
+    state = _load_nonce_state(path)
+    entry = state["keys"].get(fp)
+    if entry is None:
+        session_id = int(preferred_session_id)
+        tx_seq = 1  # never auto-issue tx_seq=0; that value is historically overused
+    else:
+        session_id = int(entry.get("session_id", preferred_session_id))
+        last_tx = int(entry.get("tx_seq", 0))
+        if last_tx >= _MAX_DATA_TX_SEQ:
+            if session_id >= 0xFFFFFFFF:
+                raise RuntimeError(
+                    "GDSS nonce counter space exhausted for key fingerprint {}".format(fp[:16])
+                )
+            session_id += 1
+            tx_seq = 1
+        else:
+            tx_seq = last_tx + 1
+    state["keys"][fp] = {"session_id": session_id, "tx_seq": tx_seq}
+    _atomic_write_nonce_state(path, state)
+    return session_id, tx_seq
+
+
+def reserve_gdss_nonce_counters(
+    key_material: bytes,
+    session_id: int,
+    tx_seq: int,
+    *,
+    state_path: Optional[str] = None,
+) -> None:
+    """
+    Record that ``(session_id, tx_seq)`` was used for ``key_material``.
+
+    Raises ``ValueError`` if the pair is not strictly ahead of the stored
+    high-water mark (same session with ``tx_seq`` already used or lower, or a
+    lower session id). Use this when the operator supplies explicit counters so
+    a later :func:`allocate_gdss_nonce_counters` call will not collide.
+    """
+    if session_id < 0 or session_id > 0xFFFFFFFF:
+        raise ValueError("session_id must fit in an unsigned 32-bit integer")
+    if tx_seq < 0 or tx_seq > _MAX_DATA_TX_SEQ:
+        raise ValueError(
+            "tx_seq must be in [0, 2**64-2]; 2**64-1 is reserved for sync-burst masking"
+        )
+    path = Path(state_path) if state_path else Path(default_nonce_state_path())
+    fp = _gdss_key_fingerprint(key_material)
+    state = _load_nonce_state(path)
+    entry = state["keys"].get(fp)
+    if entry is not None:
+        prev_sid = int(entry.get("session_id", 0))
+        prev_tx = int(entry.get("tx_seq", -1))
+        if session_id < prev_sid or (session_id == prev_sid and tx_seq <= prev_tx):
+            raise ValueError(
+                "refusing to reuse GDSS (session_id, tx_seq)=({}, {}) for this key; "
+                "last recorded was ({}, {}). Allocate a fresh pair with "
+                "allocate_gdss_nonce_counters() or choose a strictly greater counter.".format(
+                    session_id, tx_seq, prev_sid, prev_tx
+                )
+            )
+    state["keys"][fp] = {"session_id": int(session_id), "tx_seq": int(tx_seq)}
+    _atomic_write_nonce_state(path, state)
+
+
+def gdss_sync_burst_nonce(session_id: int, burst_index: int = 0) -> bytes:
     """
     Return the 12-byte nonce for sync-burst keyed Gaussian masking.
 
     Use this (with gdss_masking key) when calling apply_keyed_gaussian_mask
     so the sync burst keystream is distinct from the data keystream. Same
-    session_id as the link; tx_seq is reserved (SYNC_BURST_TX_SEQ).
+    session_id as the link; ``tx_seq`` is taken from the reserved high end of
+    the counter space (``SYNC_BURST_TX_SEQ - burst_index``) so each scheduled
+    burst gets a distinct nonce. Default ``burst_index=0`` preserves the
+    historical single-burst nonce (``tx_seq == SYNC_BURST_TX_SEQ``).
 
     Args:
         session_id: Session identifier.
+        burst_index: Index within the sync schedule (must be >= 0).
 
     Returns:
         12-byte nonce for ChaCha20 IETF.
     """
-    return gdss_nonce(session_id, SYNC_BURST_TX_SEQ)
+    if burst_index < 0:
+        raise ValueError("burst_index must be >= 0")
+    if burst_index > _MAX_DATA_TX_SEQ:
+        raise ValueError("burst_index exceeds reserved sync-burst nonce space")
+    return gdss_nonce(session_id, SYNC_BURST_TX_SEQ - int(burst_index))
 
 
 def payload_nonce(session_id: int, tx_seq: int) -> bytes:

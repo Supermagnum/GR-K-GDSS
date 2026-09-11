@@ -12,6 +12,9 @@ try:
         load_gdss_key,
         get_shared_secret_from_gnupg,
         gdss_nonce,
+        allocate_gdss_nonce_counters,
+        reserve_gdss_nonce_counters,
+        default_nonce_state_path,
         gdss_sync_burst_nonce,
         payload_nonce,
         keyring_available,
@@ -26,6 +29,9 @@ except ImportError:
     load_gdss_key = None
     get_shared_secret_from_gnupg = None
     gdss_nonce = None
+    allocate_gdss_nonce_counters = None
+    reserve_gdss_nonce_counters = None
+    default_nonce_state_path = None
     gdss_sync_burst_nonce = None
     payload_nonce = None
     keyring_available = None
@@ -118,6 +124,9 @@ __all__ = [
     "load_gdss_key",
     "get_shared_secret_from_gnupg",
     "gdss_nonce",
+    "allocate_gdss_nonce_counters",
+    "reserve_gdss_nonce_counters",
+    "default_nonce_state_path",
     "gdss_sync_burst_nonce",
     "payload_nonce",
     "keyring_available",

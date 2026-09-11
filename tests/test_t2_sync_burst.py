@@ -249,6 +249,13 @@ class TestT2SyncBurstNonce(unittest.TestCase):
         n2 = gdss_sync_burst_nonce(2)
         self.assertNotEqual(n1, n2)
 
+    def test_sync_burst_nonce_per_burst_index(self):
+        n0 = gdss_sync_burst_nonce(1, burst_index=0)
+        n1 = gdss_sync_burst_nonce(1, burst_index=1)
+        self.assertNotEqual(n0, n1)
+        # burst_index=0 preserves the historical reserved tx_seq = 2**64-1
+        self.assertEqual(n0, gdss_sync_burst_nonce(1))
+
 
 @unittest.skipUnless(T2_N_BURSTS_AVAILABLE, "derive_session_n_bursts not available")
 class TestT2KeyDerivedNBursts(unittest.TestCase):

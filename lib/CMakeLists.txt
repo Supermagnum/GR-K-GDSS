@@ -19,22 +19,14 @@ target_link_libraries(
     ${GR_BLOCKS_LIBRARIES}
 )
 
-if(SODIUM_FOUND)
-    target_link_libraries(
-        gnuradio-kgdss PUBLIC
-        ${SODIUM_LIBRARIES}
-    )
-    target_include_directories(
-        gnuradio-kgdss PUBLIC
-        ${SODIUM_INCLUDE_DIRS}
-    )
-else()
-    target_link_libraries(
-        gnuradio-kgdss PUBLIC
-        OpenSSL::SSL
-        OpenSSL::Crypto
-    )
-endif()
+target_link_libraries(
+    gnuradio-kgdss PUBLIC
+    ${SODIUM_LIBRARIES}
+)
+target_include_directories(
+    gnuradio-kgdss PUBLIC
+    ${SODIUM_INCLUDE_DIRS}
+)
 
 target_include_directories(
     gnuradio-kgdss PUBLIC
