@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -45,7 +44,8 @@ inline void produce_chacha_ietf_keystream(uint8_t* buf,
         }
 
         const uint64_t block_idx = ctr / 64;
-        assert(block_idx <= static_cast<uint64_t>(UINT32_MAX));
+        // Do not assert() here: default builds leave asserts enabled, which would
+        // abort before the intentional overflow path below can run.
         if (block_idx > static_cast<uint64_t>(UINT32_MAX)) {
             throw std::runtime_error(
                 "kgdss: ChaCha20-IETF block counter overflow (byte position implies block "

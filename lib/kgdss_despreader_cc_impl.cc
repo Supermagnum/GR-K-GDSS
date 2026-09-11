@@ -39,7 +39,6 @@
 #include <cmath>
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -605,7 +604,8 @@ int kgdss_despreader_cc_impl::general_work(int noutput_items,
         if (ks_len > 0) {
             const uint64_t last_byte = ctr_snap + ks_len - 1ULL;
             const uint64_t last_block = last_byte / 64ULL;
-            assert(last_block <= static_cast<uint64_t>(UINT32_MAX));
+            // Graceful overflow: set flag and stop (do not assert — default builds
+            // leave asserts enabled and would abort before this path runs).
             if (last_block > static_cast<uint64_t>(UINT32_MAX)) {
                 d_overflow_occurred.store(true);
                 return WORK_DONE;

@@ -491,7 +491,9 @@ class TestT1SetKeyMessagePort(unittest.TestCase):
                 self.skipTest("this build does not support empty key/nonce (set_key at runtime)")
             raise
         shared_secret = bytes(range(32))
-        injector = kgdss.key_injector(shared_secret, session_id=0, tx_seq=1)
+        injector = kgdss.key_injector(
+            shared_secret, session_id=0, tx_seq=1, allow_static_nonce=True
+        )
 
         src = vector_source_c(data, False)
         n_chips = n_syms * CHIPS_PER_SYMBOL

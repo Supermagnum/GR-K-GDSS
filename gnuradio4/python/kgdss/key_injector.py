@@ -30,19 +30,31 @@ from typing import Any, Dict, Optional
 
 try:
     from .session_key_derivation import (
+        allocate_gdss_nonce_counters,
         derive_session_keys,
         derive_session_keys_from_galdralag,
         galdralag_kdf_available,
         gdss_nonce,
         load_gdss_key,
+        reserve_gdss_nonce_counters,
     )
 except ImportError:
+    allocate_gdss_nonce_counters = None
     derive_session_keys = None
     derive_session_keys_from_galdralag = None
     galdralag_kdf_available = None
     gdss_nonce = None
     load_gdss_key = None
+    reserve_gdss_nonce_counters = None
 
+
+_STATIC_NONCE_HELP = (
+    "tx_seq=0 is a historically unsafe default that invites (key, nonce) reuse "
+    "across sessions when gdss_masking is derived from static long-term ECDH. "
+    "Omit tx_seq to allocate a persisted counter via allocate_gdss_nonce_counters, "
+    "pass a non-zero tx_seq, or set allow_static_nonce=True only if you accept the risk "
+    "and coordinate the same pair on the peer."
+)
 
 def _normalize_key_derivation(mode: str) -> str:
     m = (mode or "gr_k_gdss").strip().lower().replace("-", "_")
@@ -105,7 +117,7 @@ class KeyInjector:
     instantiate as a gr.basic_block (see KeyInjectorBlock below).
 
     For standalone use (no GNU Radio import):
-        ki = KeyInjector(shared_secret=..., session_id=1, tx_seq=0)
+        ki = KeyInjector(shared_secret=..., session_id=1)  # allocates persisted tx_seq
         msg = ki.build_gr3_pmt_msg()   # GR3 PMT pmt.dict
         raw = ki.to_bytes()            # 44 raw bytes
         d   = ki.to_dict()             # plain {"key": bytes, "nonce": bytes}
@@ -114,22 +126,34 @@ class KeyInjector:
     def __init__(
         self,
         shared_secret: Optional[bytes] = None,
-        session_id: int = 1,
-        tx_seq: int = 0,
+        session_id: Optional[int] = None,
+        tx_seq: Optional[int] = None,
         keyring_id: Optional[int] = None,
         key_derivation: str = "gr_k_gdss",
         epk_initiator: Optional[bytes] = None,
         epk_responder: Optional[bytes] = None,
+        allow_static_nonce: bool = False,
+        nonce_state_path: Optional[str] = None,
     ) -> None:
         if derive_session_keys is None or gdss_nonce is None:
             raise RuntimeError(
                 "KeyInjector requires session_key_derivation "
                 "(derive_session_keys, gdss_nonce)"
             )
+        if allocate_gdss_nonce_counters is None or reserve_gdss_nonce_counters is None:
+            raise RuntimeError(
+                "KeyInjector requires session_key_derivation nonce counter helpers"
+            )
         mode = _normalize_key_derivation(key_derivation)
 
         self._key: Optional[bytes] = None
         self._nonce: Optional[bytes] = None
+        self._session_id = 1 if session_id is None else int(session_id)
+        self._tx_seq = 0
+        self._preferred_session_id = self._session_id
+        self._tx_seq_arg = tx_seq
+        self._allow_static_nonce = bool(allow_static_nonce)
+        self._nonce_state_path = nonce_state_path
 
         if keyring_id is not None and shared_secret is not None:
             raise ValueError("provide exactly one of shared_secret or keyring_id")
@@ -138,7 +162,7 @@ class KeyInjector:
             if load_gdss_key is None:
                 raise RuntimeError("keyring_id requires session_key_derivation.load_gdss_key")
             gdss_key = load_gdss_key(int(keyring_id))
-            nonce = gdss_nonce(session_id, tx_seq)
+            self._session_id, self._tx_seq, nonce = self._resolve_nonce(gdss_key)
         elif shared_secret is not None and len(shared_secret) >= 32:
             if mode == "galdralag":
                 if (
@@ -159,13 +183,31 @@ class KeyInjector:
             else:
                 keys = derive_session_keys(shared_secret)
             gdss_key = keys["gdss_masking"]
-            nonce = gdss_nonce(session_id, tx_seq)
+            self._session_id, self._tx_seq, nonce = self._resolve_nonce(gdss_key)
         else:
             return
 
         self._key = bytes(gdss_key)
         self._nonce = bytes(nonce)
 
+    def _resolve_nonce(self, gdss_key: bytes) -> tuple[int, int, bytes]:
+        if self._tx_seq_arg is None:
+            sid, tx = allocate_gdss_nonce_counters(
+                gdss_key,
+                state_path=self._nonce_state_path,
+                preferred_session_id=self._preferred_session_id,
+            )
+            return sid, tx, gdss_nonce(sid, tx)
+
+        sid = self._preferred_session_id
+        tx = int(self._tx_seq_arg)
+        if tx == 0 and not self._allow_static_nonce:
+            raise ValueError(_STATIC_NONCE_HELP)
+        if not self._allow_static_nonce:
+            reserve_gdss_nonce_counters(
+                gdss_key, sid, tx, state_path=self._nonce_state_path
+            )
+        return sid, tx, gdss_nonce(sid, tx)
     @property
     def ready(self) -> bool:
         return self._key is not None and self._nonce is not None
@@ -208,12 +250,14 @@ try:
         def __init__(
             self,
             shared_secret: Optional[bytes] = None,
-            session_id: int = 1,
-            tx_seq: int = 0,
+            session_id: Optional[int] = None,
+            tx_seq: Optional[int] = None,
             keyring_id: Optional[int] = None,
             key_derivation: str = "gr_k_gdss",
             epk_initiator: Optional[bytes] = None,
             epk_responder: Optional[bytes] = None,
+            allow_static_nonce: bool = False,
+            nonce_state_path: Optional[str] = None,
         ) -> None:
             gr.basic_block.__init__(
                 self,
@@ -233,6 +277,8 @@ try:
                 key_derivation=key_derivation,
                 epk_initiator=epk_initiator,
                 epk_responder=epk_responder,
+                allow_static_nonce=allow_static_nonce,
+                nonce_state_path=nonce_state_path,
             )
             self._msg: Any = self._ki.build_gr3_pmt_msg() if self._ki.ready else None
 

@@ -177,7 +177,7 @@ Command-line and API interface to the Linux kernel keyring. Used by GR-K-GDSS to
 
 ## Nonce
 
-**Number used once.** A value that must be unique for each encryption or keystream use with the same key. In GR-K-GDSS, the GDSS masking uses a 12-byte nonce (e.g. from `gdss_nonce(session_id, tx_seq)`). The sync burst uses a separate nonce (`gdss_sync_burst_nonce(session_id)`) so that sync and data keystreams do not overlap.
+**Number used once.** A value that must be unique for each encryption or keystream use with the same key. In GR-K-GDSS, the GDSS masking uses a 12-byte nonce (e.g. from `gdss_nonce(session_id, tx_seq)` or `allocate_gdss_nonce_counters`). The sync burst uses a separate nonce (`gdss_sync_burst_nonce(session_id, burst_index)`) so that sync and data keystreams do not overlap, and so scheduled multi-burst sync masks do not reuse one keystream.
 
 ---
 
