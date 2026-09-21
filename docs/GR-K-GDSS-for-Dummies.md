@@ -93,6 +93,71 @@ More detail: [README — Behaviour when no cryptographic key is present](../READ
 
 ---
 
+## Synchronisation bursts (what they do)
+
+Radios that look like noise still need a way for the **receiver to line up in time** with the transmitter. If the two sides are even slightly out of step, despreading and decryption fail even when both have the correct keys.
+
+A **synchronisation burst** (sync burst) is a **short, known-looking chip sequence** the transmitter inserts so the receiver can **find timing** (and often lock) before or during the payload. Think of it as a **shared secret knock**: only partners who know the keys recognise it; everyone else should mostly hear more hiss.
+
+In this project a sync burst is typically:
+
+1. A **PN** (pseudo-noise) chip pattern — looks random, but is **deterministic** from the session keys.
+2. Softened with a **Gaussian envelope** (fade in / fade out) so the edges are not a hard click.
+3. **Keyed Gaussian-masked** like the data path, so the burst does not stand out as an obvious “sync tone” or classic DSSS spike on a spectrum display.
+
+**What the receiver does:** with the same keys it **unmasks** the burst, **correlates** against the expected PN, and looks for a **peak**. That peak says “here is the time alignment.” Without matching keys, that peak should not appear.
+
+API and wiring detail: [USAGE.md — Sync burst timing and multi-burst schedule](USAGE.md#sync-burst-timing-and-multi-burst-schedule). Glossary: [sync burst](GLOSSARY.md#sync-burst), [PN sequence](GLOSSARY.md#pn-sequence).
+
+### Scheduled multi-burst cadence
+
+Many older designs fire **one** sync burst at the start of a session. GR-K-GDSS is designed around a **schedule of several bursts over time**.
+
+Helpers such as `derive_sync_schedule(...)` build a shared list of times (milliseconds from session start), for example:
+
+`[1200, 4800, 9100, …]`
+
+That list is the **cadence**: *when* each sync blast is sent.
+
+Why several irregular bursts instead of one metronome tick?
+
+- **Recovery:** if one burst is lost to noise or interference, later bursts still give the receiver a chance to lock.
+- **Less predictability for outsiders:** gaps are often **irregular** (heavy-tailed / Pareto draws from key material), not a fixed beep-beep-beep.
+- **Same map on both sides:** transmitter and receiver derive the **same** schedule from the same timing subkey and session id, so both know when to transmit and when to listen. A **flywheel** on the receiver can keep tracking expected times even if some bursts are missed.
+
+So: **multi-burst** means many sync opportunities; **scheduled cadence** means their shared, key-derived timeline.
+
+### Burst index
+
+**Burst index** is simply which burst in that schedule you mean: `0`, `1`, `2`, …
+
+For burst *i*, both ends must use the same *i* when they:
+
+| Piece | Why the index matters |
+|-------|------------------------|
+| PN sequence | Each burst gets its **own** spreading pattern (patterns do not repeat as one fixed sequence forever). |
+| Sync-burst mask nonce | Each burst gets its **own** ChaCha keystream (`gdss_sync_burst_nonce(session_id, burst_index=i)`), so masks are not reused across bursts. |
+| Optional amplitude scaling | Each burst can have its own key-derived loudness scale. |
+
+Example: eight scheduled epochs use indices `0` through `7`. The burst at `9100 ms` might be index `2`; TX and RX both pass `burst_index=2` when building or correlating that one.
+
+Default `burst_index=0` keeps simple single-burst behaviour for older call sites.
+
+### One picture
+
+```text
+time --->
+  |--burst 0--|     |--burst 1--|           |--burst 2--|     ...  (payload around / between)
+       ^                 ^                       ^
+  index=0           index=1                 index=2
+  own PN + nonce    own PN + nonce          own PN + nonce
+  times come from the shared schedule (TX and RX agree)
+```
+
+**In one line:** sync bursts **align time**; the **schedule** says **when**; the **burst index** says **which** burst so patterns and masks stay unique.
+
+---
+
 ## What this project **is**
 
 - A **GNU Radio** out-of-tree module (**gr-k-gdss**): **keyed spreader**, **keyed despreader**, and support for **keys** and **sync**.
@@ -133,7 +198,7 @@ The main [README](../README.md) describes the author's background and who the wo
 
 - **GR-K-GDSS** adds **cryptographic keying** to **noise-like spread-spectrum** radio ideas.
 - **"−20 dB below the noise floor"** means the transmission has roughly **1/100** the power of the background hiss in that band — buried in the fuzzy baseline for casual spectrum displays, while a keyed receiver can still recover it by despreading (see the section above).
-- Synchronisation is designed around **multiple keyed bursts over time**, not only one startup burst.
+- **Sync bursts** help the receiver **line up in time**; a **scheduled multi-burst cadence** fires several of them on a shared irregular timeline; each uses a **burst index** so PN and mask keystreams do not repeat across bursts (see [Synchronisation bursts](#synchronisation-bursts-what-they-do)).
 - The receiver can combine **live PSD measurements** with the **P.372-17 hook prior** (`P372_COMPLIANCE = "none"`) to tune noise-floor assumptions per frequency bin until live estimation supersedes it (see `docs/todo.md`).
 - The aim is stronger resistance to many **statistical** detectors, not immunity to **physics** (energy, bearing, timing).
 - The **code** is real and inspectable; **security claims** still need **independent expert review** before high-stakes use.
