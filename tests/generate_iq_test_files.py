@@ -304,9 +304,10 @@ def _gaussian_envelope(
     return samples * env
 
 
-def _sync_burst_nonce(session_id: int) -> bytes:
-    """12-byte nonce for sync-burst masking so keystream does not overlap with data."""
-    return session_id.to_bytes(4, "big") + ((1 << 64) - 1).to_bytes(8, "big")
+def _sync_burst_nonce(session_id: int, burst_index: int = 0) -> bytes:
+    """12-byte nonce for sync-burst masking; per-burst so keystreams do not collide."""
+    tx_seq = ((1 << 64) - 1) - int(burst_index)
+    return session_id.to_bytes(4, "big") + tx_seq.to_bytes(8, "big")
 
 
 def _apply_keyed_gaussian_mask(
@@ -803,7 +804,6 @@ Optional baseline with hardware artifacts (SDR recording):
         )
 
         out = np.zeros(SILENCE_LEN_10, dtype=np.complex64)
-        sync_nonce = _sync_burst_nonce(session_id)
         for i, t_ms in enumerate(epochs_ms):
             pos = int((t_ms / 1000.0) * SAMPLE_RATE)
             if pos < 0 or pos + burst_len > len(out):
@@ -811,6 +811,7 @@ Optional baseline with hardware artifacts (SDR recording):
             pn = _derive_sync_pn_sequence(sync_pn_key, session_id, burst_len, burst_index=i)
             burst = pn.astype(np.complex64)
             burst_env = _gaussian_envelope(burst, rise_fraction=0.15)
+            sync_nonce = _sync_burst_nonce(session_id, burst_index=i)
             burst_masked = _apply_keyed_gaussian_mask(burst_env, gdss_key_11, sync_nonce)
             rms = np.sqrt(np.mean(np.abs(burst_masked) ** 2)) + 1e-12
             burst_scaled = burst_masked * (target_rms_11 / rms) * float(scales[i])

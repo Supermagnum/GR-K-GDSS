@@ -97,7 +97,7 @@ class tx_example_kgdss(gr.top_block, Qt.QWidget):
             0,
             list(binascii.unhexlify("".strip('"')) if "" not in ('""', '') else b''),
             list(binascii.unhexlify("".strip('"')) if "" not in ('""', '') else b''))
-        self.kgdss_key_injector_0 = kgdss.key_injector(keyring_id=keyring_id, session_id=session_id, tx_seq=tx_seq) if keyring_id else kgdss.key_injector(shared_secret=bytes.fromhex((str("0000000000000000000000000000000000000000000000000000000000000000").replace('"', '').strip() + '00'*32)[:64]), session_id=session_id, tx_seq=tx_seq)
+        self.kgdss_key_injector_0 = kgdss.key_injector(keyring_id=keyring_id, session_id=session_id, tx_seq=tx_seq, allow_static_nonce=True) if keyring_id else kgdss.key_injector(shared_secret=bytes.fromhex((str("0000000000000000000000000000000000000000000000000000000000000000").replace('"', '').strip() + '00'*32)[:64]), session_id=session_id, tx_seq=tx_seq, allow_static_nonce=True)
         self.brainpool_ecies_multi_encrypt_0 = linux_crypto.brainpool_ecies_multi_encrypt("brainpoolP256r1", callsigns, key_store_path, "gr-linux-crypto-ecies-v1")
         self.blocks_vector_to_stream_0 = blocks.vector_to_stream(gr.sizeof_char*1, 48)
         self.blocks_unpack_k_bits_bb_0 = blocks.unpack_k_bits_bb(8)

@@ -14,7 +14,10 @@
  *     are fed to Box-Muller to produce two Gaussian samples (I and Q mask).
  *   - Mask values are clamped to minimum magnitude MIN_MASK (1e-4) to avoid
  *     division instability in the despreader.
- *   - Output: out[i] = symbol * sequence_chip * complex(mask_i, mask_q).
+ *   - Output: out[i] = symbol * complex(mask_i, mask_q).
+ *     The PRNG spreading sequence is generated for API/despreader acquisition
+ *     compatibility; it is not multiplied into the keyed chip mask (see
+ *     docs/KEYSTREAM_CONTRACT.md).
  *
  * Key/nonce can be set at construction or later via the set_key message port
  * (PMT dict with "key" u8vector length 32, "nonce" u8vector length 12).
@@ -31,7 +34,6 @@
 #include "kgdss_spreader_cc_impl.h"
 #include <gnuradio/io_signature.h>
 #include <pmt/pmt.h>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -326,7 +328,8 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
     if (need > 0) {
         const uint64_t last_byte = ctr_snap + need - 1ULL;
         const uint64_t last_block = last_byte / 64ULL;
-        assert(last_block <= static_cast<uint64_t>(UINT32_MAX));
+        // Graceful overflow: set flag and stop (do not assert — default builds
+        // leave asserts enabled and would abort before this path runs).
         if (last_block > static_cast<uint64_t>(UINT32_MAX)) {
             d_overflow_occurred.store(true);
             return WORK_DONE;
@@ -375,8 +378,6 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
     };
 
     const float MIN_MASK = 1e-4f;
-    const float MIN_SEQ = 1e-4f;
-    int chip_index = d_chip_index;
     for (int sym_idx = 0; sym_idx < ninput_items; sym_idx++) {
         gr_complex symbol = in[sym_idx];
 
@@ -391,16 +392,11 @@ int kgdss_spreader_cc_impl::work(int noutput_items,
             if (std::abs(mask_q) < MIN_MASK) mask_q = (mask_q >= 0 ? MIN_MASK : -MIN_MASK);
             gr_complex mask(mask_i, mask_q);
 
-            const gr_complex seq_raw = d_spreading_sequence_complex[chip_index];
-            const float seq_mag = std::abs(seq_raw);
-            const gr_complex seq =
-                (seq_mag < MIN_SEQ) ? gr_complex(MIN_SEQ, 0.0f) : seq_raw;
-
+            // Keyed path: symbol * Gaussian mask only (sequence is for acquisition
+            // on the RX side / get_spreading_sequence API, not the wire mask).
             out[out_index] = symbol * mask;
-            chip_index = (chip_index + 1) % d_sequence_length;
         }
     }
-    d_chip_index = chip_index;
 
     return output_idx;
 }

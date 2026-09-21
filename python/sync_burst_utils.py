@@ -36,8 +36,16 @@ except ImportError:
 
 try:
     from Crypto.Cipher import ChaCha20 as _ChaCha20
+
+    _CHACHA20_BACKEND_NAME = "pycryptodome"
 except ImportError:
-    _ChaCha20 = None
+    try:
+        from Cryptodome.Cipher import ChaCha20 as _ChaCha20
+
+        _CHACHA20_BACKEND_NAME = "pycryptodome"
+    except ImportError:
+        _ChaCha20 = None
+        _CHACHA20_BACKEND_NAME = ""
 
 if _ChaCha20 is None:
     try:
@@ -46,8 +54,18 @@ if _ChaCha20 is None:
 
         class _ChaCha20Wrapper:
             def __init__(self, key: bytes, nonce: bytes):
-                # cryptography's ChaCha20 requires 16-byte nonce; pad 12-byte (RFC 7539) with zeros
-                nonce_16 = (nonce + b"\x00" * 16)[:16] if len(nonce) == 12 else nonce
+                # cryptography.hazmat ChaCha20 takes a 16-byte buffer interpreted as
+                # little-endian 32-bit block counter || 12-byte IETF nonce (same layout
+                # libsodium crypto_stream_chacha20_ietf uses with ic=0). Padding a
+                # 12-byte nonce with trailing zeros is NOT equivalent.
+                if len(nonce) == 12:
+                    nonce_16 = (0).to_bytes(4, "little") + nonce
+                elif len(nonce) == 16:
+                    nonce_16 = nonce
+                else:
+                    raise ValueError(
+                        "ChaCha20 nonce must be 12 bytes (IETF) or 16 bytes (counter||nonce)"
+                    )
                 self._cipher = Cipher(
                     algorithms.ChaCha20(key, nonce_16),
                     mode=None,
@@ -62,13 +80,19 @@ if _ChaCha20 is None:
             @staticmethod
             def new(key: bytes, nonce: bytes):
                 return _ChaCha20Wrapper(key, nonce)
+
+        _CHACHA20_BACKEND_NAME = "cryptography"
     except ImportError:
         _ChaCha20 = None
+        _CHACHA20_BACKEND_NAME = ""
 
 if _ChaCha20 is None:
-    raise ImportError("sync_burst_utils requires PyCryptodome or cryptography for ChaCha20")
+    raise ImportError(
+        "sync_burst_utils requires PyCryptodome (or pycryptodomex) or cryptography for ChaCha20"
+    )
 
 ChaCha20 = _ChaCha20
+CHACHA20_BACKEND = _CHACHA20_BACKEND_NAME
 
 # Minimum mask magnitude to match C++ spreader/despreader (avoids division instability).
 _MIN_MASK = 1e-4
@@ -100,13 +124,15 @@ def apply_keyed_gaussian_mask(
     Uses ChaCha20 IETF keystream and Box-Muller (matching kgdss_spreader_cc_impl)
     so the burst is statistically indistinguishable from the GDSS waveform. A
     passive observer sees Gaussian-noise-like statistics instead of a
-    recognizable DSSS chip pattern. Use gdss_sync_burst_nonce(session_id) for
-    nonce so the sync-burst keystream does not overlap with the data keystream.
+  recognizable DSSS chip pattern. Use gdss_sync_burst_nonce(session_id, burst_index)
+  so each scheduled burst gets a distinct keystream (and stays off the data path).
 
     Args:
         burst: Complex array (chip-rate burst, e.g. PN * gaussian_envelope).
         gdss_key: 32-byte GDSS masking key (e.g. gdss_masking from derive_session_keys).
-        nonce: 12-byte ChaCha20 IETF nonce (e.g. from gdss_sync_burst_nonce(session_id)).
+        nonce: 12-byte ChaCha20 IETF nonce (e.g. from
+            ``gdss_sync_burst_nonce(session_id, burst_index)`` so each scheduled
+            burst uses a distinct keystream).
         variance: Gaussian variance for mask (default 1.0, match spreader).
 
     Returns:

@@ -64,6 +64,18 @@ From the repository root, with the same Python that can import `gnuradio.kgdss`:
 pytest tests/ -v
 ```
 
+### Requiring compiled C++ bindings (CI)
+
+Several suites (`test_t1_*`, `test_t2_channel_models.py`, `test_t4_*`, `test_t5_*`, `test_cross_layer.py`) skip when `gnuradio.kgdss` C++ bindings are missing. A green pytest run can therefore hide a failed build.
+
+Set **`KGDSS_REQUIRE_BINDINGS=1`** so the session fails immediately if bindings are unavailable:
+
+```bash
+KGDSS_REQUIRE_BINDINGS=1 pytest tests/ -v
+```
+
+Use this in CI after `cmake && make && make install` (or an equivalent install prefix on `PYTHONPATH`).
+
 If you use a venv that does not see system-installed packages, set PYTHONPATH so it includes the install prefix (e.g. `/usr/local/lib/python3.12/dist-packages`), or use:
 
 ```bash

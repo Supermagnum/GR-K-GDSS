@@ -124,13 +124,18 @@ sync_pn = keys["sync_pn"]              # Key 3
 sync_timing = keys["sync_timing"]      # Key 4
 
 nonce = kgdss.gdss_nonce(session_id=42, tx_seq=21)
+
+# Production: allocate a fresh (session_id, tx_seq) so restarts cannot reuse a nonce
+# for the same gdss_masking key (persisted under default_nonce_state_path()).
+session_id, tx_seq = kgdss.allocate_gdss_nonce_counters(gdss_masking)
+nonce = kgdss.gdss_nonce(session_id, tx_seq)
 ```
 
 ---
 
 ## Important Security Notes
 
-- Never reuse the same `(gdss_masking key, nonce)` pair across sessions.
+- Never reuse the same `(gdss_masking key, nonce)` pair across sessions. With static long-term ECDH, `gdss_masking` is stable; uniqueness depends on `(session_id, tx_seq)`. Use `allocate_gdss_nonce_counters` (or `key_injector` with `tx_seq` omitted) rather than hard-coding `tx_seq=0`.
 - Keep private keys and shared secrets off logs and telemetry.
 - Public-key exchange authenticity still matters; web-of-trust validation is part of the threat model.
 

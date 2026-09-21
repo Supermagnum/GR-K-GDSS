@@ -1,6 +1,8 @@
 {
-  "itu_recommendation": "ITU-R P.372-17",
-  "itu_approved": "2024-08",
+  "itu_recommendation_reference": "ITU-R P.372-17",
+  "itu_approved_reference": "2024-08",
+  "compliance": "none",
+  "note": "Roadmap label only; parameters are heuristic hooks, not ITU section 3.1.x outputs.",
   "rise_fraction": 0.15,
   "pareto_alpha_nominal": 2.0,
   "pareto_alpha_min": 1.5,
