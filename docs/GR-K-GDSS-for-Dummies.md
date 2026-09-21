@@ -22,6 +22,27 @@ In everyday listening, that background is the **hiss** you hear when you tune an
 
 **Spread spectrum** means taking a signal and **stretching or smearing** its energy across a **wide band** of frequencies (for example around a megahertz or more, depending on design), instead of concentrating it in a narrow peak. On a **spectrum analyser**, a wideband noise-like signal can look like a **raised, fuzzy band** across that span, while ordinary stations still show up as **narrow, distinct peaks**. The idea behind this codebase and method is to **shape the broadened transmission so it sits in that fuzzy noise floor** and is **hard to pick out** from everything else that already looks like noise.
 
+### What does "−20 dB below the noise floor" mean?
+
+Engineers measure how strong a signal is **relative to the background hiss** in **decibels (dB)**. Decibels are a **ratio on a log scale**, not a volume knob with absolute watts written on it.
+
+Rough guide for power in the same receiver bandwidth:
+
+| Relative level | Rough meaning |
+|----------------|---------------|
+| **0 dB** | Signal power equals the noise power (same "loudness" as the hiss). |
+| **−10 dB** | Signal has about **1/10** the power of the noise. |
+| **−20 dB** | Signal has about **1/100** the power of the noise. |
+| **+10 dB** | Signal has about **10×** the power of the noise (easy to see as a spike). |
+
+So **"−20 dB below the noise floor"** means: in that band, your transmission carries only about **one percent** as much power as the natural (or man-made) background noise the receiver already sees. On a typical spectrum display it does **not** stick up as a bright peak; it is **buried in the fuzzy baseline**.
+
+**Everyday analogy:** imagine the noise floor as the steady hush of a busy café. A strong narrowband radio station is like someone standing on a chair and shouting — everyone notices. A signal at **−20 dB** is more like a quiet conversation two tables away while the room noise is a hundred times louder: you might not realise anyone is talking unless you already know *where* to listen and *how* to filter the room out.
+
+**Why spreading helps:** spreading **dilutes** the same total energy over a wide band, which **lowers** the power density a passive observer sees in any narrow slice of spectrum (that is the "below the noise floor" part). The legitimate receiver, knowing the keys and spreading parameters, **despreads** and gets **processing gain** back: many chips are combined so the buried energy adds up into a usable signal for *them*, while a casual scanner still mostly sees hiss. Exact numbers depend on spreading factor and bandwidth (for example, large \(N\) can give on the order of **20 dB** of processing gain); see the main [README](../README.md) and [Power level, noise floor, and direction finding](../README.md#power-level-noise-floor-and-direction-finding).
+
+**Important limit:** "below the noise floor" is about **looking like background in a spectrum view**, not about vanishing from physics. Enough power, a directional antenna, or long averaging can still show that **something** raised the energy from a bearing — even when the waveform still looks noise-like.
+
 That addresses the first hurdle: **detection**. If someone still isolates energy or captures data, they hit a second hurdle: the **payload is strongly encrypted**. Recovering plaintext without the **session keys** should remain impractical, **provided users follow sound key-handling practice** (no shared passwords in chat, no keys on sticky notes, and so on). Poor operational choices can undo strong cryptography; the maths cannot fix human mistakes.
 
 **What if a transmission could mimic that ever-present noise closely enough that many standard detectors treat it as uninteresting background?** And **what if that mimicry were tied to strong, open source, reviewable cryptography**, so that only someone with the right keys could undo the masking and recover the payload?
@@ -111,6 +132,7 @@ The main [README](../README.md) describes the author's background and who the wo
 ## Summary
 
 - **GR-K-GDSS** adds **cryptographic keying** to **noise-like spread-spectrum** radio ideas.
+- **"−20 dB below the noise floor"** means the transmission has roughly **1/100** the power of the background hiss in that band — buried in the fuzzy baseline for casual spectrum displays, while a keyed receiver can still recover it by despreading (see the section above).
 - Synchronisation is designed around **multiple keyed bursts over time**, not only one startup burst.
 - The receiver can combine **live PSD measurements** with the **P.372-17 hook prior** (`P372_COMPLIANCE = "none"`) to tune noise-floor assumptions per frequency bin until live estimation supersedes it (see `docs/todo.md`).
 - The aim is stronger resistance to many **statistical** detectors, not immunity to **physics** (energy, bearing, timing).
